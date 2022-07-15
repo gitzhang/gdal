@@ -285,9 +285,11 @@ def test_vsicurl_test_redirect():
     assert f is not None
 
     gdal.VSIFSeekL(f, 0, 2)
-    if gdal.VSIFTellL(f) != 1000000:
+    try:
+        assert gdal.VSIFTellL(f) == 1000000
+    except:
         gdal.VSIFCloseL(f)
-        pytest.fail(gdal.VSIFTellL(f))
+        raise
     gdal.VSIFSeekL(f, 0, 0)
 
     handler = webserver.SequentialHandler()
@@ -403,9 +405,11 @@ def test_vsicurl_test_redirect_x_amz():
     assert f is not None
 
     gdal.VSIFSeekL(f, 0, 2)
-    if gdal.VSIFTellL(f) != 1000000:
+    try:
+        assert gdal.VSIFTellL(f) == 1000000
+    except:
         gdal.VSIFCloseL(f)
-        pytest.fail(gdal.VSIFTellL(f))
+        raise
     gdal.VSIFSeekL(f, 0, 0)
 
     handler = webserver.SequentialHandler()
@@ -571,6 +575,45 @@ def test_vsicurl_no_size_in_HEAD():
     with webserver.install_http_handler(handler):
         statres = gdal.VSIStatL('/vsicurl/http://localhost:%d/test_vsicurl_no_size_in_HEAD.bin' % gdaltest.webserver_port)
     assert statres.size == 10
+
+###############################################################################
+
+
+def test_vsicurl_test_CPL_CURL_VERBOSE():
+
+    if gdaltest.webserver_port == 0:
+        pytest.skip()
+
+    gdal.VSICurlClearCache()
+
+    class MyHandler:
+        def __init__(self):
+            self.found_CURL_INFO = False
+            self.found_CURL_INFO_HEADER_IN = False
+            self.found_CURL_INFO_HEADER_OUT = False
+
+        def handler(self, err_type, err_no, err_msg):
+            if 'CURL_INFO_TEXT:' in err_msg:
+                self.found_CURL_INFO_TEXT = True
+            if 'CURL_INFO_HEADER_IN:' in err_msg:
+                self.found_CURL_INFO_HEADER_IN = True
+            if 'CURL_INFO_HEADER_OUT:' in err_msg:
+                self.found_CURL_INFO_HEADER_OUT = True
+
+    handler = webserver.SequentialHandler()
+    handler.add('HEAD', '/test_vsicurl_test_CPL_CURL_VERBOSE', 200, {'Content-Length': '3'})
+    my_error_handler = MyHandler()
+    with gdaltest.config_options({'CPL_CURL_VERBOSE': 'YES', 'CPL_DEBUG': 'ON'}):
+        with gdaltest.error_handler(my_error_handler.handler):
+            with webserver.install_http_handler(handler):
+                statres = gdal.VSIStatL('/vsicurl/http://localhost:%d/test_vsicurl_test_CPL_CURL_VERBOSE' % gdaltest.webserver_port)
+    assert statres.size == 3
+
+    assert my_error_handler.found_CURL_INFO_TEXT
+    assert my_error_handler.found_CURL_INFO_HEADER_IN
+    assert my_error_handler.found_CURL_INFO_HEADER_OUT
+
+    gdal.VSICurlClearCache()
 
 ###############################################################################
 

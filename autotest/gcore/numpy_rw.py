@@ -200,9 +200,7 @@ def test_numpy_rw_9():
 def test_numpy_rw_10():
 
     ds = gdal.GetDriverByName('GTiff').Create('/vsimem/signed8.tif', 2, 1, options=['PIXELTYPE=SIGNEDBYTE'])
-    ar = numpy.empty([1, 2], dtype=numpy.int8)
-    ar[0][0] = -128
-    ar[0][1] = 127
+    ar = numpy.array([[-128, 127]], dtype=numpy.int8)
     ds.GetRasterBand(1).WriteArray(ar)
     ds = None
 
@@ -219,6 +217,27 @@ def test_numpy_rw_10():
     assert ar3[0][0] == -128 and ar3[0][1] == 127, 'did not get expected result (2)'
 
 ###############################################################################
+# Test signed byte handling with all values set to nodata
+
+
+@pytest.mark.parametrize("options", [[], ['SPARSE_OK=YES']])
+def test_numpy_rw_10_bis(options):
+    """Reproduce https://github.com/mapbox/rasterio/issues/2180"""
+    ds = gdal.GetDriverByName('GTiff').Create('/vsimem/signed8.tif', 2, 1,
+                                              options=['PIXELTYPE=SIGNEDBYTE']+options)
+    ar = numpy.array([[-1, -1]], dtype=numpy.int8)
+    ds.GetRasterBand(1).WriteArray(ar)
+    ds.GetRasterBand(1).SetNoDataValue(-1)
+    ds = None
+
+    ds = gdal.Open('/vsimem/signed8.tif')
+    ar2 = ds.ReadAsArray()
+    ds = None
+    gdal.Unlink('/vsimem/signed8.tif')
+
+    assert ar2[0][0] == -1 and ar2[0][1] == -1
+
+###############################################################################
 # Test all datatypes
 
 
@@ -229,6 +248,8 @@ def test_numpy_rw_11():
                    ('int16', gdal.GDT_Int16, numpy.int16, -32767),
                    ('uint32', gdal.GDT_UInt32, numpy.uint32, 4294967295),
                    ('int32', gdal.GDT_Int32, numpy.int32, -2147483648),
+                   ('uint64', gdal.GDT_UInt64, numpy.uint64, 4294967295 * 1000),
+                   ('int64', gdal.GDT_Int64, numpy.int64, -2147483648 * 1000),
                    ('float32', gdal.GDT_Float32, numpy.float32, 1.23),
                    ('float64', gdal.GDT_Float64, numpy.float64, 1.23456789),
                    ('cint16', gdal.GDT_CInt16, numpy.complex64, -32768 + 32767j),
@@ -258,6 +279,7 @@ def test_numpy_rw_11():
         ds = None
 
         ds = gdal.Open('/vsimem/' + type_tuple[0])
+        assert ds.GetRasterBand(1).DataType == type_tuple[1]
         ar2 = ds.ReadAsArray()
         ar3 = numpy.empty_like(ar2)
         ds.GetRasterBand(1).ReadAsArray(buf_obj=ar3)
@@ -312,7 +334,7 @@ def test_numpy_rw_13():
     ds.GetRasterBand(1).WriteArray(ar)
 
     # Try reading into unsupported array type
-    ar = numpy.empty([1, 2], dtype=numpy.int64)
+    ar = numpy.empty([1, 2], dtype=numpy.bool_)
     with pytest.raises(Exception, match='array does not have '
                              'corresponding GDAL data type'):
         ds.GetRasterBand(1).ReadAsArray(buf_obj=ar)
@@ -384,7 +406,7 @@ def test_numpy_rw_13():
     for i in range(3):
         ds.GetRasterBand(i + 1).WriteArray(ar[i])
 
-    ar = numpy.empty([3, 1, 2], dtype=numpy.int64)
+    ar = numpy.empty([3, 1, 2], dtype=numpy.bool_)
     with pytest.raises(Exception, match='array does not have '
                              'corresponding GDAL data type'):
         ds.ReadAsArray(buf_obj=ar)
@@ -810,3 +832,25 @@ def test_numpy_rw_band_read_as_array_error_cases():
     # 3D of wrong size in first dimension
     with pytest.raises(Exception, match='expected size of first dimension should be 0'):
         band.ReadAsArray(buf_obj = numpy.empty((2, 3,2), dtype=numpy.uint8))
+
+
+###############################################################################
+# Test that we can get an error (#5374)
+
+def test_numpy_rw_band_read_as_array_getlasterrormsg():
+
+    ds = gdal.Open("""<VRTDataset rasterXSize="20" rasterYSize="20">
+  <VRTRasterBand dataType="Float64" band="1" subClass="VRTDerivedRasterBand">
+    <Description>Scaling</Description>
+    <PixelFunctionType>invalid</PixelFunctionType>
+    <SourceTransferType>Float64</SourceTransferType>
+    <SimpleSource>
+      <SourceFilename relativeToVRT="0">notexisting</SourceFilename>
+      <SourceBand>1</SourceBand>
+    </SimpleSource>
+  </VRTRasterBand>
+</VRTDataset>""")
+    gdal.ErrorReset()
+    with gdaltest.error_handler():
+        assert ds.GetRasterBand(1).ReadAsArray() is None
+    assert gdal.GetLastErrorMsg() != ''

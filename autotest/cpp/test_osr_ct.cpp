@@ -6,22 +6,25 @@
 //
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (c) 2006, Mateusz Loskot <mateusz@loskot.net>
-//
-// This library is free software; you can redistribute it and/or
-// modify it under the terms of the GNU Library General Public
-// License as published by the Free Software Foundation; either
-// version 2 of the License, or (at your option) any later version.
-//
-// This library is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-// Library General Public License for more details.
-//
-// You should have received a copy of the GNU Library General Public
-// License along with this library; if not, write to the
-// Free Software Foundation, Inc., 59 Temple Place - Suite 330,
-// Boston, MA 02111-1307, USA.
-///////////////////////////////////////////////////////////////////////////////
+/*
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included
+ * in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ ****************************************************************************/
 
 #include "gdal_unit_test.h"
 
@@ -177,9 +180,11 @@ namespace tut
     void object::test<4>()
     {
         OGRSpatialReference oSRSSource;
+        oSRSSource.SetAxisMappingStrategy(OAMS_AUTHORITY_COMPLIANT);
         oSRSSource.importFromEPSG(4267);
 
         OGRSpatialReference oSRSTarget;
+        oSRSTarget.SetAxisMappingStrategy(OAMS_AUTHORITY_COMPLIANT);
         oSRSTarget.importFromEPSG(4269);
 
         auto poCT = std::unique_ptr<OGRCoordinateTransformation>(
@@ -202,10 +207,10 @@ namespace tut
         double y = -60;
         ensure( poCT->Transform(1, &x, &y) );
         // Check that the transformed point is different but not too far
-        ensure( abs(x - 44) > 1e-10 );
-        ensure( abs(y - -60) > 1e-10 );
-        ensure( abs(x - 44) < 1e-3 );
-        ensure( abs(y - -60) < 1e-3 );
+        ensure( fabs(x - 44) > 1e-10 );
+        ensure( fabs(y - -60) > 1e-10 );
+        ensure( fabs(x - 44) < 1e-3 );
+        ensure( fabs(y - -60) < 1e-3 );
         const double xTransformed = x;
         const double yTransformed = y;
 
@@ -256,4 +261,138 @@ namespace tut
         ensure_approx_equals( y, 200.0 );
     }
 
+    // Test OGRCoordinateTransformation::Clone()
+    static void test_clone(OGRCoordinateTransformation* poCT,
+                           OGRSpatialReference* poSRSSource,
+                           OGRSpatialReference* poSRSTarget,
+                           const double xSrc, const double ySrc)
+    {
+        ensure(poCT != nullptr);
+        ensure((poCT->GetSourceCS() == nullptr) ==
+               (poSRSSource == nullptr) );
+        if(poSRSSource != nullptr)
+        {
+            ensure(poCT->GetSourceCS()->IsSame(poSRSSource));
+        }
+        ensure((poCT->GetTargetCS() == nullptr) ==
+               (poSRSTarget == nullptr));
+        if(poSRSTarget != nullptr)
+        {
+            ensure(poCT->GetTargetCS()->IsSame(poSRSTarget));
+        }
+        double x = xSrc;
+        double y = ySrc;
+        ensure(poCT->Transform(1, &x, &y));
+        const double xTransformed = x;
+        const double yTransformed = y;
+
+        auto poClone =std::unique_ptr<OGRCoordinateTransformation>(
+            poCT->Clone());
+        ensure(poClone != nullptr );
+        ensure((poClone->GetSourceCS() == nullptr) ==
+               (poSRSSource == nullptr));
+        if(poSRSSource != nullptr)
+        {
+            ensure(poClone->GetSourceCS()->IsSame(poSRSSource));
+        }
+        ensure((poClone->GetTargetCS() == nullptr) ==
+               (poSRSTarget == nullptr));
+        if(poSRSTarget != nullptr)
+        {
+            ensure(poClone->GetTargetCS()->IsSame(poSRSTarget));
+        }
+        x = xSrc;
+        y = ySrc;
+        ensure(poClone->Transform(1, &x, &y));
+        ensure(fabs(x - xTransformed) < 1e-15);
+        ensure(fabs(y - yTransformed) < 1e-15);
+    }
+
+    // Test OGRCoordinateTransformation::Clone() with usual case
+    template<>
+    template<>
+    void object::test<6>()
+    {
+        OGRSpatialReference oSRSSource;
+        oSRSSource.importFromEPSG(4267);
+        oSRSSource.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+
+        OGRSpatialReference oSRSTarget;
+        oSRSTarget.importFromEPSG(4269);
+        oSRSTarget.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+
+        auto poCT = std::unique_ptr<OGRCoordinateTransformation>(
+            OGRCreateCoordinateTransformation(&oSRSSource, &oSRSTarget));
+
+        test_clone(poCT.get(), &oSRSSource, &oSRSTarget, 44, -60);
+    }
+
+    // Test OGRCoordinateTransformation::Clone() with a specified coordinate operation
+    template<>
+    template<>
+    void object::test<7>()
+    {
+        OGRCoordinateTransformationOptions options;
+        options.SetCoordinateOperation("+proj=affine +xoff=10", false);
+        auto poCT = std::unique_ptr<OGRCoordinateTransformation>(
+            OGRCreateCoordinateTransformation(nullptr, nullptr, options));
+
+        test_clone(poCT.get(), nullptr, nullptr, 90, 200);
+    }
+    // Test OGRCoordinateTransformation::Clone() with WebMercator->WGS84 special case
+    template<>
+    template<>
+    void object::test<8>()
+    {
+        OGRSpatialReference oSRSSource;
+        oSRSSource.importFromEPSG(3857);
+        oSRSSource.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+
+        OGRSpatialReference oSRSTarget;
+        oSRSTarget.SetWellKnownGeogCS("WGS84");
+        oSRSTarget.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+
+        auto poCT = std::unique_ptr<OGRCoordinateTransformation>(
+            OGRCreateCoordinateTransformation(&oSRSSource, &oSRSTarget));
+
+        test_clone(poCT.get(), &oSRSSource, &oSRSTarget, 44, -60);
+    }
+
+    // Test OGRCoordinateTransformation in pure "C" API
+    // OCTClone/OCTGetSourceCS/OCTGetTargetCS/OCTGetInverse
+    template<>
+    template<>
+    void object::test<9>()
+    {
+        OGRSpatialReferenceH hSource = OSRNewSpatialReference(nullptr);
+        OGRSpatialReferenceH hTarget = OSRNewSpatialReference(nullptr);
+        ensure(hSource != nullptr);
+        ensure(hTarget != nullptr);
+        ensure(OGRERR_NONE == OSRImportFromEPSG(hSource, 32637));
+        ensure(OGRERR_NONE == OSRSetWellKnownGeogCS(hTarget, "WGS84"));
+        OGRCoordinateTransformationH hTransform =
+            OCTNewCoordinateTransformation(hSource, hTarget);
+        ensure(hTransform != nullptr);
+
+        OGRCoordinateTransformationH hClone = OCTClone(hTransform);
+        ensure(hClone != nullptr);
+
+        OGRCoordinateTransformationH hInvTransform =
+            OCTGetInverse(hTransform);
+        ensure(hInvTransform != nullptr);
+
+        OGRSpatialReferenceH hSourceInternal = OCTGetSourceCS(hTransform);
+        ensure(hSourceInternal != nullptr);
+        OGRSpatialReferenceH hTargetInternal = OCTGetTargetCS(hTransform);
+        ensure(hTargetInternal != nullptr);
+
+        ensure(OSRIsSame(hSource, hSourceInternal));
+        ensure(OSRIsSame(hTarget, hTargetInternal));
+
+        OCTDestroyCoordinateTransformation(hInvTransform);
+        OCTDestroyCoordinateTransformation(hClone);
+        OCTDestroyCoordinateTransformation(hTransform);
+        OSRDestroySpatialReference(hSource);
+        OSRDestroySpatialReference(hTarget);
+    }
 } // namespace tut

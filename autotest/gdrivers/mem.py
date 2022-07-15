@@ -397,7 +397,25 @@ def test_mem_9():
         got_data = out_ds.GetRasterBand(1).ReadRaster(10, 11, 8, 10, 4, 5)
         assert ref_data == got_data, interleave
 
-    
+    for interleave in ['BAND', 'PIXEL']:
+        out_ds = drv.CreateCopy('', src_ds, options=['INTERLEAVE=%s' % interleave])
+        for i in range(3):
+            out_ds.GetRasterBand(i+1).Fill(0)
+        ref_data = src_ds.ReadRaster(0, 10, out_ds.RasterXSize, 5, buf_pixel_space=3, buf_band_space=1)
+        out_ds.WriteRaster(0, 10, out_ds.RasterXSize, 5, ref_data, buf_pixel_space=3, buf_band_space=1)
+        got_data = out_ds.ReadRaster(0, 10, out_ds.RasterXSize, 5, buf_pixel_space=3, buf_band_space=1)
+        assert ref_data == got_data, interleave
+
+    for interleave in ['BAND', 'PIXEL']:
+        out_ds = drv.CreateCopy('', src_ds, options=['INTERLEAVE=%s' % interleave])
+        for i in range(3):
+            out_ds.GetRasterBand(i+1).Fill(0)
+        ref_data = src_ds.ReadRaster(4, 10, 15, 5, buf_pixel_space=3, buf_band_space=1)
+        out_ds.WriteRaster(4, 10, 15, 5, ref_data, buf_pixel_space=3, buf_band_space=1)
+        got_data = out_ds.ReadRaster(4, 10, 15, 5, buf_pixel_space=3, buf_band_space=1)
+        assert ref_data == got_data, interleave
+
+
 ###############################################################################
 # Test BuildOverviews()
 
@@ -501,7 +519,9 @@ def test_mem_11():
     ds = gdal.GetDriverByName('MEM').Create('', 1, 1)
     assert ds.CreateMaskBand(gdal.GMF_PER_DATASET) == 0
     assert ds.GetRasterBand(1).GetMaskFlags() == gdal.GMF_PER_DATASET
+    assert not ds.GetRasterBand(1).IsMaskBand()
     mask = ds.GetRasterBand(1).GetMaskBand()
+    assert mask.IsMaskBand()
     cs = mask.Checksum()
     assert cs == 0
     mask.Fill(255)
@@ -621,6 +641,43 @@ def test_mem_dataset_rasterio_non_nearest_resampling_source_with_ovr():
     got_data = ds.ReadRaster(0,0,10,10,5,5,resample_alg=gdal.GRIORA_Cubic)
     got_data = struct.unpack('B' * 5 * 5 * 3, got_data)
     assert got_data[0] == 10
+
+
+###############################################################################
+# Test Int64 nodata
+
+
+def test_mem_nodata_int64():
+
+    ds = gdal.GetDriverByName('MEM').Create('', 1, 1, 1, gdal.GDT_Int64)
+    val = -(1 << 63)
+    assert ds.GetRasterBand(1).SetNoDataValue(val) == gdal.CE_None
+    assert ds.GetRasterBand(1).GetNoDataValue() == val
+
+
+###############################################################################
+# Test UInt64 nodata
+
+
+def test_mem_nodata_uint64():
+
+    ds = gdal.GetDriverByName('MEM').Create('', 1, 1, 1, gdal.GDT_UInt64)
+    val = (1 << 64)-1
+    assert ds.GetRasterBand(1).SetNoDataValue(val) == gdal.CE_None
+    assert ds.GetRasterBand(1).GetNoDataValue() == val
+
+
+###############################################################################
+# Check IsMaskBand() on an alpha band
+
+
+def test_mem_alpha_ismaskband():
+
+    ds = gdal.GetDriverByName('MEM').Create('', 1, 1, 2)
+    ds.GetRasterBand(2).SetColorInterpretation(gdal.GCI_AlphaBand)
+    assert not ds.GetRasterBand(1).IsMaskBand()
+    assert ds.GetRasterBand(2).IsMaskBand()
+
 
 ###############################################################################
 # cleanup

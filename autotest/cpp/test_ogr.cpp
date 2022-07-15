@@ -6,28 +6,32 @@
 //
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (c) 2006, Mateusz Loskot <mateusz@loskot.net>
-//
-// This library is free software; you can redistribute it and/or
-// modify it under the terms of the GNU Library General Public
-// License as published by the Free Software Foundation; either
-// version 2 of the License, or (at your option) any later version.
-//
-// This library is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-// Library General Public License for more details.
-//
-// You should have received a copy of the GNU Library General Public
-// License along with this library; if not, write to the
-// Free Software Foundation, Inc., 59 Temple Place - Suite 330,
-// Boston, MA 02111-1307, USA.
-///////////////////////////////////////////////////////////////////////////////
+/*
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included
+ * in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ ****************************************************************************/
 
 #include "gdal_unit_test.h"
 
 #include "ogr_p.h"
 #include "ogrsf_frmts.h"
-#include "../../gdal/ogr/ogrsf_frmts/osm/gpb.h"
+#include "../../ogr/ogrsf_frmts/osm/gpb.h"
+#include "ogr_recordbatch.h"
 
 #include <string>
 
@@ -160,6 +164,14 @@ namespace tut
         testSpatialReferenceLeakOnCopy<OGRTriangulatedSurface>(poSRS);
 
         delete poSRS;
+
+        // Check that assignSpatialReference() works when passed the SRS
+        // object it already owns and whose has a single reference.
+        poSRS = new OGRSpatialReference();
+        OGRPoint oPoint;
+        oPoint.assignSpatialReference(poSRS);
+        poSRS->Release();
+        oPoint.assignSpatialReference(oPoint.getSpatialReference());
     }
 
     template<class T>
@@ -481,7 +493,7 @@ namespace tut
     void object::test<7>()
     {
       OGRStyleMgrH hSM = OGR_SM_Create(nullptr);
-      OGR_SM_InitStyleString(hSM, "PEN(w:2px,c:#000000,id:\"mapinfo-pen-2,ogr-pen-0\")");
+      ensure(OGR_SM_InitStyleString(hSM, "PEN(w:2px,c:#000000,id:\"mapinfo-pen-2,ogr-pen-0\")"));
       OGRStyleToolH hTool = OGR_SM_GetPart(hSM, 0, nullptr);
       int bValueIsNull;
 
@@ -1573,121 +1585,6 @@ namespace tut
         poFeatureDefn->Release();
     }
 
-    // Test OGRGetXMLDateTime()
-    template<>
-    template<>
-    void object::test<15>()
-    {
-        OGRField sField;
-        char *pszDateTime;
-
-        sField.Date.Year = 2001;
-        sField.Date.Month = 2;
-        sField.Date.Day = 3;
-        sField.Date.Hour = 4;
-        sField.Date.Minute = 5;
-
-        // Unknown time zone (TZFlag = 0), no millisecond count
-        sField.Date.TZFlag = 0;
-        sField.Date.Second = 6.0f;
-        pszDateTime = OGRGetXMLDateTime(&sField);
-        ensure(nullptr != pszDateTime);
-        ensure("OGRGetXMLDateTime formats date/time field with "
-               "unknown time zone, no millisecond count",
-               strcmp("2001-02-03T04:05:06", pszDateTime) == 0);
-        CPLFree(pszDateTime);
-
-        // Unknown time zone (TZFlag = 0), millisecond count
-        sField.Date.TZFlag = 0;
-        sField.Date.Second = 6.789f;
-        pszDateTime = OGRGetXMLDateTime(&sField);
-        ensure(nullptr != pszDateTime);
-        ensure("OGRGetXMLDateTime formats date/time field with "
-               "unknown time zone, millisecond count",
-               strcmp("2001-02-03T04:05:06.789", pszDateTime) == 0);
-        CPLFree(pszDateTime);
-
-        // Local time zone (TZFlag = 1), no millisecond count
-        sField.Date.TZFlag = 1;
-        sField.Date.Second = 6.0f;
-        pszDateTime = OGRGetXMLDateTime(&sField);
-        ensure(nullptr != pszDateTime);
-        ensure("OGRGetXMLDateTime formats date/time field with "
-               "local time zone, no millisecond count",
-               strcmp("2001-02-03T04:05:06", pszDateTime) == 0);
-        CPLFree(pszDateTime);
-
-        // Local time zone (TZFlag = 1), millisecond count
-        sField.Date.TZFlag = 1;
-        sField.Date.Second = 6.789f;
-        pszDateTime = OGRGetXMLDateTime(&sField);
-        ensure(nullptr != pszDateTime);
-        ensure("OGRGetXMLDateTime formats date/time field with "
-               "local time zone, millisecond count",
-               strcmp("2001-02-03T04:05:06.789", pszDateTime) == 0);
-        CPLFree(pszDateTime);
-
-        // GMT time zone (TZFlag = 100), no millisecond count
-        sField.Date.TZFlag = 100;
-        sField.Date.Second = 6.0f;
-        pszDateTime = OGRGetXMLDateTime(&sField);
-        ensure(nullptr != pszDateTime);
-        ensure("OGRGetXMLDateTime formats date/time field with "
-               "GMT time zone, no millisecond count",
-               strcmp("2001-02-03T04:05:06Z", pszDateTime) == 0);
-        CPLFree(pszDateTime);
-
-        // GMT time zone (TZFlag = 100), millisecond count
-        sField.Date.TZFlag = 100;
-        sField.Date.Second = 6.789f;
-        pszDateTime = OGRGetXMLDateTime(&sField);
-        ensure(nullptr != pszDateTime);
-        ensure("OGRGetXMLDateTime formats date/time field with "
-               "GMT time zone, millisecond count",
-               strcmp("2001-02-03T04:05:06.789Z", pszDateTime) == 0);
-        CPLFree(pszDateTime);
-
-        // Positive time-zone offset, no millisecond count
-        sField.Date.TZFlag = 111;
-        sField.Date.Second = 6.0f;
-        pszDateTime = OGRGetXMLDateTime(&sField);
-        ensure(nullptr != pszDateTime);
-        ensure("OGRGetXMLDateTime formats date/time field with "
-               "positive time-zone offset, no millisecond count",
-               strcmp("2001-02-03T04:05:06+02:45", pszDateTime) == 0);
-        CPLFree(pszDateTime);
-
-        // Positive time-zone offset, millisecond count
-        sField.Date.TZFlag = 111;
-        sField.Date.Second = 6.789f;
-        pszDateTime = OGRGetXMLDateTime(&sField);
-        ensure(nullptr != pszDateTime);
-        ensure("OGRGetXMLDateTime formats date/time field with "
-               "positive time-zone offset, millisecond count",
-               strcmp("2001-02-03T04:05:06.789+02:45", pszDateTime) == 0);
-        CPLFree(pszDateTime);
-
-        // Negative time-zone offset, no millisecond count
-        sField.Date.TZFlag = 88;
-        sField.Date.Second = 6.0f;
-        pszDateTime = OGRGetXMLDateTime(&sField);
-        ensure(nullptr != pszDateTime);
-        ensure("OGRGetXMLDateTime formats date/time field with "
-               "negative time-zone offset, no millisecond count",
-               strcmp("2001-02-03T04:05:06-03:00", pszDateTime) == 0);
-        CPLFree(pszDateTime);
-
-        // Negative time-zone offset, millisecond count
-        sField.Date.TZFlag = 88;
-        sField.Date.Second = 6.789f;
-        pszDateTime = OGRGetXMLDateTime(&sField);
-        ensure(nullptr != pszDateTime);
-        ensure("OGRGetXMLDateTime formats date/time field with "
-               "negative time-zone offset, millisecond count",
-               strcmp("2001-02-03T04:05:06.789-03:00", pszDateTime) == 0);
-        CPLFree(pszDateTime);
-    }
-
     // Test OGRLinearRing::isPointOnRingBoundary()
     template<>
     template<>
@@ -1875,6 +1772,383 @@ namespace tut
             ensure( ls.removePoint(0) );
             ensure_equals( ls.getNumPoints(), 0 );
         }
+    }
+
+
+    // Test effect of MarkSuppressOnClose() on DXF
+    template<>
+    template<>
+    void object::test<21>()
+    {
+        CPLString tmpFilename(CPLGenerateTempFilename(nullptr));
+        tmpFilename += ".dxf";
+        auto poDrv = GDALDriver::FromHandle(GDALGetDriverByName("DXF"));
+        if( poDrv )
+        {
+            auto poDS(GDALDatasetUniquePtr(poDrv->Create(
+                tmpFilename, 0, 0, 0, GDT_Unknown, nullptr )));
+            ensure( poDS != nullptr );
+
+            OGRLayer *poLayer = poDS->CreateLayer("test", nullptr, wkbPoint, nullptr);
+            ensure ( poLayer != nullptr );
+
+            for (double x = 0; x < 100; x++)
+            {
+                OGRFeature *poFeature = OGRFeature::CreateFeature(poLayer->GetLayerDefn());
+                ensure ( poFeature != nullptr );
+                OGRPoint pt(x, 42);
+                ensure ( OGRERR_NONE == poFeature->SetGeometry(&pt) );
+                ensure ( OGRERR_NONE == poLayer->CreateFeature(poFeature) );
+                OGRFeature::DestroyFeature( poFeature );
+            }
+
+            poDS->MarkSuppressOnClose();
+
+            poDS.reset();
+            VSIStatBufL sStat;
+            ensure( 0 != VSIStatL(tmpFilename, &sStat) );
+        }
+    }
+
+    // Test OGREnvelope
+    template<>
+    template<>
+    void object::test<22>()
+    {
+        OGREnvelope s1;
+        ensure(!s1.IsInit());
+        {
+            OGREnvelope s2(s1);
+            ensure(s1 == s2);
+            ensure(!(s1 != s2));
+        }
+
+        s1.MinX = 0;
+        s1.MinY = 1;
+        s1.MaxX = 2;
+        s1.MaxX = 3;
+        ensure(s1.IsInit());
+        {
+            OGREnvelope s2(s1);
+            ensure(s1 == s2);
+            ensure(!(s1 != s2));
+            s2.MinX += 1;
+            ensure(s1 != s2);
+            ensure(!(s1 == s2));
+        }
+    }
+
+    // Test OGRStyleMgr::InitStyleString() with a style name
+    // (https://github.com/OSGeo/gdal/issues/5555)
+    template<>
+    template<>
+    void object::test<23>()
+    {
+        OGRStyleTableH hStyleTable = OGR_STBL_Create();
+        OGR_STBL_AddStyle(hStyleTable, "@my_style", "PEN(c:#FF0000,w:5px)");
+        OGRStyleMgrH hSM = OGR_SM_Create(hStyleTable);
+        ensure_equals(OGR_SM_GetPartCount(hSM, nullptr), 0);
+        ensure(OGR_SM_InitStyleString(hSM, "@my_style"));
+        ensure_equals(OGR_SM_GetPartCount(hSM, nullptr), 1);
+        ensure(!OGR_SM_InitStyleString(hSM, "@i_do_not_exist"));
+        OGR_SM_Destroy(hSM);
+        OGR_STBL_Destroy(hStyleTable);
+    }
+
+    // Test OGR_L_GetArrowStream
+    template<>
+    template<>
+    void object::test<24>()
+    {
+        auto poDS = std::unique_ptr<GDALDataset>(
+            GetGDALDriverManager()->GetDriverByName("Memory")->
+                Create("", 0, 0, 0, GDT_Unknown, nullptr));
+        auto poLayer = poDS->CreateLayer("test");
+        {
+            OGRFieldDefn oFieldDefn("str", OFTString);
+            poLayer->CreateField(&oFieldDefn);
+        }
+        {
+            OGRFieldDefn oFieldDefn("bool", OFTInteger);
+            oFieldDefn.SetSubType(OFSTBoolean);
+            poLayer->CreateField(&oFieldDefn);
+        }
+        {
+            OGRFieldDefn oFieldDefn("int16", OFTInteger);
+            oFieldDefn.SetSubType(OFSTInt16);
+            poLayer->CreateField(&oFieldDefn);
+        }
+        {
+            OGRFieldDefn oFieldDefn("int32", OFTInteger);
+            poLayer->CreateField(&oFieldDefn);
+        }
+        {
+            OGRFieldDefn oFieldDefn("int64", OFTInteger64);
+            poLayer->CreateField(&oFieldDefn);
+        }
+        {
+            OGRFieldDefn oFieldDefn("float32", OFTReal);
+            oFieldDefn.SetSubType(OFSTFloat32);
+            poLayer->CreateField(&oFieldDefn);
+        }
+        {
+            OGRFieldDefn oFieldDefn("float64", OFTReal);
+            poLayer->CreateField(&oFieldDefn);
+        }
+        {
+            OGRFieldDefn oFieldDefn("date", OFTDate);
+            poLayer->CreateField(&oFieldDefn);
+        }
+        {
+            OGRFieldDefn oFieldDefn("time", OFTTime);
+            poLayer->CreateField(&oFieldDefn);
+        }
+        {
+            OGRFieldDefn oFieldDefn("datetime", OFTDateTime);
+            poLayer->CreateField(&oFieldDefn);
+        }
+        {
+            OGRFieldDefn oFieldDefn("binary", OFTBinary);
+            poLayer->CreateField(&oFieldDefn);
+        }
+        {
+            OGRFieldDefn oFieldDefn("strlist", OFTStringList);
+            poLayer->CreateField(&oFieldDefn);
+        }
+        {
+            OGRFieldDefn oFieldDefn("boollist", OFTIntegerList);
+            oFieldDefn.SetSubType(OFSTBoolean);
+            poLayer->CreateField(&oFieldDefn);
+        }
+        {
+            OGRFieldDefn oFieldDefn("int16list", OFTIntegerList);
+            oFieldDefn.SetSubType(OFSTInt16);
+            poLayer->CreateField(&oFieldDefn);
+        }
+        {
+            OGRFieldDefn oFieldDefn("int32list", OFTIntegerList);
+            poLayer->CreateField(&oFieldDefn);
+        }
+        {
+            OGRFieldDefn oFieldDefn("int64list", OFTInteger64List);
+            poLayer->CreateField(&oFieldDefn);
+        }
+        {
+            OGRFieldDefn oFieldDefn("float32list", OFTRealList);
+            oFieldDefn.SetSubType(OFSTFloat32);
+            poLayer->CreateField(&oFieldDefn);
+        }
+        {
+            OGRFieldDefn oFieldDefn("float64list", OFTRealList);
+            poLayer->CreateField(&oFieldDefn);
+        }
+        auto poFDefn = poLayer->GetLayerDefn();
+        struct ArrowArrayStream stream;
+        ensure(OGR_L_GetArrowStream(OGRLayer::ToHandle(poLayer), &stream, nullptr));
+        {
+            // Cannot start a new stream while one is active
+            struct ArrowArrayStream stream2;
+            CPLPushErrorHandler(CPLQuietErrorHandler);
+            ensure(OGR_L_GetArrowStream(OGRLayer::ToHandle(poLayer), &stream2, nullptr) == false);
+            CPLPopErrorHandler();
+        }
+        ensure(stream.release != nullptr);
+
+        struct ArrowSchema schema;
+        CPLErrorReset();
+        ensure(stream.get_last_error(&stream) == nullptr);
+        ensure_equals(stream.get_schema(&stream, &schema), 0);
+        ensure(stream.get_last_error(&stream) == nullptr);
+        ensure(schema.release != nullptr);
+        ensure_equals(schema.n_children, 1 + poFDefn->GetFieldCount() + poFDefn->GetGeomFieldCount());
+        schema.release(&schema);
+
+        struct ArrowArray array;
+        // Next batch ==> End of stream
+        ensure_equals(stream.get_next(&stream, &array), 0);
+        ensure(array.release == nullptr);
+
+        // Release stream
+        stream.release(&stream);
+
+        {
+            auto poFeature = std::unique_ptr<OGRFeature>(new OGRFeature(poFDefn));
+            poFeature->SetField("bool", 1);
+            poFeature->SetField("int16", -12345);
+            poFeature->SetField("int32", 12345678);
+            poFeature->SetField("int64", static_cast<GIntBig>(12345678901234));
+            poFeature->SetField("float32", 1.25);
+            poFeature->SetField("float64", 1.250123);
+            poFeature->SetField("str", "abc");
+            poFeature->SetField("date", "2022-05-31");
+            poFeature->SetField("time", "12:34:56.789");
+            poFeature->SetField("datetime", "2022-05-31T12:34:56.789Z");
+            poFeature->SetField("boollist", "[False,True]");
+            poFeature->SetField("int16list", "[-12345,12345]");
+            poFeature->SetField("int32list", "[-12345678,12345678]");
+            poFeature->SetField("int64list", "[-12345678901234,12345678901234]");
+            poFeature->SetField("float32list", "[-1.25,1.25]");
+            poFeature->SetField("float64list", "[-1.250123,1.250123]");
+            poFeature->SetField("strlist", "[\"abc\",\"defghi\"]");
+            poFeature->SetField( poFDefn->GetFieldIndex("binary"), 2, "\xDE\xAD");
+            OGRGeometry* poGeom = nullptr;
+            OGRGeometryFactory::createFromWkt( "POINT(1 2)", nullptr, &poGeom);
+            poFeature->SetGeometryDirectly(poGeom);
+            ensure_equals(poLayer->CreateFeature(poFeature.get()), OGRERR_NONE);
+        }
+
+        // Get a new stream now that we've released it
+        ensure(OGR_L_GetArrowStream(OGRLayer::ToHandle(poLayer), &stream, nullptr));
+        ensure(stream.release != nullptr);
+
+        ensure_equals(stream.get_next(&stream, &array), 0);
+        ensure(array.release != nullptr);
+        ensure_equals(array.n_children, 1 + poFDefn->GetFieldCount() + poFDefn->GetGeomFieldCount());
+        ensure_equals(array.length, poLayer->GetFeatureCount(false));
+        ensure_equals(array.null_count, 0);
+        ensure_equals(array.n_buffers, 1);
+        ensure(array.buffers[0] == nullptr); // no bitmap
+        for( int i = 0; i < array.n_children; i++ )
+        {
+            ensure(array.children[i]->release != nullptr);
+            ensure_equals(array.children[i]->length, array.length);
+            ensure(array.children[i]->n_buffers >= 2);
+            ensure(array.children[i]->buffers[0] == nullptr); // no bitmap
+            ensure_equals(array.children[i]->null_count, 0);
+            ensure(array.children[i]->buffers[1] != nullptr);
+            if(array.children[i]->n_buffers == 3 )
+                ensure(array.children[i]->buffers[2] != nullptr);
+        }
+        array.release(&array);
+
+        // Next batch ==> End of stream
+        ensure_equals(stream.get_next(&stream, &array), 0);
+        ensure(array.release == nullptr);
+
+        // Release stream
+        stream.release(&stream);
+
+        // Insert 2 empty features
+        {
+            auto poFeature = std::unique_ptr<OGRFeature>(new OGRFeature(poFDefn));
+            ensure_equals(poLayer->CreateFeature(poFeature.get()), OGRERR_NONE);
+        }
+
+        {
+            auto poFeature = std::unique_ptr<OGRFeature>(new OGRFeature(poFDefn));
+            ensure_equals(poLayer->CreateFeature(poFeature.get()), OGRERR_NONE);
+        }
+
+        // Get a new stream now that we've released it
+        {
+            char** papszOptions = CSLSetNameValue(nullptr, "MAX_FEATURES_IN_BATCH", "2");
+            ensure(OGR_L_GetArrowStream(OGRLayer::ToHandle(poLayer), &stream, papszOptions));
+            CSLDestroy(papszOptions);
+        }
+        ensure(stream.release != nullptr);
+
+        ensure_equals(stream.get_next(&stream, &array), 0);
+        ensure(array.release != nullptr);
+        ensure_equals(array.n_children, 1 + poFDefn->GetFieldCount() + poFDefn->GetGeomFieldCount());
+        ensure_equals(array.length, 2);
+        for( int i = 0; i < array.n_children; i++ )
+        {
+            ensure(array.children[i]->release != nullptr);
+            ensure_equals(array.children[i]->length, array.length);
+            ensure(array.children[i]->n_buffers >= 2);
+            if( i > 0 )
+            {
+                ensure(array.children[i]->buffers[0] != nullptr); // we have a bitmap
+                ensure_equals(array.children[i]->null_count, 1);
+            }
+            ensure(array.children[i]->buffers[1] != nullptr);
+            if(array.children[i]->n_buffers == 3 )
+                ensure(array.children[i]->buffers[2] != nullptr);
+        }
+        array.release(&array);
+
+        // Next batch
+        ensure_equals(stream.get_next(&stream, &array), 0);
+        ensure(array.release != nullptr);
+        ensure_equals(array.n_children, 1 + poFDefn->GetFieldCount() + poFDefn->GetGeomFieldCount());
+        ensure_equals(array.length, 1);
+        array.release(&array);
+
+        // Next batch ==> End of stream
+        ensure_equals(stream.get_next(&stream, &array), 0);
+        ensure(array.release == nullptr);
+
+        // Release stream
+        stream.release(&stream);
+
+        // Get a new stream now that we've released it
+        ensure(OGR_L_GetArrowStream(OGRLayer::ToHandle(poLayer), &stream, nullptr));
+        ensure(stream.release != nullptr);
+
+        // Free dataset & layer
+        poDS.reset();
+
+        // Test releasing the stream after the dataset/layer has been closed
+        CPLPushErrorHandler(CPLQuietErrorHandler);
+        CPLErrorReset();
+        ensure(stream.get_schema(&stream, &schema) != 0);
+        ensure(stream.get_last_error(&stream) != nullptr);
+        ensure(stream.get_next(&stream, &array) != 0);
+        CPLPopErrorHandler();
+        stream.release(&stream);
+    }
+
+    // Test field domain cloning
+    template<>
+    template<>
+    void object::test<25>()
+    {
+        // range domain
+        OGRField min;
+        min.Real = 5.5;
+        OGRField max;
+        max.Real = 6.5;
+        OGRRangeFieldDomain oRange("name", "description", OGRFieldType::OFTReal, OGRFieldSubType::OFSTBoolean, min, true, max, true);
+        oRange.SetMergePolicy(OGRFieldDomainMergePolicy::OFDMP_GEOMETRY_WEIGHTED);
+        oRange.SetSplitPolicy(OGRFieldDomainSplitPolicy::OFDSP_GEOMETRY_RATIO);
+        std::unique_ptr< OGRRangeFieldDomain > poClonedRange( oRange.Clone() );
+        ensure_equals(poClonedRange->GetName(), oRange.GetName());
+        ensure_equals(poClonedRange->GetDescription(), oRange.GetDescription());
+        bool originalInclusive = false;
+        bool cloneInclusive = false;
+        ensure_equals(poClonedRange->GetMin(originalInclusive).Real, oRange.GetMin(cloneInclusive).Real);
+        ensure_equals(originalInclusive, cloneInclusive);
+        ensure_equals(poClonedRange->GetMax(originalInclusive).Real, oRange.GetMax(cloneInclusive).Real);
+        ensure_equals(originalInclusive, cloneInclusive);
+        ensure_equals(poClonedRange->GetFieldType(), oRange.GetFieldType());
+        ensure_equals(poClonedRange->GetFieldSubType(), oRange.GetFieldSubType());
+        ensure_equals(poClonedRange->GetSplitPolicy(), oRange.GetSplitPolicy());
+        ensure_equals(poClonedRange->GetMergePolicy(), oRange.GetMergePolicy());
+
+        // glob domain
+        OGRGlobFieldDomain oGlob("name", "description", OGRFieldType::OFTString, OGRFieldSubType::OFSTBoolean, "*a*");
+        oGlob.SetMergePolicy(OGRFieldDomainMergePolicy::OFDMP_GEOMETRY_WEIGHTED);
+        oGlob.SetSplitPolicy(OGRFieldDomainSplitPolicy::OFDSP_GEOMETRY_RATIO);
+        std::unique_ptr< OGRGlobFieldDomain > poClonedGlob( oGlob.Clone() );
+        ensure_equals(poClonedGlob->GetName(), oGlob.GetName());
+        ensure_equals(poClonedGlob->GetDescription(), oGlob.GetDescription());
+        ensure_equals(poClonedGlob->GetGlob(), oGlob.GetGlob());
+        ensure_equals(poClonedGlob->GetFieldType(), oGlob.GetFieldType());
+        ensure_equals(poClonedGlob->GetFieldSubType(), oGlob.GetFieldSubType());
+        ensure_equals(poClonedGlob->GetSplitPolicy(), oGlob.GetSplitPolicy());
+        ensure_equals(poClonedGlob->GetMergePolicy(), oGlob.GetMergePolicy());
+
+        // coded value domain
+        OGRCodedFieldDomain oCoded("name", "description", OGRFieldType::OFTString, OGRFieldSubType::OFSTBoolean, {OGRCodedValue()});
+        oCoded.SetMergePolicy(OGRFieldDomainMergePolicy::OFDMP_GEOMETRY_WEIGHTED);
+        oCoded.SetSplitPolicy(OGRFieldDomainSplitPolicy::OFDSP_GEOMETRY_RATIO);
+        std::unique_ptr< OGRCodedFieldDomain > poClonedCoded( oCoded.Clone() );
+        ensure_equals(poClonedCoded->GetName(), oCoded.GetName());
+        ensure_equals(poClonedCoded->GetDescription(), oCoded.GetDescription());
+        ensure_equals(poClonedCoded->GetFieldType(), oCoded.GetFieldType());
+        ensure_equals(poClonedCoded->GetFieldSubType(), oCoded.GetFieldSubType());
+        ensure_equals(poClonedCoded->GetSplitPolicy(), oCoded.GetSplitPolicy());
+        ensure_equals(poClonedCoded->GetMergePolicy(), oCoded.GetMergePolicy());
     }
 
 } // namespace tut
