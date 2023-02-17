@@ -141,49 +141,39 @@
 }
 
 
-
-%typemap(in,numinputs=0) (double argout[6], int* isvalid) ( double argout[6], int isvalid )
+%define TYPEMAP_IN_ARGOUT_ARRAY_IS_VALID(num_values)
+%typemap(in,numinputs=0) (double argout[num_values], int* isvalid) ( double argout[num_values], int isvalid )
 {
-  /* %typemap(in,numinputs=0) (double argout[6], int* isvalid) */
+  /* %typemap(in,numinputs=0) (double argout[num_values], int* isvalid) */
   $1 = argout;
   $2 = &isvalid;
 }
+%enddef
 
-%typemap(argout) (double argout[6], int* isvalid)
+%define TYPEMAP_ARGOUT_ARGOUT_ARRAY_IS_VALID(num_values)
+%typemap(argout) (double argout[num_values], int* isvalid)
 {
-   /* %typemap(argout) (double argout[6], int* isvalid)  */
+   /* %typemap(argout) (double argout[num_values], int* isvalid)  */
   PyObject *r;
   if ( !*$2 ) {
     Py_INCREF(Py_None);
     r = Py_None;
   }
   else {
-    r = CreateTupleFromDoubleArray($1, 6);
+    r = CreateTupleFromDoubleArray($1, num_values);
   }
   $result = t_output_helper($result,r);
 }
+%enddef
 
+TYPEMAP_IN_ARGOUT_ARRAY_IS_VALID(2)
+TYPEMAP_ARGOUT_ARGOUT_ARRAY_IS_VALID(2)
 
-%typemap(in,numinputs=0) (double argout[4], int* isvalid) ( double argout[6], int isvalid )
-{
-  /* %typemap(in) (double argout[4], int* isvalid) */
-  $1 = argout;
-  $2 = &isvalid;
-}
+TYPEMAP_IN_ARGOUT_ARRAY_IS_VALID(4)
+TYPEMAP_ARGOUT_ARGOUT_ARRAY_IS_VALID(4)
 
-%typemap(argout) (double argout[4], int* isvalid)
-{
-   /* %typemap(argout) (double argout[4], int* isvalid)  */
-  PyObject *r;
-  if ( !*$2 ) {
-    Py_INCREF(Py_None);
-    r = Py_None;
-  }
-  else {
-    r = CreateTupleFromDoubleArray($1, 4);
-  }
-  $result = t_output_helper($result,r);
-}
+TYPEMAP_IN_ARGOUT_ARRAY_IS_VALID(6)
+TYPEMAP_ARGOUT_ARGOUT_ARRAY_IS_VALID(6)
 
 
 /*
@@ -2199,6 +2189,31 @@ DecomposeSequenceOf4DCoordinates( PyObject *seq, int nCount, double *x, double *
     GDALPythonFreeCStr($1, bToFree$argnum);
 }
 
+%typemap(in) (const char *utf8_path_or_none) (int bToFree = 0)
+{
+    /* %typemap(in) (const char *utf8_path_or_none) */
+    if( $input == Py_None )
+    {
+        $1 = NULL;
+    }
+    else
+    {
+        $1 = GDALPythonObjectToCStr( $input, &bToFree );
+        if ($1 == NULL)
+        {
+            PyErr_SetString( PyExc_RuntimeError, "not a string" );
+            SWIG_fail;
+        }
+        }
+}
+
+%typemap(freearg)(const char *utf8_path_or_none)
+{
+    /* %typemap(freearg) (const char *utf8_path_or_none) */
+    if( $1 != NULL )
+        GDALPythonFreeCStr($1, bToFree$argnum);
+}
+
 /*
  * Typemap argout of StatBuf * used in VSIStatL( )
  */
@@ -2888,4 +2903,81 @@ OBJECT_LIST_INPUT(GDALEDTComponentHS)
     val = reinterpret_cast< OSRSpatialReferenceShadow * >(argp);
     $1 = &val;
   }
+}
+
+/***************************************************
+ * Typemaps for Layer.GetGeometryTypes()
+ ***************************************************/
+%typemap(in,numinputs=0) (OGRGeometryTypeCounter** ppRet, int* pnEntryCount) ( OGRGeometryTypeCounter* pRet = NULL, int nEntryCount = 0 )
+{
+  /* %typemap(in,numinputs=0) (OGRGeometryTypeCounter** ppRet, int* pnEntryCount) */
+  $1 = &pRet;
+  $2 = &nEntryCount;
+}
+
+%typemap(argout)  (OGRGeometryTypeCounter** ppRet, int* pnEntryCount)
+{
+  /* %typemap(argout)  (OGRGeometryTypeCounter** ppRet, int* pnEntryCount) */
+  Py_DECREF($result);
+  int nEntryCount = *($2);
+  OGRGeometryTypeCounter* pRet = *($1);
+  if( pRet == NULL )
+  {
+      PyErr_SetString( PyExc_RuntimeError, CPLGetLastErrorMsg() );
+      SWIG_fail;
+  }
+  $result = PyDict_New();
+  for(int i = 0; i < nEntryCount; ++ i)
+  {
+      PyObject *key = PyInt_FromLong( (int)(pRet[i].eGeomType) );
+      PyObject *val = PyLong_FromLongLong( pRet[i].nCount );
+      PyDict_SetItem($result, key, val );
+      Py_DECREF(key);
+      Py_DECREF(val);
+  }
+}
+
+%typemap(freearg)  (OGRGeometryTypeCounter** ppRet, int* pnEntryCount)
+{
+    /* %typemap(freearg)  (OGRGeometryTypeCounter** ppRet, int* pnEntryCount) */
+    VSIFree(*$1);
+}
+
+/***************************************************
+ * Typemaps for Layer.GetSupportedSRSList()
+ ***************************************************/
+%typemap(in,numinputs=0) (OGRSpatialReferenceH** ppRet, int* pnEntryCount) ( OGRSpatialReferenceH* pRet = NULL, int nEntryCount = 0 )
+{
+  /* %typemap(in,numinputs=0) (OGRSpatialReferenceH** ppRet, int* pnEntryCount) */
+  $1 = &pRet;
+  $2 = &nEntryCount;
+}
+
+%typemap(argout)  (OGRSpatialReferenceH** ppRet, int* pnEntryCount)
+{
+  /* %typemap(argout)  (OGRSpatialReferenceH** ppRet, int* pnEntryCount) */
+  Py_DECREF($result);
+  int nEntryCount = *($2);
+  OGRSpatialReferenceH* pRet = *($1);
+  if( nEntryCount == 0)
+  {
+    Py_INCREF(Py_None);
+    $result = Py_None;
+  }
+  else
+  {
+    $result = PyList_New(nEntryCount);
+    for(int i = 0; i < nEntryCount; ++ i)
+    {
+      OSRReference(pRet[i]);
+      PyList_SetItem($result, i, SWIG_NewPointerObj(
+          SWIG_as_voidptr(pRet[i]),SWIGTYPE_p_OSRSpatialReferenceShadow, SWIG_POINTER_OWN) );
+    }
+  }
+}
+
+%typemap(freearg)  (OGRSpatialReferenceH** ppRet, int* pnEntryCount)
+{
+    /* %typemap(freearg)  (OGRSpatialReferenceH** ppRet, int* pnEntryCount) */
+    OSRFreeSRSArray(*$1);
 }

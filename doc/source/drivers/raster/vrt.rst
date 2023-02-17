@@ -50,6 +50,25 @@ This tutorial will cover the .vrt file format (suitable for users editing
 .vrt files), and how .vrt files may be created and manipulated programmatically
 for developers.
 
+Creation options
+----------------
+
+The following creations options are supported:
+
+-  **BLOCKXSIZE=n**: (GDAL >= 3.7) Sets block width.
+
+-  **BLOCKYSIZE=n**: (GDAL >= 3.7) Sets block height.
+
+Setting explicitly the block size is an advanced setting that should only be
+used, when the user has determined that it is needed. By default the block size
+is set to:
+
+- 128x128 for a source-based VRT raster band. Unless the VRT is made of a single
+  source and this single source is not subsetted, in which case the block size of
+  the unique source will be set as the VRT raster band block size)
+
+- 512x128 for a warped VRT.
+
 .vrt Format
 -----------
 
@@ -853,7 +872,7 @@ GDAL provides a set of default pixel functions that can be used without writing 
    * - **div**
      - 2
      - -
-     - divide one rasted band by another (``b1 / b2``)
+     - divide one raster band by another (``b1 / b2``)
    * - **exp**
      - 1
      - ``base`` (optional), ``fact`` (optional)
@@ -1075,8 +1094,8 @@ The signature of the Python pixel function must have the following arguments:
 - **yoff** line offset to the top left corner of the accessed region of the band. Generally not needed.
 - **xsize**: width of the region of the accessed region of the band. Can be used together with out_ar.shape[1] to determine the horizontal resampling ratio of the request.
 - **ysize**: height of the region of the accessed region of the band. Can be used together with out_ar.shape[0] to determine the vertical resampling ratio of the request.
-- **raster_xsize**: total with of the raster band. Generally not needed.
-- **raster_ysize**: total with of the raster band. Generally not needed.
+- **raster_xsize**: total width of the raster band. Generally not needed.
+- **raster_ysize**: total height of the raster band. Generally not needed.
 - **buf_radius**: radius of the buffer (in pixels) added to the left, right, top and bottom of in_ar / out_ar. This is the value of the optional BufferRadius element that can be set so that the original pixel request is extended by a given amount of pixels.
 - **gt**: geotransform. Array of 6 double values.
 - **kwargs**: dictionary with user arguments defined in PixelFunctionArguments
@@ -1261,17 +1280,17 @@ is loaded in the current process (which is the case if the program is a Python
 interpreter itself, or if another program, e.g. QGIS, has already loaded the
 CPython library). Otherwise it will look if the :decl_configoption:`PYTHONSO` configuration option is
 defined. This option can be set to point to the name of the Python library to
-use, either as a shortname like "libpython2.7.so" if it is accessible through
+use, either as a shortname like "libpython3.10.so" if it is accessible through
 the Linux dynamic loader (so typically in one of the paths in /etc/ld.so.conf or
-LD_LIBRARY_PATH) or as a full path name like "/usr/lib/x86_64-linux-gnu/libpython2.7.so".
-The same holds on Windows will shortnames like "python27.dll" if accessible through
-the PATH or full path names like "c:\\python27\\python27.dll". If the :decl_configoption:`PYTHONSO`
+LD_LIBRARY_PATH) or as a full path name like "/usr/lib/x86_64-linux-gnu/libpython3.10.so".
+The same holds on Windows will shortnames like "python310.dll" if accessible through
+the PATH or full path names like "c:\\python310\\python310.dll". If the :decl_configoption:`PYTHONSO`
 configuration option is not defined, it will look for a "python" binary in the
 directories of the PATH and will try to determine the related shared object
 (it will retry with "python3" if no "python" has been found). If the above
 was not successful, then a predefined list of shared objects names
-will be tried. At the time of writing, the order of versions searched is 2.7,
-3.5, 3.6, 3.7, 3.8, 3.9, 3.4, 3.3, 3.2. Enabling debug information (CPL_DEBUG=ON) will
+will be tried. At the time of writing, the order of versions searched is
+3.8, 3.9, 3.10, 3.11, 3.12, 3.7, 3.6, 3.5, 3.4, 3.3, 3.2. Enabling debug information (CPL_DEBUG=ON) will
 show which Python version is used.
 
 Just-in-time compilation
@@ -1291,7 +1310,7 @@ Given the following :file:`mandelbrot.py` file :
         from numba import jit
         #print('Using numba')
         g_max_iterations = 100
-    except:
+    except Exception:
         class jit(object):
             def __init__(self, nopython = True, nogil = True):
                 pass
@@ -1607,18 +1626,63 @@ the dataset name since GDAL 3.1
 
     vrt://{path_to_gdal_dataset}?[bands=num1,...,numN]
 
+::
+
+    vrt://{path_to_gdal_dataset}?[a_srs=srs_def]
+
+::
+
+    vrt://{path_to_gdal_dataset}?[a_ullr=ulx,uly,lrx,lry]
+
+
 For example:
 
 ::
 
     vrt://my.tif?bands=3,2,1
 
-The only supported option currently is bands. Other may be added in the future.
+::
 
-The effect of this option is to change the band composition. The values specified
+    vrt://my.tif?a_srs=OGC:CRS84
+
+::
+
+    vrt://my.tif?a_ullr=0,1,1,-1
+
+
+The supported options currently are ``bands``, ``a_srs`` and ``a_ullr``. Other options may be
+added in the future.
+
+The effect of the ``bands`` option is to change the band composition. The values specified
 are the source band numbers (between 1 and N), possibly out-of-order or with repetitions.
 The ``mask`` value can be used to specify the global mask band. This can also
 be seen as an equivalent of running `gdal_translate -of VRT -b num1 ... -b numN`.
+
+The effect of the ``a_srs`` option (added in GDAL 3.7) is to assign (override) the coordinate
+reference system of the source in the same way as (:ref:`gdal_translate`), it may be missing,
+or incorrect. The value provided for ``a_srs`` may be a string or a file containing a srs
+definition.
+
+The effect of the ``a_ullr`` option (added in GDAL 3.7) is to assign (override) the georeferenced
+bounds of the source in the same way as (:ref:`gdal_translate`). The value consists of four numeric
+values separated by commas, in the order 'xmin,ymax,xmax,ymin' (upper left x,y, lower right x,y).
+
+The options may be chained together separated by '&'. (Beware the need for quoting to protect
+the ampersand).
+
+::
+
+    "vrt://my.tif?a_srs=OGC:CRS84&bands=2,1&a_ullr=-180,90,180,-90"
+
+
+
+Multi-threading optimizations
+-----------------------------
+
+Starting with GDAL 3.6, the ComputeStatistics() implementation can benefit from
+multi-threading if the sources are not overlapping and belong to different
+datasets. This can be enabled by setting the :decl_configoption:`GDAL_NUM_THREADS`
+configuration option to an integer or ``ALL_CPUS``.
 
 Multi-threading issues
 ----------------------
@@ -1659,6 +1723,12 @@ configuration option to a bigger value. Note that a typical user process on
 Linux is limited to 1024 simultaneously opened files, and you should let some
 margin for shared libraries, etc...
 gdal_translate and gdalwarp, by default, increase the pool size to 450.
+
+Starting with GDAL 3.7, the :decl_configoption:`GDAL_MAX_DATASET_POOL_RAM_USAGE`
+configuration option to a number of bytes, to limit the RAM usage of opened
+datasets in the pool. The value can also be suffixed with ``MB`` or ``GB`` to
+respectively express it in megabytes or gigabytes. The default value is 25%
+of the usable physical RAM minus the GDAL_CACHEMAX value.
 
 Driver capabilities
 -------------------

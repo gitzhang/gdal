@@ -64,7 +64,7 @@ Geodatabases created with ArcGIS 10 or above)
 
 The "CREATE INDEX idx_name ON layer_name(field_name)" SQL request can be
 used to create an attribute index. idx_name must have 16 characters or less,
-start with a letter and contain only alpha-numeric characters or underscore.
+start with a letter and contain only alphanumeric characters or underscore.
 
 The "RECOMPUTE EXTENT ON layer_name" SQL request can be used to trigger
 an update of the layer extent in layer metadata. This is useful when updating
@@ -139,7 +139,7 @@ Layer Creation Options
    -  ZORIGIN and MORIGIN: -100000
    -  ZSCALE and MSCALE: 10000
 
--  **COLUMN_TYPES**\=string. A list of strings of format field_name=fgdb_filed_type
+-  **COLUMN_TYPES**\=string. A list of strings of format field_name=fgdb_field_type
    (separated by comma) to force the FileGDB column type of fields to be created.
 
 -  **DOCUMENTATION**\=string. XML documentation for the layer.
@@ -164,6 +164,13 @@ Field domains
 .. versionadded:: 3.3
 
 Coded and range field domains are supported.
+
+Relationships
+-------------
+
+.. versionadded:: 3.6
+
+Relationship retrieval, creation, deletion and updating is supported.
 
 Hiearchical organization
 ------------------------

@@ -141,7 +141,7 @@ CWD=${PWD}
 #
 echo "* Generating man pages..."
 
-(cd doc; make man)
+(cd doc; SPHINXOPTS='--keep-going -j auto' make man)
 mkdir -p man/man1
 cp doc/build/man/*.1 man/man1
 rm -rf doc/build
@@ -156,6 +156,9 @@ cd "$CWD"
 echo "* Cleaning doc/ and perftests/ under $CWD..."
 rm -rf doc
 rm -rf perftests
+
+echo "* Update swig/python/extensions timestamps"
+touch swig/python/extensions/*
 
 #
 # Make distribution packages
@@ -177,7 +180,7 @@ zip -qr "../gdal${COMPRESSED_VERSION}${RC}.zip" "gdal-${GDAL_VERSION}"
 
 rm -f "../gdalautotest-${GDAL_VERSION}${RC}.tar.gz"
 rm -f "../gdalautotest-${GDAL_VERSION}${RC}.zip"
-tar cf "../gdalautotest-${GDAL_VERSION}${RC}.tar.gz" "gdalautotest-${GDAL_VERSION}"
+tar czf "../gdalautotest-${GDAL_VERSION}${RC}.tar.gz" "gdalautotest-${GDAL_VERSION}"
 zip -qr "../gdalautotest-${GDAL_VERSION}${RC}.zip" "gdalautotest-${GDAL_VERSION}"
 
 echo "* Generating MD5 sums ..."

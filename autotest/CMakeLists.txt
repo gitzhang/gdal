@@ -22,7 +22,11 @@ if (Python_Interpreter_FOUND)
   # Set TEST_ENV that goes into pytest.ini
 
   # Set GDAL_DATA
-  file(TO_NATIVE_PATH "${PROJECT_SOURCE_DIR}/data" GDAL_DATA)
+  if(WIN32)
+      file(TO_NATIVE_PATH "${PROJECT_SOURCE_DIR}/data" GDAL_DATA)
+  else()
+      set(GDAL_DATA "${PROJECT_SOURCE_DIR}/data")
+  endif()
   set(_TEST_ENV GDAL_DATA=${GDAL_DATA})
 
   if (GDAL_DOWNLOAD_TEST_DATA)
@@ -41,12 +45,10 @@ if (Python_Interpreter_FOUND)
   string(REPLACE ";" "\n   " TEST_ENV "${_TEST_ENV}")
 
   set(AUTOTEST_LOG_FILE "${CMAKE_CURRENT_BINARY_DIR}/autotest.log")
-  if ("${CMAKE_BINARY_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}" AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/pytest.ini)
-    # FIXME: remove this branch if we remove pytest.ini from source tree
-  else()
-    configure_file(${GDAL_CMAKE_TEMPLATE_PATH}/pytest.ini.in ${CMAKE_CURRENT_BINARY_DIR}/pytest.ini @ONLY)
-    file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/conftest.py DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
-  endif()
+  set(PYTEST_INI_HEADER_MESSAGE "This file was generated from ${GDAL_CMAKE_TEMPLATE_PATH}/pytest.ini.in using ${CMAKE_CURRENT_LIST_FILE}")
+  configure_file(${GDAL_CMAKE_TEMPLATE_PATH}/pytest.ini.in ${CMAKE_CURRENT_BINARY_DIR}/pytest.ini @ONLY)
+  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/conftest.py ${CMAKE_CURRENT_BINARY_DIR}/conftest.py COPYONLY)
+  unset(PYTEST_INI_HEADER_MESSAGE)
 
   function (symlink_or_copy source destination)
 
@@ -70,14 +72,14 @@ if (Python_Interpreter_FOUND)
 
   endfunction ()
 
-  # Needed for a autotest/osr test
   if (NOT "${CMAKE_BINARY_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}")
-      symlink_or_copy(${CMAKE_CURRENT_SOURCE_DIR}/cpp/data ${CMAKE_CURRENT_BINARY_DIR}/cpp/data)
-      if (SKIP_COPYING_AUTOTEST_SUBDIRS)
-        message(STATUS "Skipping copying ${CMAKE_CURRENT_SOURCE_DIR}/pymod")
-      else ()
-        symlink_or_copy(${CMAKE_CURRENT_SOURCE_DIR}/pymod ${CMAKE_CURRENT_BINARY_DIR}/pymod)
-      endif ()
+      foreach (subdir IN ITEMS pymod proj_grids cpp/data)
+          if (SKIP_COPYING_AUTOTEST_SUBDIRS)
+            message(STATUS "Skipping copying ${CMAKE_CURRENT_SOURCE_DIR}/${subdir}")
+          else ()
+            symlink_or_copy(${CMAKE_CURRENT_SOURCE_DIR}/${subdir} ${CMAKE_CURRENT_BINARY_DIR}/${subdir})
+          endif ()
+      endforeach ()
   endif()
 
   foreach (
@@ -160,4 +162,5 @@ int main(int argc, char **argv) {
       DEPENDS ${GDAL_LIB_TARGET_NAME} gdalapps python_binding pytest_runner
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
   endif ()
+
 endif ()

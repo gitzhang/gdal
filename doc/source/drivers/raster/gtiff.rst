@@ -57,18 +57,22 @@ file <raster.wld>` with the extension .tfw, .tifw/.tiffw or
 By default, information is fetched in following order (first listed is
 the most prioritary): PAM (Persistent Auxiliary metadata) .aux.xml
 sidecar file, INTERNAL (GeoTIFF keys and tags), TABFILE (.tab),
-WORLDFILE (.tfw, .tifw/.tiffw or .wld).
+WORLDFILE (.tfw, .tifw/.tiffw or .wld), XML (.xml)
 
 Starting with GDAL 2.2, the allowed sources and their priority order can
 be changed with the GDAL_GEOREF_SOURCES configuration option (or
 GEOREF_SOURCES open option) whose value is a comma-separated list of the
-following keywords : PAM, INTERNAL, TABFILE, WORLDFILE, NONE. First
-mentioned sources are the most prioritary over the next ones. A non
+following keywords : PAM, INTERNAL, TABFILE, WORLDFILE, XML (added in 3.7), NONE.
+First mentioned sources are the most prioritary over the next ones. A non
 mentioned source will be ignored.
 
 For example setting it to "WORLDFILE,PAM,INTERNAL" will make a
 geotransformation matrix from a potential worldfile prioritary over PAM
 or GeoTIFF.
+
+Minimum support for extracting the CRS from ESRI .xml side car files has been
+added in GDAL 3.7, using the metadata.refSysInfo.RefSystem.refSysID.identCode.code
+CRS code.
 
 GDAL can read and write the *RPCCoefficientTag* as described in the
 `RPCs in GeoTIFF <http://geotiff.maptools.org/rpc_prop.html>`__ proposed
@@ -303,6 +307,10 @@ Open options
    multi-threaded compression by specifying the number of worker
    threads. Worth it for slow compression algorithms such as DEFLATE or
    LZMA. Default is compression in the main thread.
+   Starting with GDAL 3.6, this option also enables multi-threaded decoding
+   when RasterIO() requests intersect several tiles/strips.
+   The :decl_configoption:`GDAL_NUM_THREADS` configuration option can also
+   be used as an alternative to setting the open option.
 
 -  **GEOREF_SOURCES=string**: (GDAL > 2.2) Define which georeferencing
    sources are allowed and their priority order. See
@@ -366,11 +374,11 @@ Creation Options
 -  **TILED=YES**: By default striped TIFF files are created. This
    option can be used to force creation of tiled TIFF files.
 
--  **BLOCKXSIZE=n**: Sets tile width, defaults to 256.
+-  **BLOCKXSIZE=n**: Sets tile width, defaults to 256. Must be divisible by 16.
 
 -  **BLOCKYSIZE=n**: Set tile or strip height. Tile height defaults to
    256, strip height defaults to a value such that one strip is 8K or
-   less.
+   less. Must be divisible by 16 when TILED=YES.
 
 -  **NBITS=n**: Create a file with less than 8 bits per sample by
    passing a value from 1 to 7. The apparent pixel type should be Byte.
@@ -407,8 +415,8 @@ Creation Options
    * ``LERC_ZSTD`` is available when ``LERC`` and ``ZSTD`` are available.
 
    * ``JXL`` is for JPEG-XL, and is only available when using internal libtiff and building GDAL against
-     https://github.com/libjxl/libjxl . JXL compression may only be used alongside ``INTERLEAVE=PIXEL``
-     (the default) on datasets with 4 bands or less.
+     https://github.com/libjxl/libjxl . For GDAL < 3.6.0, JXL compression may only be used alongside
+     ``INTERLEAVE=PIXEL`` (the default) on datasets with 4 bands or less.
 
    * ``NONE`` is the default.
 
@@ -487,7 +495,9 @@ Creation Options
 
 -  **JXL_LOSSLESS=YES/NO**: Set whether JPEG-XL compression should be lossless
    (YES, default) or lossy (NO). For lossy compression, the underlying data
-   should be either gray, gray+alpha, rgb or rgb+alpha.
+   should be either gray, gray+alpha, rgb or rgb+alpha. For lossy compression,
+   the pixel data should span the whole range of the underlying pixel type (i.e.
+   0-255 for Byte, 0-65535 for UInt16)
 
 -  **JXL_EFFORT=[1-9]**: Level of effort for JPEG-XL compression.
    The higher, the smaller file and slower compression time. Default is 5.
@@ -548,6 +558,8 @@ Creation Options
 
 -  **PIXELTYPE=[DEFAULT/SIGNEDBYTE]**: By setting this to SIGNEDBYTE, a
    new Byte file can be forced to be written as signed byte.
+   Starting with GDAL 3.7, this option is deprecated and Int8 should rather
+   be used.
 
 -  **COPY_SRC_OVERVIEWS=[YES/NO]**: (CreateCopy() only)
    By setting this to YES (default is NO), the potential existing
@@ -733,7 +745,7 @@ the default behavior of the GTiff driver.
 -  :decl_configoption:`ESRI_XML_PAM` : Can be set to TRUE to force metadata in the xml:ESRI
    domain to be written to PAM.
 -  :decl_configoption:`COMPRESS_OVERVIEW` :  See `Creation Options COMPRESS <#creation-options>`__ section.
-   Set the compression type to use for overviews
+   Set the compression type to use for overviews. For internal overviews, only honoured since GDAL 3.6
 -  :decl_configoption:`PHOTOMETRIC_OVERVIEW` :  YCBCR
    Set the photometric color space for overview creation
 -  :decl_configoption:`PREDICTOR_OVERVIEW` : Integer 1,2 or 3.
@@ -742,6 +754,8 @@ the default behavior of the GTiff driver.
    Quality of JPEG compressed overviews, either internal or external.
 -  :decl_configoption:`WEBP_LEVEL_OVERVIEW` : Integer between 1 and 100. Default value: 75.
    WEBP quality level of overviews, either internal or external.
+-  :decl_configoption:`WEBP_LOSSLESS_OVERVIEW` : Boolean value (YES/NO). Default value: NO.
+   Whether WEBP compression is lossless or not. Added in GDAL 3.6
 -  :decl_configoption:`ZLEVEL_OVERVIEW` : Integer between 1 and 9 (or 12 when libdeflate is used). Default value: 6.
    Deflate compression level of overviews, for COMPRESS_OVERVIEW=DEFLATE or LERC_DEFLATE, either internal or external.
    Added in GDAL 3.4.1
@@ -800,7 +814,7 @@ the default behavior of the GTiff driver.
    GTIFF_VIRTUAL_MEM_IO and GTIFF_DIRECT_IO are enabled, the former is
    used in priority, and if not possible, the later is tried.
 -  :decl_configoption:`GDAL_GEOREF_SOURCES` =comma-separated list with one or several of PAM,
-   INTERNAL, TABFILE or WORLDFILE. (GDAL >= 2.2). See
+   INTERNAL, TABFILE, WORLDFILE or XML (XML added in 3.7). (GDAL >= 2.2). See
    `Georeferencing <#georeferencing>`__ paragraph.
 -  :decl_configoption:`GDAL_NUM_THREADS` =number_of_threads/ALL_CPUS: (GDAL >= 2.1) Enable
    multi-threaded compression by specifying the number of worker
@@ -808,6 +822,8 @@ the default behavior of the GTiff driver.
    LZMA. Will be ignored for JPEG. Default is compression in the main
    thread. Note: this configuration option also apply to other parts to
    GDAL (warping, gridding, ...).
+   Starting with GDAL 3.6, this option also enables multi-threaded decoding
+   when RasterIO() requests intersect several tiles/strips.
 -  :decl_configoption:`GTIFF_WRITE_TOWGS84` =AUTO/YES/NO: (GDAL >= 3.0.3). When set to AUTO, a
    GeogTOWGS84GeoKey geokey will be written with TOWGS84 3 or 7-parameter
    Helmert transformation, if the CRS has no EPSG code attached to it, or if
@@ -816,6 +832,53 @@ the default behavior of the GTiff driver.
    If set to YES, then the TOWGS84 transformation attached to the CRS will be
    always written. If set to NO, then the transformation will not be written in
    any situation.
+
+
+Codec Recommendations
+---------------------
+
+
+LZW
+~~~
+
+If you don't know what to choose, choose this one.
+
+DEFLATE
+~~~~~~~
+
+The most commonly supported TIFF codec, especially with older non-geo software.
+
+LERC
+~~~~
+
+Used for storing quantized floating point data. https://github.com/esri/lerc
+
+
+ZSTD
+~~~~
+
+Smaller and faster than DEFLATE, but not as commonly supported.
+
+WEBP
+~~~~
+
+A smaller and faster JPEG.
+
+JXL
+~~~
+
+Next-gen JPG from the JPG group.
+
+
+LZMA
+~~~~
+
+Slow but storage efficient.
+
+CCITTRLE/CCITTFAX3/CCITTFAX4
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Did you happen to have fax files from the 1990s? Use these.
 
 See Also
 --------

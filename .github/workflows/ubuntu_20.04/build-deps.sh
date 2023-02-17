@@ -115,12 +115,12 @@ mkdir geos \
     && rm -rf geos
 
 # Install pdfium
-wget -q https://github.com/rouault/pdfium_build_gdal_3_5/releases/download/v1_pdfium_5106/install-ubuntu2004-rev5106.tar.gz \
-  && tar -xzf install-ubuntu2004-rev5106.tar.gz \
+wget -q https://github.com/rouault/pdfium_build_gdal_3_7/releases/download/pdfium_5461_v1/install-ubuntu2004-rev5461.tar.gz \
+  && tar -xzf install-ubuntu2004-rev5461.tar.gz \
   && chown -R root:root install \
   && mv install/lib/* /usr/lib/ \
   && mv install/include/* /usr/include/ \
-  && rm -rf install-ubuntu2004-rev5106.tar.gz install \
+  && rm -rf install-ubuntu2004-rev5461.tar.gz install \
   && apt-get update -y \
   && apt-get install -y --fix-missing --no-install-recommends liblcms2-dev \
   && rm -rf /var/lib/apt/lists/*
@@ -136,11 +136,16 @@ curl -v -j -k -s -L -H "Cookie: eula_3_1_agreed=tools.hana.ondemand.com/develope
 export PATH=/usr/sap/hdbclient:$PATH
 
 # Download and compile odbc-cpp-wrapper
-git clone https://github.com/SAP/odbc-cpp-wrapper.git \
+ODBCCPP_VERSION=1.1
+mkdir odbc-cpp-wrapper \
+  && wget -q https://github.com/SAP/odbc-cpp-wrapper/archive/refs/tags/v${ODBCCPP_VERSION}.tar.gz -O - \
+      | tar xz -C odbc-cpp-wrapper --strip-components=1 \
   && mkdir odbc-cpp-wrapper/build \
   && cd odbc-cpp-wrapper/build \
   && cmake .. \
   && make -j 2 \
-  && make install
+  && make install \
+  && cd ../.. \
+  && rm -rf odbc-cpp-wrapper
 
 ldconfig

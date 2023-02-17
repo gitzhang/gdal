@@ -53,7 +53,7 @@ function (gdal_check_target_is_valid target res_var)
     # geotiff-config.cmake of GeoTIFF 1.7.0 doesn't define a INTERFACE_INCLUDE_DIRECTORIES
     # property, but a GeoTIFF_INCLUDE_DIRS variable.
     set_target_properties(${target} PROPERTIES
-                          INTERFACE_INCLUDE_DIRECTORIES ${GeoTIFF_INCLUDE_DIRS})
+                          INTERFACE_INCLUDE_DIRECTORIES "${GeoTIFF_INCLUDE_DIRS}")
   else()
      message(WARNING "Target ${target} has no INTERFACE_INCLUDE_DIRECTORIES property. Ignoring that target.")
      set(${res_var} FALSE PARENT_SCOPE)
@@ -109,8 +109,9 @@ macro (gdal_check_package name purpose)
   string(TOUPPER ${name} key)
   set(_find_dependency "")
   set(_find_dependency_args "")
-  find_package2(${name} QUIET OUT_DEPENDENCY _find_dependency)
-  if (NOT DEFINED ${key}_FOUND)
+  if(FIND_PACKAGE2_${name}_ENABLED)
+    find_package2(${name} QUIET OUT_DEPENDENCY _find_dependency)
+  else()
     set(_find_package_args)
     if (_GCP_VERSION)
       list(APPEND _find_package_args ${_GCP_VERSION})
@@ -260,7 +261,7 @@ gdal_check_package(MSSQL_ODBC "MSSQL ODBC driver to enable bulk copy" CAN_DISABL
 gdal_check_package(MySQL "MySQL" CAN_DISABLE)
 
 # basic libraries
-gdal_check_package(CURL "Enable drivers to use web API" CAN_DISABLE)
+gdal_check_package(CURL "Enable drivers to use web API" CAN_DISABLE RECOMMENDED)
 
 gdal_check_package(Iconv "Character set recoding (used in GDAL portability library)" CAN_DISABLE)
 if (Iconv_FOUND)
@@ -393,6 +394,38 @@ if (GDAL_USE_JPEG AND (JPEG_LIBRARY MATCHES ".*turbojpeg\.(so|lib)"))
       "JPEG_LIBRARY should point to a library with libjpeg ABI, not TurboJPEG. See https://libjpeg-turbo.org/About/TurboJPEG for the difference"
     )
 endif ()
+if (TARGET JPEG::JPEG)
+  set(EXPECTED_JPEG_LIB_VERSION "" CACHE STRING "Expected libjpeg version number")
+  mark_as_advanced(GDAL_CHECK_PACKAGE_${name}_NAMES)
+  if (EXPECTED_JPEG_LIB_VERSION)
+    get_property(_jpeg_old_icd TARGET JPEG::JPEG PROPERTY INTERFACE_COMPILE_DEFINITIONS)
+    set_property(TARGET JPEG::JPEG PROPERTY
+                 INTERFACE_COMPILE_DEFINITIONS "${_jpeg_old_icd};EXPECTED_JPEG_LIB_VERSION=${EXPECTED_JPEG_LIB_VERSION}")
+  endif()
+
+  # Check for jpeg12_read_scanlines() which has been added in libjpeg-turbo 2.2
+  # for dual 8/12 bit mode.
+  include(CheckCSourceCompiles)
+  include(CMakePushCheckState)
+  cmake_push_check_state(RESET)
+  set(CMAKE_REQUIRED_INCLUDES "${JPEG_INCLUDE_DIRS}")
+  set(CMAKE_REQUIRED_LIBRARIES "${JPEG_LIBRARIES}")
+  check_c_source_compiles(
+      "
+      #include <stddef.h>
+      #include <stdio.h>
+      #include \"jpeglib.h\"
+      int main()
+      {
+          jpeg_read_scanlines(0,0,0);
+          jpeg12_read_scanlines(0,0,0);
+          return 0;
+      }
+      "
+      HAVE_JPEGTURBO_DUAL_MODE_8_12)
+  cmake_pop_check_state()
+
+endif()
 gdal_internal_library(JPEG)
 
 gdal_check_package(GIF "GIF compression library (external)" CAN_DISABLE)
@@ -436,9 +469,9 @@ if( NOT WORDS_BIGENDIAN )
   gdal_internal_library(LERC)
 endif()
 
-gdal_check_package(BRUNSLI "Enable BRUNSLI for JPEG packing in MRF" CAN_DISABLE RECOMMENDED)
+gdal_check_package(BRUNSLI "Enable BRUNSLI for JPEG packing in MRF" CAN_DISABLE)
 
-gdal_check_package(libQB3 "Enable QB3 compression in MRF" CONFIG CAN_DISABLE RECOMMENDED)
+gdal_check_package(libQB3 "Enable QB3 compression in MRF" CONFIG CAN_DISABLE)
 
 # Disable by default the use of external shapelib, as currently the SAOffset member that holds file offsets in it is a
 # 'unsigned long', hence 32 bit on 32 bit platforms, whereas we can handle DBFs file > 4 GB. Internal shapelib has not
@@ -482,10 +515,23 @@ if (SQLite3_FOUND)
     if (NOT ACCEPT_MISSING_SQLITE3_RTREE)
       message(
         FATAL_ERROR
-          "${SQLite3_LIBRARIES} lacks the RTree extension! Spatialite and GPKG will not behave properly. Define ACCEPT_MISSING_SQLITE3_RTREE:BOOL=ON option if you want to build despite this limitation."
+          "${SQLite3_LIBRARIES} lacks the RTree extension! Spatialite and GPKG will not behave properly. Define the ACCEPT_MISSING_SQLITE3_RTREE:BOOL=ON CMake variable if you want to build despite this limitation."
         )
     else ()
       message(WARNING "${SQLite3_LIBRARIES} lacks the RTree extension! Spatialite and GPKG will not behave properly.")
+    endif ()
+  endif ()
+  if (NOT DEFINED SQLite3_HAS_MUTEX_ALLOC)
+    message(FATAL_ERROR "missing SQLite3_HAS_MUTEX_ALLOC")
+  endif ()
+  if (GDAL_USE_SQLITE3 AND NOT SQLite3_HAS_MUTEX_ALLOC)
+    if (NOT ACCEPT_MISSING_SQLITE3_MUTEX_ALLOC)
+      message(
+        FATAL_ERROR
+          "${SQLite3_LIBRARIES} lacks mutex support! Access to SQLite3 databases from multiple threads will be unsafe. Define the ACCEPT_MISSING_SQLITE3_MUTEX_ALLOC:BOOL=ON CMake variable if you want to build despite this limitation."
+        )
+    else ()
+      message(WARNING "${SQLite3_LIBRARIES} lacks the mutex extension! Access to SQLite3 databases from multiple threads will be unsafe")
     endif ()
   endif ()
 endif ()
@@ -531,6 +577,8 @@ define_find_package2(GTA gta/gta.h gta PKGCONFIG_NAME gta)
 gdal_check_package(GTA "Enable GTA driver" CAN_DISABLE)
 
 gdal_check_package(MRSID "MrSID raster SDK" CAN_DISABLE)
+
+set(GDAL_USE_ARMADILLO_OLD ${GDAL_USE_ARMADILLO})
 gdal_check_package(Armadillo "C++ library for linear algebra (used for TPS transformation)" CAN_DISABLE)
 if (ARMADILLO_FOUND)
   # On Conda, the armadillo package has no dependency on lapack, but the later is required for successful linking. So
@@ -577,16 +625,43 @@ if (ARMADILLO_FOUND)
       cmake_pop_check_state()
     endif ()
   endif ()
-  if (NOT ARMADILLO_TEST_PROGRAM_WITHOUT_LAPACK_COMPILES AND NOT ARMADILLO_TEST_PROGRAM_WITH_LAPACK_COMPILES)
-    message(WARNING "Armadillo found, but test program does not build. Disabling it.")
+
+  if (GDAL_USE_ARMADILLO AND
+      NOT ARMADILLO_TEST_PROGRAM_WITHOUT_LAPACK_COMPILES AND
+      NOT ARMADILLO_TEST_PROGRAM_WITH_LAPACK_COMPILES)
     if (DEFINED ENV{CONDA_PREFIX})
-      message(
-        WARNING
-          "To enable Armadillo, you may need to install the following Conda-Forge packages: blas blas-devel libblas libcblas liblapack liblapacke"
-        )
+        if (GDAL_USE_ARMADILLO_OLD)
+          message(FATAL_ERROR
+              "Armadillo found, but test program does not build. To enable Armadillo, you may need to install the following Conda-Forge packages: blas blas-devel libblas libcblas liblapack liblapacke")
+        else()
+          message(WARNING
+              "Armadillo found, but test program does not build. Disabling it. To enable Armadillo, you may need to install the following Conda-Forge packages: blas blas-devel libblas libcblas liblapack liblapacke")
+        endif()
+    else ()
+        if (GDAL_USE_ARMADILLO_OLD)
+          message(FATAL_ERROR "Armadillo found, but test program does not build.")
+        else()
+          message(WARNING
+              "Armadillo found, but test program does not build. Disabling it.")
+        endif()
     endif ()
-    set(GDAL_USE_ARMADILLO CACHE BOOL OFF FORCE)
+    unset(GDAL_USE_ARMADILLO CACHE)
+    unset(GDAL_USE_ARMADILLO)
   endif ()
+
+  # LAPACK support required for arma::solve()
+  if (GDAL_USE_ARMADILLO AND EXISTS "${ARMADILLO_INCLUDE_DIRS}/armadillo_bits/config.hpp")
+      file(READ "${ARMADILLO_INCLUDE_DIRS}/armadillo_bits/config.hpp" armadillo_config)
+      if ("${armadillo_config}" MATCHES "/\\* #undef ARMA_USE_LAPACK")
+          if (GDAL_USE_ARMADILLO_OLD)
+              message(FATAL_ERROR "Armadillo build lacks LAPACK support")
+          else()
+              message(WARNING "Armadillo build lacks LAPACK support. Disabling it as it cannot be used by GDAL")
+          endif()
+          unset(GDAL_USE_ARMADILLO CACHE)
+          unset(GDAL_USE_ARMADILLO)
+      endif()
+  endif()
 
 endif ()
 
@@ -621,6 +696,9 @@ set(LIBLZMA_HAS_LZMA_PRESET 1)
 gdal_check_package(LibLZMA "LZMA compression" CAN_DISABLE)
 gdal_check_package(LZ4 "LZ4 compression" CAN_DISABLE)
 gdal_check_package(Blosc "Blosc compression" CAN_DISABLE)
+
+define_find_package2(ARCHIVE archive.h archive)
+gdal_check_package(ARCHIVE "Multi-format archive and compression library library (used for /vsi7z/" CAN_DISABLE)
 
 define_find_package2(JXL jxl/decode.h jxl PKGCONFIG_NAME libjxl)
 gdal_check_package(JXL "JPEG-XL compression" CAN_DISABLE)
@@ -684,6 +762,8 @@ if (Arrow_FOUND)
     if (Parquet_FOUND AND NOT ArrowDataset_FOUND)
         message(WARNING "Parquet library found, but not ArrowDataset: partitioned datasets will not be supported")
     endif()
+    option(ARROW_USE_STATIC_LIBRARIES "Use statically built Arrow libraries" OFF)
+    mark_as_advanced(ARROW_USE_STATIC_LIBRARIES)
 endif()
 
 # bindings
@@ -696,9 +776,6 @@ set_package_properties(
   TYPE RECOMMENDED)
 
 # finding python in top of project because of common for autotest and bindings
-
-find_package(Perl)
-set_package_properties(Perl PROPERTIES PURPOSE "SWIG_PERL: Perl binding")
 
 find_package(JNI)
 find_package(Java COMPONENTS Runtime Development)

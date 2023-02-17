@@ -19,6 +19,7 @@ This driver also supports geometry columns using the GeoParquet specification.
 
 .. note:: The driver should be considered experimental as the GeoParquet specification is not finalized yet.
 
+The GeoParquet 1.0.0-beta1 specification is supported since GDAL 3.6.2
 
 Driver capabilities
 -------------------
@@ -38,9 +39,9 @@ The driver supports creating only a single layer in a dataset.
 Layer creation options
 ----------------------
 
-- **COMPRESSION=string**: Compression method. Can be one of ``NONE``, ``SNAPPY``,
-  ``GZIP``, ``BROTLI``, ``ZSTD``, ``LZ4``, ``BZ2``, ``LZ4_HADOOP``. Available
-  values depend on how the Parquet library was compiled.
+- **COMPRESSION=string**: Compression method. Can be one of ``NONE`` (or
+  ``UNCOMPRESSED``), ``SNAPPY``, ``GZIP``, ``BROTLI``, ``ZSTD``, ``LZ4_RAW``,
+  ``LZ4_HADOOP``. Available values depend on how the Parquet library was compiled.
   Defaults to SNAPPY when available, otherwise NONE.
 
 - **GEOMETRY_ENCODING=WKB/WKT/GEOARROW**: Geometry encoding. Defaults to WKB.
@@ -80,10 +81,29 @@ Dataset/partitioning read support
 ---------------------------------
 
 Starting with GDAL 3.6.0, the driver can read directories that contain several
-Parquet files, and expose them as a single layer. This support is only enable
+Parquet files, and expose them as a single layer. This support is only enabled
 if the driver is built against the ``arrowdataset`` C++ library.
 
 Note that no optimization is currently done regarding filtering.
+
+Multithreading
+--------------
+
+Starting with GDAL 3.6.0, the driver will use up to 4 threads for reading (or the
+maximum number of available CPUs returned by :cpp:func:`CPLGetNumCPUs()` if
+it is lower by 4). This number can be configured with the configuration option
+:decl_configoption:`GDAL_NUM_THREADS`, which can be set to an integer value or
+``ALL_CPUS``.
+
+Conda-forge package
+-------------------
+
+The driver can be installed as a plugin for the ``libgdal`` conda-forge package with:
+
+::
+
+    conda install -c conda-forge libgdal-arrow-parquet
+
 
 Links
 -----

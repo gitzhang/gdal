@@ -129,11 +129,17 @@ The photometric interpretation can be set with the :decl_configoption:`PHOTOMETR
 =RGB/YCBCR/... configuration option,
 and the interleaving with the :decl_configoption:`INTERLEAVE_OVERVIEW` =PIXEL/BAND configuration option.
 
+Since GDAL 3.6, :decl_configoption:`COMPRESS_OVERVIEW` and decl_configoption:`INTERLEAVE_OVERVIEW`
+are honoured when creating internal overviews of TIFF files.
+
 For JPEG compressed external and internal overviews, the JPEG quality can be set with
 ``--config JPEG_QUALITY_OVERVIEW value``.
 
 For WEBP compressed external and internal overviews, the WEBP quality level can be set with
 ``--config WEBP_LEVEL_OVERVIEW value``. If not set, will default to 75.
+
+For WEBP compressed external and internal overviews, the WEBP lossless/lossy switch can be set with
+``--config WEBP_LOSSLESS_OVERVIEW value``. If not set, will default to NO (lossy). Added in GDAL 3.6.0
 
 For LERC compressed external and internal overviews, the max error threshold can be set with
 ``--config MAX_Z_ERROR_OVERVIEW value``. If not set, will default to 0 (lossless). Added in GDAL 3.4.1
@@ -183,6 +189,15 @@ Example: ``--config GDAL_TIFF_OVR_BLOCKSIZE 256``
 Default value is 128, or starting with GDAL 3.1, if creating overviews on a tiled GeoTIFF file, the tile size of the full resolution image.
 Note: without this setting, the file can have the full resolution image with a blocksize different from overviews blocksize.(e.g. full resolution image at blocksize 256, overviews at blocksize 128)
 
+
+Nodata / source validity mask handling during resampling
+--------------------------------------------------------
+
+Invalid values in source pixels, either identified through a nodata value
+metadata set on the source band, a mask band, an alpha band will not be used
+during resampling.
+
+.. include:: nodata_handling_gdaladdo_gdal_translate.rst
 
 Multithreading
 --------------

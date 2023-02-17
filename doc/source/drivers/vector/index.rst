@@ -48,13 +48,14 @@ Vector drivers
    geojson
    geojsonseq
    georss
-   gmlas
    gml
+   gmlas
    gmt
    gpkg
    gpsbabel
    gpx
    grass
+   gtfs
    hana
    idb
    idrisi

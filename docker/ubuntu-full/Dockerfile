@@ -41,7 +41,7 @@ RUN . /buildscripts/bh-set-envvars.sh \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --fix-missing --no-install-recommends \
             build-essential ca-certificates \
             git make cmake wget unzip libtool automake \
-            zlib1g-dev${APT_ARCH_SUFFIX} libsqlite3-dev${APT_ARCH_SUFFIX} pkg-config sqlite3 libcurl4-gnutls-dev${APT_ARCH_SUFFIX} \
+            zlib1g-dev${APT_ARCH_SUFFIX} libsqlite3-dev${APT_ARCH_SUFFIX} pkg-config sqlite3 libcurl4-openssl-dev${APT_ARCH_SUFFIX} \
             libtiff5-dev${APT_ARCH_SUFFIX} \
     && rm -rf /var/lib/apt/lists/*
 
@@ -55,7 +55,7 @@ RUN . /buildscripts/bh-set-envvars.sh \
        libpng-dev${APT_ARCH_SUFFIX} libjpeg-dev${APT_ARCH_SUFFIX} libgif-dev${APT_ARCH_SUFFIX} liblzma-dev${APT_ARCH_SUFFIX} libgeos-dev${APT_ARCH_SUFFIX} \
        curl libxml2-dev${APT_ARCH_SUFFIX} libexpat-dev${APT_ARCH_SUFFIX} libxerces-c-dev${APT_ARCH_SUFFIX} \
        libnetcdf-dev${APT_ARCH_SUFFIX} libpoppler-dev${APT_ARCH_SUFFIX} libpoppler-private-dev${APT_ARCH_SUFFIX} \
-       libspatialite-dev${APT_ARCH_SUFFIX} swig ant libhdf4-alt-dev${APT_ARCH_SUFFIX} libhdf5-serial-dev${APT_ARCH_SUFFIX} \
+       libspatialite-dev${APT_ARCH_SUFFIX} librasterlite2-dev${APT_ARCH_SUFFIX} swig ant libhdf4-alt-dev${APT_ARCH_SUFFIX} libhdf5-serial-dev${APT_ARCH_SUFFIX} \
        libfreexl-dev${APT_ARCH_SUFFIX} unixodbc-dev${APT_ARCH_SUFFIX}  mdbtools-dev${APT_ARCH_SUFFIX} libwebp-dev${APT_ARCH_SUFFIX} \
        liblcms2-2 libpcre3-dev${APT_ARCH_SUFFIX} libcrypto++-dev${APT_ARCH_SUFFIX} libfyba-dev${APT_ARCH_SUFFIX} \
        libkml-dev${APT_ARCH_SUFFIX} libmysqlclient-dev${APT_ARCH_SUFFIX} libogdi-dev${APT_ARCH_SUFFIX} \
@@ -65,10 +65,11 @@ RUN . /buildscripts/bh-set-envvars.sh \
        libopenexr-dev${APT_ARCH_SUFFIX} libheif-dev${APT_ARCH_SUFFIX} \
        libdeflate-dev${APT_ARCH_SUFFIX} libblosc-dev${APT_ARCH_SUFFIX} liblz4-dev${APT_ARCH_SUFFIX} libbz2-dev${APT_ARCH_SUFFIX} \
        libbrotli-dev${APT_ARCH_SUFFIX} \
+       libarchive-dev${APT_ARCH_SUFFIX} \
     && rm -rf /var/lib/apt/lists/*
 
 # Build likbkea
-ARG KEA_VERSION=1.4.14
+ARG KEA_VERSION=1.4.15
 RUN . /buildscripts/bh-set-envvars.sh \
     && wget -q https://github.com/ubarsc/kealib/archive/kealib-${KEA_VERSION}.zip \
     && unzip -q kealib-${KEA_VERSION}.zip \
@@ -86,7 +87,7 @@ RUN . /buildscripts/bh-set-envvars.sh \
     && for i in /build_thirdparty/usr/bin/*; do strip -s $i 2>/dev/null || /bin/true; done
 
 # Build mongo-c-driver
-ARG MONGO_C_DRIVER_VERSION=1.21.1
+ARG MONGO_C_DRIVER_VERSION=1.22.1
 RUN . /buildscripts/bh-set-envvars.sh \
     && mkdir mongo-c-driver \
     && wget -q https://github.com/mongodb/mongo-c-driver/releases/download/${MONGO_C_DRIVER_VERSION}/mongo-c-driver-${MONGO_C_DRIVER_VERSION}.tar.gz -O - \
@@ -123,7 +124,7 @@ RUN . /buildscripts/bh-set-envvars.sh \
     && for i in /build_thirdparty/usr/bin/*; do strip -s $i 2>/dev/null || /bin/true; done
 
 # Build tiledb
-ARG TILEDB_VERSION=2.9.4
+ARG TILEDB_VERSION=2.11.0
 RUN . /buildscripts/bh-set-envvars.sh \
     && mkdir tiledb \
     && wget -q https://github.com/TileDB-Inc/TileDB/archive/${TILEDB_VERSION}.tar.gz -O - \
@@ -171,7 +172,7 @@ RUN . /buildscripts/bh-set-envvars.sh \
   && chown -R root:root FileGDB_API-RHEL7-64gcc83 \
   && mv FileGDB_API-RHEL7-64gcc83 /usr/local/FileGDB_API \
   && rm -rf /usr/local/FileGDB_API/lib/libstdc++* \
-  && cp /usr/local/FileGDB_API/lib/* /build_thirdparty/usr/lib \
+  && cp /usr/local/FileGDB_API/lib/* /build_thirdparty/usr/lib/x86_64-linux-gnu \
   && cp /usr/local/FileGDB_API/include/* /usr/include \
   && rm -rf FileGDB_API-RHEL7-64gcc83.tar.gz \
   ) ; fi
@@ -191,12 +192,12 @@ RUN . /buildscripts/bh-set-envvars.sh \
 
 ARG WITH_PDFIUM=yes
 RUN if echo "$WITH_PDFIUM" | grep -Eiq "^(y(es)?|1|true)$"  ; then ( \
-  wget -q https://github.com/rouault/pdfium_build_gdal_3_5/releases/download/v1_pdfium_5106/install-ubuntu2004-rev5106.tar.gz \
-  && tar -xzf install-ubuntu2004-rev5106.tar.gz \
+  wget -q https://github.com/rouault/pdfium_build_gdal_3_7/releases/download/pdfium_5461_v1/install-ubuntu2004-rev5461.tar.gz \
+  && tar -xzf install-ubuntu2004-rev5461.tar.gz \
   && chown -R root:root install \
   && mv install/lib/* /usr/lib/ \
   && mv install/include/* /usr/include/ \
-  && rm -rf install-ubuntu2004-rev5106.tar.gz install \
+  && rm -rf install-ubuntu2004-rev5461.tar.gz install \
   && apt-get update -y \
   && apt-get install -y --fix-missing --no-install-recommends liblcms2-dev${APT_ARCH_SUFFIX} \
   && rm -rf /var/lib/apt/lists/* \
@@ -227,7 +228,7 @@ RUN . /buildscripts/bh-set-envvars.sh \
     && wget https://apache.jfrog.io/artifactory/arrow/$(lsb_release --id --short | tr 'A-Z' 'a-z')/apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y -V ./apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb \
     && apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y -V libarrow-dev${APT_ARCH_SUFFIX} libparquet-dev${APT_ARCH_SUFFIX} libarrow-dataset-dev${APT_ARCH_SUFFIX} \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y -V libarrow-dev${APT_ARCH_SUFFIX}=10.0.1-1 libparquet-dev${APT_ARCH_SUFFIX}=10.0.1-1 libarrow-dataset-dev${APT_ARCH_SUFFIX}=10.0.1-1 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN apt-get update -y \
@@ -241,6 +242,12 @@ ARG WITH_DEBUG_SYMBOLS=no
 ARG PROJ_DATUMGRID_LATEST_LAST_MODIFIED
 ARG PROJ_INSTALL_PREFIX=/usr/local
 COPY ./bh-proj.sh /buildscripts/bh-proj.sh
+# We build PROJ a first time, just to build the projsync utility if grids need
+# to be refreshed. We will rebuild just afterwards, but depending on the
+# PROJ_VERSION argument
+# We want 2 separate steps for incremental builds where grids are refreshed
+# only when the content of cdn.proj.org has changed, independently if PROJ master
+# itself has changed.
 RUN . /buildscripts/bh-set-envvars.sh \
     && DESTDIR=/build_tmp_proj /buildscripts/bh-proj.sh \
      && LD_LIBRARY_PATH=/build_tmp_proj/usr/local/lib /build_tmp_proj/usr/local/bin/projsync --target-dir /tmp/proj_grids --all \
@@ -282,7 +289,7 @@ RUN apt-get update \
         libopenjp2-7 libcairo2 python3-numpy \
         libpng16-16 libjpeg-turbo8 libgif7 liblzma5 libgeos3.10.2 libgeos-c1v5 \
         libxml2 libexpat1 \
-        libxerces-c3.2 libnetcdf-c++4 netcdf-bin libpoppler118 libspatialite7 gpsbabel \
+        libxerces-c3.2 libnetcdf-c++4 netcdf-bin libpoppler118 libspatialite7 librasterlite2-1 gpsbabel \
         libhdf4-0-alt libhdf5-103 libhdf5-cpp-103 poppler-utils libfreexl1 unixodbc mdbtools libwebp7 \
         liblcms2-2 libpcre3 libcrypto++8 libfyba0 \
         libkmlbase1 libkmlconvenience1 libkmldom1 libkmlengine1 libkmlregionator1 libkmlxsd1 \
@@ -291,6 +298,7 @@ RUN apt-get update \
         libarmadillo10 libpython3.10 libopenexr25 libheif1 \
         libdeflate0 libblosc1 liblz4-1 \
         libbrotli1 \
+        libarchive13 \
         python-is-python3 \
     # Workaround bug in ogdi packaging
     && ln -s /usr/lib/ogdi/libvrf.so /usr/lib \
@@ -299,7 +307,7 @@ RUN apt-get update \
     && wget https://apache.jfrog.io/artifactory/arrow/$(lsb_release --id --short | tr 'A-Z' 'a-z')/apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y -V ./apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb \
     && apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y -V libarrow800 libparquet800 libarrow-dataset800 \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y -V libarrow1000 libparquet1000 libarrow-dataset1000 \
     && rm -rf /var/lib/apt/lists/*
 
 # Attempt to order layers starting with less frequently varying ones

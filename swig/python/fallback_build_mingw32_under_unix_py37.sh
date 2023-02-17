@@ -22,7 +22,7 @@ LINKFLAGS="-L../../build -lgdal -L${PYTHONHOME}/libs -l${PYTHONLIB}"
 CFLAGS="-O2 -D__MSVCRT_VERSION__=0x0601"
 
 # Run native python
-wine "$PYTHONHOME/python" setup.py build
+wine "$PYTHONHOME/python" setup_fallback_mingw.py build
 
 # Determine OUTDIR
 if test -d build/lib.win32-3.7; then
@@ -46,6 +46,6 @@ ${CXX} ${CFLAGS} -std=c++11 extensions/osr_wrap.cpp -shared -o ${OUTDIR}/_osr.py
 ${CXX} ${CFLAGS} -std=c++11 extensions/gnm_wrap.cpp -shared -o ${OUTDIR}/_gnm.pyd ${INCFLAGS} ${LINKFLAGS}
 ${CXX} ${CFLAGS} -std=c++11 extensions/gdalconst_wrap.c -shared -o ${OUTDIR}/_gdalconst.pyd ${INCFLAGS} ${LINKFLAGS}
 
-if test x${HAS_NUMPY} = "xyes"; then
+if test "${HAS_NUMPY}" = "yes"; then
     ${CXX} ${CFLAGS} extensions/gdal_array_wrap.cpp -shared -o ${OUTDIR}/_gdal_array.pyd ${INCFLAGS} -I${PYTHONHOME}/Lib/site-packages/numpy/core/include ${LINKFLAGS}
 fi

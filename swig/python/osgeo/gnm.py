@@ -62,17 +62,71 @@ class _SwigNonDynamicMeta(type):
 
 
 
-def GetUseExceptions(*args):
+def GetUseExceptions(*args) -> "int":
     r"""GetUseExceptions() -> int"""
     return _gnm.GetUseExceptions(*args)
 
-def UseExceptions(*args):
+def UseExceptions(*args) -> "void":
     r"""UseExceptions()"""
     return _gnm.UseExceptions(*args)
 
-def DontUseExceptions(*args):
+def DontUseExceptions(*args) -> "void":
     r"""DontUseExceptions()"""
     return _gnm.DontUseExceptions(*args)
+
+class ExceptionMgr(object):
+    """
+    Context manager to manage Python Exception state
+    for GDAL/OGR/OSR/GNM.
+
+    Separate exception state is maintained for each
+    module (gdal, ogr, etc), and this class appears independently
+    in all of them. This is built in top of calls to the older
+    UseExceptions()/DontUseExceptions() functions.
+
+    Example::
+
+        >>> print(gdal.GetUseExceptions())
+        0
+        >>> with gdal.ExceptionMgr(useExceptions=True):
+        ...     # Exceptions are now in use
+        ...     print(gdal.GetUseExceptions())
+        1
+        >>>
+        >>> # Exception state has now been restored
+        >>> print(gdal.GetUseExceptions())
+        0
+
+    """
+    def __init__(self, useExceptions):
+        """
+        Save whether or not this context will be using exceptions
+        """
+        self.requestedUseExceptions = useExceptions
+
+    def __enter__(self):
+        """
+        On context entry, save the current GDAL exception state, and
+        set it to the state requested for the context
+
+        """
+        self.currentUseExceptions = (GetUseExceptions() != 0)
+
+        if self.requestedUseExceptions:
+            UseExceptions()
+        else:
+            DontUseExceptions()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        On exit, restore the GDAL/OGR/OSR/GNM exception state which was
+        current on entry to the context
+        """
+        if self.currentUseExceptions:
+            UseExceptions()
+        else:
+            DontUseExceptions()
+
 from . import ogr
 from . import osr
 GATDijkstraShortestPath = _gnm.GATDijkstraShortestPath
@@ -88,11 +142,11 @@ GNM_EDGE_DIR_SRCTOTGT = _gnm.GNM_EDGE_DIR_SRCTOTGT
 GNM_EDGE_DIR_TGTTOSRC = _gnm.GNM_EDGE_DIR_TGTTOSRC
 
 
-def CastToNetwork(*args):
+def CastToNetwork(*args) -> "GNMNetworkShadow *":
     r"""CastToNetwork(MajorObject base) -> Network"""
     return _gnm.CastToNetwork(*args)
 
-def CastToGenericNetwork(*args):
+def CastToGenericNetwork(*args) -> "GNMGenericNetworkShadow *":
     r"""CastToGenericNetwork(MajorObject base) -> GenericNetwork"""
     return _gnm.CastToGenericNetwork(*args)
 class Network(ogr.MajorObject):
@@ -105,79 +159,79 @@ class Network(ogr.MajorObject):
     __repr__ = _swig_repr
     __swig_destroy__ = _gnm.delete_Network
 
-    def ReleaseResultSet(self, *args):
+    def ReleaseResultSet(self, *args) -> "void":
         r"""ReleaseResultSet(Network self, Layer layer)"""
         return _gnm.Network_ReleaseResultSet(self, *args)
 
-    def GetVersion(self, *args):
+    def GetVersion(self, *args) -> "int":
         r"""GetVersion(Network self) -> int"""
         return _gnm.Network_GetVersion(self, *args)
 
-    def GetName(self, *args):
+    def GetName(self, *args) -> "char const *":
         r"""GetName(Network self) -> char const *"""
         return _gnm.Network_GetName(self, *args)
 
-    def GetFeatureByGlobalFID(self, *args):
+    def GetFeatureByGlobalFID(self, *args) -> "OGRFeatureShadow *":
         r"""GetFeatureByGlobalFID(Network self, GIntBig GFID) -> Feature"""
         return _gnm.Network_GetFeatureByGlobalFID(self, *args)
 
-    def GetPath(self, *args, **kwargs):
+    def GetPath(self, *args, **kwargs) -> "OGRLayerShadow *":
         r"""GetPath(Network self, GIntBig nStartFID, GIntBig nEndFID, GNMGraphAlgorithmType eAlgorithm, char ** options=None) -> Layer"""
         return _gnm.Network_GetPath(self, *args, **kwargs)
 
-    def DisconnectAll(self, *args):
+    def DisconnectAll(self, *args) -> "CPLErr":
         r"""DisconnectAll(Network self) -> CPLErr"""
         return _gnm.Network_DisconnectAll(self, *args)
 
-    def GetProjection(self, *args):
+    def GetProjection(self, *args) -> "char const *":
         r"""GetProjection(Network self) -> char const *"""
         return _gnm.Network_GetProjection(self, *args)
 
-    def GetProjectionRef(self, *args):
+    def GetProjectionRef(self, *args) -> "char const *":
         r"""GetProjectionRef(Network self) -> char const *"""
         return _gnm.Network_GetProjectionRef(self, *args)
 
-    def GetFileList(self, *args):
+    def GetFileList(self, *args) -> "char **":
         r"""GetFileList(Network self) -> char **"""
         return _gnm.Network_GetFileList(self, *args)
 
-    def CreateLayer(self, *args, **kwargs):
+    def CreateLayer(self, *args, **kwargs) -> "OGRLayerShadow *":
         r"""CreateLayer(Network self, char const * name, SpatialReference srs=None, OGRwkbGeometryType geom_type=wkbUnknown, char ** options=None) -> Layer"""
         return _gnm.Network_CreateLayer(self, *args, **kwargs)
 
-    def CopyLayer(self, *args, **kwargs):
+    def CopyLayer(self, *args, **kwargs) -> "OGRLayerShadow *":
         r"""CopyLayer(Network self, Layer src_layer, char const * new_name, char ** options=None) -> Layer"""
         return _gnm.Network_CopyLayer(self, *args, **kwargs)
 
-    def DeleteLayer(self, *args):
+    def DeleteLayer(self, *args) -> "OGRErr":
         r"""DeleteLayer(Network self, int index) -> OGRErr"""
         return _gnm.Network_DeleteLayer(self, *args)
 
-    def GetLayerCount(self, *args):
+    def GetLayerCount(self, *args) -> "int":
         r"""GetLayerCount(Network self) -> int"""
         return _gnm.Network_GetLayerCount(self, *args)
 
-    def GetLayerByIndex(self, *args):
+    def GetLayerByIndex(self, *args) -> "OGRLayerShadow *":
         r"""GetLayerByIndex(Network self, int index=0) -> Layer"""
         return _gnm.Network_GetLayerByIndex(self, *args)
 
-    def GetLayerByName(self, *args):
+    def GetLayerByName(self, *args) -> "OGRLayerShadow *":
         r"""GetLayerByName(Network self, char const * layer_name) -> Layer"""
         return _gnm.Network_GetLayerByName(self, *args)
 
-    def TestCapability(self, *args):
+    def TestCapability(self, *args) -> "bool":
         r"""TestCapability(Network self, char const * cap) -> bool"""
         return _gnm.Network_TestCapability(self, *args)
 
-    def StartTransaction(self, *args, **kwargs):
+    def StartTransaction(self, *args, **kwargs) -> "OGRErr":
         r"""StartTransaction(Network self, int force=FALSE) -> OGRErr"""
         return _gnm.Network_StartTransaction(self, *args, **kwargs)
 
-    def CommitTransaction(self, *args):
+    def CommitTransaction(self, *args) -> "OGRErr":
         r"""CommitTransaction(Network self) -> OGRErr"""
         return _gnm.Network_CommitTransaction(self, *args)
 
-    def RollbackTransaction(self, *args):
+    def RollbackTransaction(self, *args) -> "OGRErr":
         r"""RollbackTransaction(Network self) -> OGRErr"""
         return _gnm.Network_RollbackTransaction(self, *args)
 
@@ -194,47 +248,47 @@ class GenericNetwork(Network):
     __repr__ = _swig_repr
     __swig_destroy__ = _gnm.delete_GenericNetwork
 
-    def ConnectFeatures(self, *args):
+    def ConnectFeatures(self, *args) -> "CPLErr":
         r"""ConnectFeatures(GenericNetwork self, GIntBig nSrcFID, GIntBig nTgtFID, GIntBig nConFID, double dfCost, double dfInvCost, GNMDirection eDir) -> CPLErr"""
         return _gnm.GenericNetwork_ConnectFeatures(self, *args)
 
-    def DisconnectFeatures(self, *args):
+    def DisconnectFeatures(self, *args) -> "CPLErr":
         r"""DisconnectFeatures(GenericNetwork self, GIntBig nSrcFID, GIntBig nTgtFID, GIntBig nConFID) -> CPLErr"""
         return _gnm.GenericNetwork_DisconnectFeatures(self, *args)
 
-    def DisconnectFeaturesWithId(self, *args):
+    def DisconnectFeaturesWithId(self, *args) -> "CPLErr":
         r"""DisconnectFeaturesWithId(GenericNetwork self, GIntBig nFID) -> CPLErr"""
         return _gnm.GenericNetwork_DisconnectFeaturesWithId(self, *args)
 
-    def ReconnectFeatures(self, *args):
+    def ReconnectFeatures(self, *args) -> "CPLErr":
         r"""ReconnectFeatures(GenericNetwork self, GIntBig nSrcFID, GIntBig nTgtFID, GIntBig nConFID, double dfCost, double dfInvCost, GNMDirection eDir) -> CPLErr"""
         return _gnm.GenericNetwork_ReconnectFeatures(self, *args)
 
-    def CreateRule(self, *args):
+    def CreateRule(self, *args) -> "CPLErr":
         r"""CreateRule(GenericNetwork self, char const * pszRuleStr) -> CPLErr"""
         return _gnm.GenericNetwork_CreateRule(self, *args)
 
-    def DeleteAllRules(self, *args):
+    def DeleteAllRules(self, *args) -> "CPLErr":
         r"""DeleteAllRules(GenericNetwork self) -> CPLErr"""
         return _gnm.GenericNetwork_DeleteAllRules(self, *args)
 
-    def DeleteRule(self, *args):
+    def DeleteRule(self, *args) -> "CPLErr":
         r"""DeleteRule(GenericNetwork self, char const * pszRuleStr) -> CPLErr"""
         return _gnm.GenericNetwork_DeleteRule(self, *args)
 
-    def GetRules(self, *args):
+    def GetRules(self, *args) -> "char **":
         r"""GetRules(GenericNetwork self) -> char **"""
         return _gnm.GenericNetwork_GetRules(self, *args)
 
-    def ConnectPointsByLines(self, *args, **kwargs):
+    def ConnectPointsByLines(self, *args, **kwargs) -> "CPLErr":
         r"""ConnectPointsByLines(GenericNetwork self, char ** papszLayerList, double dfTolerance, double dfCost, double dfInvCost, GNMDirection eDir) -> CPLErr"""
         return _gnm.GenericNetwork_ConnectPointsByLines(self, *args, **kwargs)
 
-    def ChangeBlockState(self, *args):
+    def ChangeBlockState(self, *args) -> "CPLErr":
         r"""ChangeBlockState(GenericNetwork self, GIntBig nFID, bool bIsBlock) -> CPLErr"""
         return _gnm.GenericNetwork_ChangeBlockState(self, *args)
 
-    def ChangeAllBlockState(self, *args):
+    def ChangeAllBlockState(self, *args) -> "CPLErr":
         r"""ChangeAllBlockState(GenericNetwork self, bool bIsBlock=False) -> CPLErr"""
         return _gnm.GenericNetwork_ChangeAllBlockState(self, *args)
 

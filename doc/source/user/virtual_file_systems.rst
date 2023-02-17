@@ -46,6 +46,9 @@ Notable exceptions are the netCDF, HDF4 and HDF5 drivers.
 /vsizip/ (.zip archives)
 ------------------------
 
+Read capabilities
++++++++++++++++++
+
 /vsizip/ is a file handler that allows reading ZIP archives on-the-fly without decompressing them beforehand.
 
 To point to a file inside a zip file, the filename must be of the form :file:`/vsizip/path/to/the/file.zip/path/inside/the/zip/file`, where :file:`path/to/the/file.zip` is relative or absolute and :file:`path/inside/the/zip/file` is the relative path to the file inside the archive.
@@ -65,6 +68,9 @@ Examples:
 .kmz, .ods and .xlsx extensions are also detected as valid extensions for zip-compatible archives.
 
 Starting with GDAL 2.2, an alternate syntax is available so as to enable chaining and not being dependent on .zip extension, e.g.: ``/vsizip/{/path/to/the/archive}/path/inside/the/zip/file``. Note that :file:`/path/to/the/archive` may also itself use this alternate syntax.
+
+Write capabilities
+++++++++++++++++++
 
 Write capabilities are also available. They allow creating a new zip file and adding new files to an already existing (or just created) zip file.
 
@@ -87,8 +93,38 @@ Addition of a new file to an existing zip:
     VSIFCloseL(newfile);
 
 Starting with GDAL 2.4, the :decl_configoption:`GDAL_NUM_THREADS` configuration option can be set to an integer or ``ALL_CPUS`` to enable multi-threaded compression of a single file. This is similar to the pigz utility in independent mode. By default the input stream is split into 1 MB chunks (the chunk size can be tuned with the :decl_configoption:`CPL_VSIL_DEFLATE_CHUNK_SIZE` configuration option, with values like "x K" or "x M"), and each chunk is independently compressed (and terminated by a nine byte marker 0x00 0x00 0xFF 0xFF 0x00 0x00 0x00 0xFF 0xFF, signaling a full flush of the stream and dictionary, enabling potential independent decoding of each chunk). This slightly reduces the compression rate, so very small chunk sizes should be avoided.
+Starting with GDAL 3.7, this technique is reused to generate .zip files following :ref:`sozip_intro`.
 
 Read and write operations cannot be interleaved. The new zip must be closed before being re-opened in read mode.
+
+.. _sozip_intro:
+
+SOZip (Seek-Optimized ZIP)
+++++++++++++++++++++++++++
+
+GDAL (>= 3.7) has full read and write support for .zip files following the
+`SOZip (Seek-Optimized ZIP) <https://sozip.org>`__ profile.
+
+* The ``/vsizip/`` virtual file system uses the SOZip index to perform fast
+  random access within a compressed SOZip-enabled file.
+
+* The :ref:`vector.shapefile` and :ref:`vector.gpkg` drivers can directly generate
+  SOZip-enabled .shz/.shp.zip or .gpkg.zip files.
+
+* The :cpp:func:`CPLAddFileInZip` C function, which can compress a file and add
+  it to an new or existing ZIP file, enables the SOZip optimization when relevant
+  (ie when a file to be compressed is larger than 1 MB).
+  SOZip optimization can be forced by setting the :decl_configoption:`CPL_SOZIP_ENABLED`
+  configuration option to YES. Or totally disabled by setting it to NO.
+
+* The :cpp:func:`VSIGetFileMetadata` method can be called on a filename of
+  the form :file:`/vsizip/path/to/the/file.zip/path/inside/the/zip/file` and
+  with domain = "ZIP" to get information if a SOZip index is available for that file.
+
+* The :ref:`sozip` new command line utility can be used to create a
+  seek-optimized ZIP file, to append files to an existing ZIP file, list the
+  contents of a ZIP file and display the SOZip optimization status or validate a SOZip file.
+
 
 .. _vsigzip:
 
@@ -138,6 +174,37 @@ Examples:
 
 Starting with GDAL 2.2, an alternate syntax is available so as to enable chaining and not being dependent on .tar extension, e.g.: :file:`/vsitar/{/path/to/the/archive}/path/inside/the/tar/file`. Note that :file:`/path/to/the/archive` may also itself use this alternate syntax.
 
+.. _vsi7z:
+
+/vsi7z/ (.7z archives)
+----------------------
+
+.. versionadded:: 3.7
+
+/vsi7z/ is a file handler that allows reading `7z <https://en.wikipedia.org/wiki/7z>`__
+archives on-the-fly without decompressing them beforehand. This file system is
+read-only. Directory listing and :cpp:func:`VSIStatL` are available, similarly
+to above mentioned file systems.
+
+It requires GDAL to be built against `libarchive <https://libarchive.org/>`__
+(and libarchive having LZMA support to be of practical use).
+
+To point to a file inside a 7z file, the filename must be of the form
+:file:`/vsi7z/path/to/the/file.7z/path/inside/the/7z/file`, where
+:file:`path/to/the/file.7z` is relative or absolute and :file:`path/inside/the/7z/file`
+is the relative path to the file inside the archive.`
+
+Default extensions recognized by this virtual file system are:
+``7z``, ``lpk`` (Esri ArcGIS Layer Package), ``lpkx``, ``mpk`` (Esri ArcGIS Map Package) and ``mpkx``.
+
+An alternate syntax is available so as to enable chaining and not being
+dependent on those extensions, e.g.: :file:`/vsi7z/{/path/to/the/archive}/path/inside/the/archive`.
+Note that :file:`/path/to/the/archive` may also itself use this alternate syntax.
+
+Note that random seeking within a large compressed file will be inefficient when
+backward seeking is needed (decompression will be restarted from the start of the
+file). Performance will be the best in sequential reading.
+
 Network based file systems
 --------------------------
 
@@ -152,12 +219,12 @@ Cloud storage services require setting credentials. For some of them, they can
 be provided through configuration files (~/.aws/config, ~/.boto, ..) or through
 environment variables / configuration options.
 
-Starting with GDAL 3.5, :cpp:func:`VSISetCredential` can be used to set configuration
+Starting with GDAL 3.6, :cpp:func:`VSISetPathSpecificOption` can be used to set configuration
 options with a granularity at the level of a file path, which makes it easier if using
 the same virtual file system but with different credentials (e.g. different
 credentials for bucket "/vsis3/foo" and "/vsis3/bar")
 
-Starting with GDAL 3.5, credentials can be specified in a
+Starting with GDAL 3.5, credentials (or path specific options) can be specified in a
 :ref:`GDAL configuration file <gdal_configuration_file>`, either in a specific one
 explicitly loaded with :cpp:func:`CPLLoadConfigOptionsFromFile`, or
 one of the default automatically loaded by :cpp:func:`CPLLoadConfigOptionsFromPredefinedFiles`.
@@ -201,6 +268,18 @@ Starting with GDAL 2.3, options can be passed in the filename with the following
 - max_retry=number: default to 0. Setting this option overrides the behavior of the :decl_configoption:`GDAL_HTTP_MAX_RETRY` configuration option.
 - retry_delay=number_in_seconds: default to 30. Setting this option overrides the behavior of the :decl_configoption:`GDAL_HTTP_RETRY_DELAY` configuration option.
 - list_dir=yes/no: whether an attempt to read the file list of the directory where the file is located should be done. Default to YES.
+- useragent=value: HTTP UserAgent header
+- referer=value: HTTP Referer header
+- cookie=value: HTTP Cookie header
+- header_file=value: Filename that contains one or several "Header: Value" lines
+- unsafessl=yes/no
+- low_speed_time=value
+- low_speed_limit=value
+- proxy=value
+- proxyauth=value
+- proxyuserpwd=value
+- pc_url_signing=yes/no: whether to use the URL signing mechanism of Microsoft Planetary Computer (https://planetarycomputer.microsoft.com/docs/concepts/sas/). (GDAL >= 3.5.2)
+- pc_collection=name: name of the collection of the dataset for Planetary Computer URL signing. Only used when pc_url_signing=yes. (GDAL >= 3.5.2)
 
 Partial downloads (requires the HTTP server to support random reading) are done with a 16 KB granularity by default. Starting with GDAL 2.3, the chunk size can be configured with the :decl_configoption:`CPL_VSIL_CURL_CHUNK_SIZE` configuration option, with a value in bytes. If the driver detects sequential reading it will progressively increase the chunk size up to 2 MB to improve download performance. Starting with GDAL 2.3, the :decl_configoption:`GDAL_INGESTED_BYTES_AT_OPEN` configuration option can be set to impose the number of bytes read in one GET call at file opening (can help performance to read Cloud optimized geotiff with a large header).
 
@@ -208,11 +287,29 @@ The :decl_configoption:`GDAL_HTTP_PROXY` (for both HTTP and HTTPS protocols), :d
 
 Starting with GDAL 2.1.3, the :decl_configoption:`CURL_CA_BUNDLE` or :decl_configoption:`SSL_CERT_FILE` configuration options can be used to set the path to the Certification Authority (CA) bundle file (if not specified, curl will use a file in a system location).
 
-Starting with GDAL 2.3, additional HTTP headers can be sent by setting the :decl_configoption:`GDAL_HTTP_HEADER_FILE` configuration option to point to a filename of a text file with "key: value" HTTP headers.   :decl_configoption:`CPL_CURL_VERBOSE` set to ``YES`` allows one to see them and more, when combined with ``--debug``.
+Starting with GDAL 2.3, additional HTTP headers can be sent by setting the :decl_configoption:`GDAL_HTTP_HEADER_FILE` configuration option to point to a filename of a text file with "key: value" HTTP headers.
+
+As an alternative, starting with GDAL 3.6, the
+:decl_configoption:`GDAL_HTTP_HEADERS` configuration option can also be
+used to specify a comma separated list of key: value pairs. If a comma or a double-quote
+character is needed in the value, then the key: value pair must be
+enclosed in double-quote characters. In that situation, backslash and double
+quote character must be backslash-escaped.
+e.g GDAL_HTTP_HEADERS=Foo: Bar,"Baz: escaped backslash \\, escaped double-quote \", end of value",Another: Header
+
+:decl_configoption:`CPL_CURL_VERBOSE` set to ``YES`` allows one to see them and more, when combined with ``--debug``.
 
 Starting with GDAL 2.3, the :decl_configoption:`GDAL_HTTP_MAX_RETRY` (number of attempts) and :decl_configoption:`GDAL_HTTP_RETRY_DELAY` (in seconds) configuration option can be set, so that request retries are done in case of HTTP errors 429, 502, 503 or 504.
 
+Starting with GDAL 3.6, the following configuration options control the TCP keep-alive functionality (cf https://daniel.haxx.se/blog/2020/02/10/curl-ootw-keepalive-time/ for a detailed explanation):
+
+- :decl_configoption:`GDAL_HTTP_TCP_KEEPALIVE` = YES/NO. whether to enable TCP keep-alive. Defaults to NO
+- :decl_configoption:`GDAL_HTTP_TCP_KEEPIDLE` = integer, in seconds. Keep-alive idle time. Defaults to 60. Only taken into account if GDAL_HTTP_TCP_KEEPALIVE=YES.
+- :decl_configoption:`GDAL_HTTP_TCP_KEEPINTVL` = integer, in seconds. Interval time between keep-alive probes. Defaults to 60. Only taken into account if GDAL_HTTP_TCP_KEEPALIVE=YES.
+
 More generally options of :cpp:func:`CPLHTTPFetch` available through configuration options are available.
+Starting with GDAL 3.7, the above configuration options can also be specified
+as path-specific options with :cpp:func:`VSISetPathSpecificOption`.
 
 The file can be cached in RAM by setting the configuration option :decl_configoption:`VSI_CACHE` to ``TRUE``. The cache size defaults to 25 MB, but can be modified by setting the configuration option :decl_configoption:`VSI_CACHE_SIZE` (in bytes). Content in that cache is discarded when the file handle is closed.
 
@@ -266,7 +363,7 @@ Several authentication methods are possible, and are attempted in the following 
 2. The :decl_configoption:`AWS_SECRET_ACCESS_KEY` and :decl_configoption:`AWS_ACCESS_KEY_ID` configuration options can be set. The :decl_configoption:`AWS_SESSION_TOKEN` configuration option must be set when temporary credentials are used.
 3. Starting with GDAL 2.3, alternate ways of providing credentials similar to what the "aws" command line utility or Boto3 support can be used. If the above mentioned environment variables are not provided, the ``~/.aws/credentials`` or ``%UserProfile%/.aws/credentials`` file will be read (or the file pointed by :decl_configoption:`CPL_AWS_CREDENTIALS_FILE`). The profile may be specified with the :decl_configoption:`AWS_DEFAULT_PROFILE` environment variable, or starting with GDAL 3.2 with the :decl_configoption:`AWS_PROFILE` environment variable (the default profile is "default").
 4. The ``~/.aws/config`` or ``%UserProfile%/.aws/config`` file may also be used (or the file pointer by :decl_configoption:`AWS_CONFIG_FILE`) to retrieve credentials and the AWS region.
-5. If :decl_configoption:`AWS_ROLE_ARN` and :decl_configoption:`AWS_WEB_IDENTITY_TOKEN_FILE` are defined we will rely on credentials mechanism for web identity token based AWS sts action AssumeRoleWithWebIdentity (See.: https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html)
+5. Starting with GDAL 3.6, if :decl_configoption:`AWS_ROLE_ARN` and :decl_configoption:`AWS_WEB_IDENTITY_TOKEN_FILE` are defined we will rely on credentials mechanism for web identity token based AWS sts action AssumeRoleWithWebIdentity (See.: https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html)
 6. If none of the above method succeeds, instance profile credentials will be retrieved when GDAL is used on EC2 instances.
 
 The :decl_configoption:`AWS_REGION` (or :decl_configoption:`AWS_DEFAULT_REGION` starting with GDAL 2.3) configuration option may be set to one of the supported S3 regions and defaults to ``us-east-1``.
@@ -291,7 +388,7 @@ accept a comma-separated list of storage class names and defaults to ``GLACIER,D
 
 Since GDAL 3.1, the :cpp:func:`VSIRename` operation is supported (first doing a copy of the original file and then deleting it)
 
-Since GDAL 3.1, the :cpp:func:`VSIRmdirRecursive` operation is supported (using batch deletion method). The :decl_configoption:`CPL_VSIS3_USE_BASE_RMDIR_RECURSIVE` configuration option can be set to YES if using a S3-like API that doesn't support batch deletion (GDAL >= 3.2)
+Since GDAL 3.1, the :cpp:func:`VSIRmdirRecursive` operation is supported (using batch deletion method). The :decl_configoption:`CPL_VSIS3_USE_BASE_RMDIR_RECURSIVE` configuration option can be set to YES if using a S3-like API that doesn't support batch deletion (GDAL >= 3.2). Starting with GDAL 3.6, this can be set as a path-specific option in the :ref:`GDAL configuration file <gdal_configuration_file>`
 
 Starting with GDAL 3.5, profiles that use IAM role assumption (see https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-role.html) are handled. The ``role_arn`` and ``source_profile`` keywords are required in such profiles. The optional ``external_id``, ``mfa_serial`` and ``role_session_name`` can be specified. ``credential_source`` is not supported currently.
 
@@ -329,12 +426,13 @@ Several authentication methods are possible, and are attempted in the following 
 1. If :decl_configoption:`GS_NO_SIGN_REQUEST=YES` configuration option is set, request signing is disabled. This option might be used for buckets with public access rights. Available since GDAL 3.4
 2. The :decl_configoption:`GS_SECRET_ACCESS_KEY` and :decl_configoption:`GS_ACCESS_KEY_ID` configuration options can be set for AWS-style authentication
 3. The :decl_configoption:`GDAL_HTTP_HEADER_FILE` configuration option to point to a filename of a text file with "key: value" headers. Typically, it must contain a "Authorization: Bearer XXXXXXXXX" line.
-4. (GDAL >= 2.3) The :decl_configoption:`GS_OAUTH2_REFRESH_TOKEN` configuration option can be set to use OAuth2 client authentication. See http://code.google.com/apis/accounts/docs/OAuth2.html This refresh token can be obtained with the ``gdal_auth.py -s storage`` or ``gdal_auth.py -s storage-rw`` script Note: instead of using the default GDAL application credentials, you may define the :decl_configoption:`GS_OAUTH2_CLIENT_ID` and :decl_configoption:`GS_OAUTH2_CLIENT_SECRET` configuration options (need to be defined both for gdal_auth.py and later execution of /vsigs)
-5. (GDAL >= 2.3) The :decl_configoption:`GOOGLE_APPLICATION_CREDENTIALS` configuration option can be set to point to a JSON file containing OAuth2 service account credentials (``type: service_account``), in particular a private key and a client email. See https://developers.google.com/identity/protocols/OAuth2ServiceAccount for more details on this authentication method. The bucket must grant the "Storage Legacy Bucket Owner" or "Storage Legacy Bucket Reader" permissions to the service account. The :decl_configoption:`GS_OAUTH2_SCOPE` configuration option can be set to change the default permission scope from "https://www.googleapis.com/auth/devstorage.read_write" to "https://www.googleapis.com/auth/devstorage.read_only" if needed.
-6. (GDAL >= 3.4.2) The :decl_configoption:`GOOGLE_APPLICATION_CREDENTIALS` configuration option can be set to point to a JSON file containing OAuth2 user credentials (``type: authorized_user``).
-7. (GDAL >= 2.3) Variant of the previous method. The :decl_configoption:`GS_OAUTH2_PRIVATE_KEY` (or :decl_configoption:`GS_OAUTH2_PRIVATE_KEY_FILE)` and :decl_configoption:`GS_OAUTH2_CLIENT_EMAIL` can be set to use OAuth2 service account authentication. See https://developers.google.com/identity/protocols/OAuth2ServiceAccount for more details on this authentication method. The :decl_configoption:`GS_OAUTH2_PRIVATE_KEY` configuration option must contain the private key as a inline string, starting with ``-----BEGIN PRIVATE KEY-----``. Alternatively the :decl_configoption:`GS_OAUTH2_PRIVATE_KEY_FILE` configuration option can be set to indicate a filename that contains such a private key. The bucket must grant the "Storage Legacy Bucket Owner" or "Storage Legacy Bucket Reader" permissions to the service account. The :decl_configoption:`GS_OAUTH2_SCOPE` configuration option can be set to change the default permission scope from "https://www.googleapis.com/auth/devstorage.read_write" to "https://www.googleapis.com/auth/devstorage.read_only" if needed.
-8. (GDAL >= 2.3) An alternate way of providing credentials similar to what the "gsutil" command line utility or Boto3 support can be used. If the above mentioned environment variables are not provided, the :file:`~/.boto` or :file:`UserProfile%/.boto` file will be read (or the file pointed by :decl_configoption:`CPL_GS_CREDENTIALS_FILE`) for the gs_secret_access_key and gs_access_key_id entries for AWS style authentication. If not found, it will look for the gs_oauth2_refresh_token (and optionally client_id and client_secret) entry for OAuth2 client authentication.
-9. (GDAL >= 2.3) Finally if none of the above method succeeds, the code will check if the current machine is a Google Compute Engine instance, and if so will use the permissions associated to it (using the default service account associated with the VM). To force a machine to be detected as a GCE instance (for example for code running in a container with no access to the boot logs), you can set :decl_configoption:`CPL_MACHINE_IS_GCE` to ``YES``.
+4. (GDAL >= 3.7) The :decl_configoption:`GDAL_HTTP_HEADERS` configuration option can also be set. It must contain at least a line starting with "Authorization:" to be used as an authentication method.
+5. (GDAL >= 2.3) The :decl_configoption:`GS_OAUTH2_REFRESH_TOKEN` configuration option can be set to use OAuth2 client authentication. See http://code.google.com/apis/accounts/docs/OAuth2.html This refresh token can be obtained with the ``gdal_auth.py -s storage`` or ``gdal_auth.py -s storage-rw`` script Note: instead of using the default GDAL application credentials, you may define the :decl_configoption:`GS_OAUTH2_CLIENT_ID` and :decl_configoption:`GS_OAUTH2_CLIENT_SECRET` configuration options (need to be defined both for gdal_auth.py and later execution of /vsigs)
+6. (GDAL >= 2.3) The :decl_configoption:`GOOGLE_APPLICATION_CREDENTIALS` configuration option can be set to point to a JSON file containing OAuth2 service account credentials (``type: service_account``), in particular a private key and a client email. See https://developers.google.com/identity/protocols/OAuth2ServiceAccount for more details on this authentication method. The bucket must grant the "Storage Legacy Bucket Owner" or "Storage Legacy Bucket Reader" permissions to the service account. The :decl_configoption:`GS_OAUTH2_SCOPE` configuration option can be set to change the default permission scope from "https://www.googleapis.com/auth/devstorage.read_write" to "https://www.googleapis.com/auth/devstorage.read_only" if needed.
+7. (GDAL >= 3.4.2) The :decl_configoption:`GOOGLE_APPLICATION_CREDENTIALS` configuration option can be set to point to a JSON file containing OAuth2 user credentials (``type: authorized_user``).
+8. (GDAL >= 2.3) Variant of the previous method. The :decl_configoption:`GS_OAUTH2_PRIVATE_KEY` (or :decl_configoption:`GS_OAUTH2_PRIVATE_KEY_FILE)` and :decl_configoption:`GS_OAUTH2_CLIENT_EMAIL` can be set to use OAuth2 service account authentication. See https://developers.google.com/identity/protocols/OAuth2ServiceAccount for more details on this authentication method. The :decl_configoption:`GS_OAUTH2_PRIVATE_KEY` configuration option must contain the private key as a inline string, starting with ``-----BEGIN PRIVATE KEY-----``. Alternatively the :decl_configoption:`GS_OAUTH2_PRIVATE_KEY_FILE` configuration option can be set to indicate a filename that contains such a private key. The bucket must grant the "Storage Legacy Bucket Owner" or "Storage Legacy Bucket Reader" permissions to the service account. The :decl_configoption:`GS_OAUTH2_SCOPE` configuration option can be set to change the default permission scope from "https://www.googleapis.com/auth/devstorage.read_write" to "https://www.googleapis.com/auth/devstorage.read_only" if needed.
+9. (GDAL >= 2.3) An alternate way of providing credentials similar to what the "gsutil" command line utility or Boto3 support can be used. If the above mentioned environment variables are not provided, the :file:`~/.boto` or :file:`UserProfile%/.boto` file will be read (or the file pointed by :decl_configoption:`CPL_GS_CREDENTIALS_FILE`) for the gs_secret_access_key and gs_access_key_id entries for AWS style authentication. If not found, it will look for the gs_oauth2_refresh_token (and optionally client_id and client_secret) entry for OAuth2 client authentication.
+10. (GDAL >= 2.3) Finally if none of the above method succeeds, the code will check if the current machine is a Google Compute Engine instance, and if so will use the permissions associated to it (using the default service account associated with the VM). To force a machine to be detected as a GCE instance (for example for code running in a container with no access to the boot logs), you can set :decl_configoption:`CPL_MACHINE_IS_GCE` to ``YES``.
 
 Since GDAL 3.1, the Rename() operation is supported (first doing a copy of the original file and then deleting it).
 

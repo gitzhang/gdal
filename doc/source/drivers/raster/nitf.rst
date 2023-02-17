@@ -55,6 +55,24 @@ Driver capabilities
 
 .. supports_virtualio::
 
+Open options
+------------
+
+.. versionadded:: 3.7
+
+- **VALIDATE=YES/NO**: Whether TRE and DES content should be validated upon
+  dataset opening. If errors are found, CE_Failure errors are emitted, but
+  dataset opening does not fail, unless the FAIL_IF_VALIDATION_ERROR=YES
+  open option is set.
+  Note that validation is partial, and limited to the constraints documented in
+  the nitf_spec.xml configuration file.
+  Details of errors are also logged in ``<error>`` elements in the ``xml:TRE``
+  and ``xml:DES`` metadata domains.
+  Default is NO.
+- **FAIL_IF_VALIDATION_ERROR=YES/NO**: Whether validation errors reported by
+  the VALIDATE=YES open option should prevent the dataset from being opened.
+  Default is NO.
+
 Creation Issues
 ---------------
 
@@ -151,6 +169,8 @@ Creation Options:
 -  **FILE_TRE=tre-name=tre-contents**: Similar to above
    options, except that the TREs are written in the file header, instead
    of the image header.
+-  **RESERVE_SPACE_FOR_TRE_OVERFLOW=YES/NO**: (GDAL >= 3.6)
+   Set to true to reserve space for IXSOFL when writing a TRE_OVERFLOW DES.
 -  **DES=des-name=des-contents**: One or more DES creation options may
    be provided to write arbitrary user defined DESs to the NITF file.
    The des-name should be at most 25 characters, and the des-contents

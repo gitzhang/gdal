@@ -16,12 +16,14 @@ Synopsis
 .. code-block::
 
     gdalwarp [--help-general] [--formats]
-        [-s_srs srs_def] [-t_srs srs_def] [-ct string] [-to "NAME=VALUE"]* [-vshift | -novshift]
+        [-b|-srcband n]* [-dstband n]*
+        [-s_srs srs_def] [-t_srs srs_def] [-ct string]
+        [-to "NAME=VALUE"]* [-vshift | -novshift]
         [[-s_coord_epoch epoch] | [-t_coord_epoch epoch]]
         [-order n | -tps | -rpc | -geoloc] [-et err_threshold]
         [-refine_gcps tolerance [minimum_gcps]]
         [-te xmin ymin xmax ymax] [-te_srs srs_def]
-        [-tr xres yres] [-tap] [-ts width height]
+        [-tr xres yres]|[-tr square] [-tap] [-ts width height]
         [-ovr level|AUTO|AUTO-n|NONE] [-wo "NAME=VALUE"] [-ot Byte/Int16/...] [-wt Byte/Int16]
         [-srcnodata "value [value...]"] [-dstnodata "value [value...]"]
         [-srcalpha|-nosrcalpha] [-dstalpha]
@@ -42,6 +44,62 @@ and can also apply GCPs stored with the image if the image is "raw"
 with control information.
 
 .. program:: gdalwarp
+
+.. option:: -b <n>
+
+.. option:: -srcband <n>
+
+    .. versionadded:: 3.7
+
+    Specify an input band number to warp (between 1 and the number of bands
+    of the source dataset).
+
+    This option is used to warp a subset of the input bands. All input bands
+    are used when it is not specified.
+
+    This option may be repeated multiple times to select several input bands.
+    The order in which bands are specified will be the order in which they
+    appear in the output dataset (unless :option:`-dstband` is specified).
+
+    The alpha band should not be specified in the list, as it will be
+    automatically retrieved (unless :option:`-nosrcalpha` is specified).
+
+    The following invocation will warp an input datasets with bands ordered as
+    Blue, Green, Red, NearInfraRed in an output dataset with bands ordered as
+    Red, Green, Blue.
+
+    ::
+
+        gdalwarp in_bgrn.tif out_rgb.tif -b 3 -b 2 -b 1 -overwrite
+
+
+.. option:: -dstband <n>
+
+    .. versionadded:: 3.7
+
+    Specify the output band number in which to warp. In practice, this option
+    is only useful when updating an existing dataset, e.g to warp one band at
+    at time.
+
+    ::
+
+        gdal_create -if in_red.tif -bands 3 out_rgb.tif
+        gdalwarp in_red.tif out_rgb.tif -srcband 1 -dstband 1
+        gdalwarp in_green.tif out_rgb.tif -srcband 1 -dstband 2
+        gdalwarp in_blue.tif out_rgb.tif -srcband 1 -dstband 3
+
+
+    If :option:`-srcband` is specified, there must be as many occurrences of
+    :option:`-dstband` as there are of :option:`-srcband`.
+
+    The output alpha band should not be specified, as it will be automatically
+    created if the input dataset has an alpha band, or if :option:`-dstalpha`
+    is specified.
+
+    If :option:`-dstband` is not specified, then
+    ``-dstband 1 -dstband 2 ... -dstband N`` is assumed where N is the number
+    of input bands (specified explicitly either with :option:`-srcband` or
+    implicitly)
 
 .. option:: -s_srs <srs def>
 
@@ -162,13 +220,19 @@ with control information.
     dataset. :option:`-te_srs` is a convenience e.g. when knowing the output coordinates in a
     geodetic long/lat SRS, but still wanting a result in a projected coordinate system.
 
-.. option:: -tr <xres> <yres>
+.. option:: -tr <xres> <yres> | -tr square
 
     Set output file resolution (in target georeferenced units).
 
-    If not specified (or not deduced from -te and -ts), gdalwarp will generate
-    an output raster with xres=yres, and that even when using gdalwarp in scenarios
-    not involving reprojection.
+    If not specified (or not deduced from -te and -ts), gdalwarp will, in the
+    general case, generate an output raster with xres=yres.
+
+    Starting with GDAL 3.7, if neither :option:`-tr` nor :option:`-ts` are specified,
+    that no reprojection is involved (including taking into account geolocation arrays
+    or RPC), the resolution of the source file(s) will be preserved (in previous
+    version, an output raster with xres=yres was always generated).
+    It is possible to ask square pixels to still be generated, by specifying
+    ``square`` as the value for :option:`-tr`.
 
 .. option:: -tap
 
@@ -238,12 +302,25 @@ with control information.
 
     ``sum``: compute the weighted sum of all non-NODATA contributing pixels (since GDAL 3.1)
 
+    .. note::
+
+        When downsampling is performed (use of :option:`-tr` or :option:`-ts`), existing
+        overviews (either internal/implicit or external ones) on the source image
+        will be used by default by selecting the closest overview to the desired output
+        resolution.
+        The resampling method used to create those overviews is generally not the one you
+        specify through the :option:`-r` option. Some formats, like JPEG2000, can contain
+        significant outliers due to wavelet compression works. It might thus be useful in
+        those situations to use the :option:`-ovr` ``NONE`` option to prevent existing overviews to
+        be used.
+
 .. option:: -srcnodata <value [value...]>
 
     Set nodata masking values for input bands (different values can be supplied
     for each band). If more than one value is supplied all values should be quoted
     to keep them together as a single operating system argument.
-    Masked values will not be used in interpolation.
+    Masked values will not be used in interpolation (details given in :ref:`gdalwarp_nodata`)
+
     Use a value of ``None`` to ignore intrinsic nodata settings on the source dataset.
 
     When this option is set to a non-``None`` value, it causes the ``UNIFIED_SRC_NODATA``
@@ -387,6 +464,35 @@ Starting with GDAL 3.1, it is possible to use as output format a driver that
 only supports the CreateCopy operation. This may internally imply creation of
 a temporary file.
 
+.. _gdalwarp_nodata:
+
+Nodata / source validity mask handling
+--------------------------------------
+
+Invalid values in source pixels, either identified through a nodata value
+metadata set on the source band, a mask band, an alpha band or the use of
+:option:`-srcnodata` will not be used in interpolation.
+The details of how it is taken into account depends on the resampling kernel:
+
+- for nearest resampling, for each target pixel, the coordinate of its center
+  is projected back to source coordinates and the source pixel containing that
+  coordinate is identified. If this source pixel is invalid, the target pixel
+  is considered as nodata.
+
+- for bilinear, cubic, cubicspline and lanczos, for each target pixel, the
+  coordinate of its center is projected back to source coordinates and a
+  correspond source pixel is identified. If this source pixel is invalid, the
+  target pixel is considered as nodata.
+  Given that those resampling kernels have a non-null kernel radius, this source
+  pixel is just one among other several source pixels, and it might be possible
+  that there are invalid values in those other contributing source pixels.
+  The weights used to take into account those invalid values will be set to zero
+  to ignore them.
+
+- for the other resampling methods, source pixels contributing to the target pixel
+  are ignored if invalid. Only the valid ones are taken into account. If there are
+  none, the target pixel is considered as nodata.
+
 Examples
 --------
 
@@ -435,6 +541,12 @@ where cutline.csv content is like:
 ::
 
     gdalwarp -overwrite in_dem.tif out_dem.tif -s_srs EPSG:4326+5773 -t_srs EPSG:4979
+
+
+C API
+-----
+
+This utility is also callable from C with :cpp:func:`GDALWarp`.
 
 
 See also

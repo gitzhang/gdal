@@ -4,14 +4,13 @@ set -e
 
 export PYTEST="python3 -m pytest -vv -p no:sugar --color=no"
 
-(cd autotest/cpp && make quick_test)
-# Compile and test vsipreload
-(cd autotest/cpp && make vsipreload.so)
+(cd build && make quicktest)
 
 # install pip and use it to install test dependencies
 pip3 install -U -r autotest/requirements.txt
 
 # Run all the Python autotests
+cd build
 
 # Run ogr_fgdb test in isolation due to likely conflict with libxml2
 (cd autotest/ogr && $PYTEST ogr_fgdb.py)

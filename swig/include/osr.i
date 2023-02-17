@@ -187,7 +187,7 @@ OGRErr GetWellKnownGeogCSAsWKT( const char *name, char **argout ) {
   OGRErr rcode = OSRSetWellKnownGeogCS( srs, name );
   if( rcode == OGRERR_NONE )
       rcode = OSRExportToWkt ( srs, argout );
-  OSRDestroySpatialReference( srs );
+  OSRRelease( srs );
   return rcode;
 }
 %}
@@ -201,7 +201,7 @@ OGRErr GetUserInputAsWKT( const char *name, char **argout ) {
   OGRErr rcode = OSRSetFromUserInput( srs, name );
   if( rcode == OGRERR_NONE )
       rcode = OSRExportToWkt ( srs, argout );
-  OSRDestroySpatialReference( srs );
+  OSRRelease( srs );
   return rcode;
 }
 %}
@@ -310,9 +310,7 @@ public:
   }
 
   ~OSRSpatialReferenceShadow() {
-    if (OSRDereference( self ) == 0 ) {
-      OSRDestroySpatialReference( self );
-    }
+    OSRRelease( self );
   }
 
 /* FIXME : all bindings should avoid using the #else case */
@@ -1173,8 +1171,8 @@ public:
         eastLongitudeDeg, northLatitudeDeg);
   }
 
-  bool SetOperation(const char* operation) {
-    return OCTCoordinateTransformationOptionsSetOperation(self, operation, false);
+  bool SetOperation(const char* operation, bool inverseCT = false) {
+    return OCTCoordinateTransformationOptionsSetOperation(self, operation, inverseCT);
   }
 
   bool SetDesiredAccuracy(double accuracy) {
@@ -1209,6 +1207,11 @@ public:
 
   ~OSRCoordinateTransformationShadow() {
     OCTDestroyCoordinateTransformation( self );
+  }
+
+  %newobject GetInverse;
+  OSRCoordinateTransformationShadow* GetInverse() {
+    return OCTGetInverse(self);
   }
 
 // Need to apply argin typemap second so the numinputs=1 version gets applied

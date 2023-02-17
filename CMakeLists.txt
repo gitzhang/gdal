@@ -213,6 +213,12 @@ if (NOT Python_FOUND AND ${CMAKE_VERSION} VERSION_LESS "3.12.0")
     set(Python_INCLUDE_DIRS ${PYTHON_INCLUDE_DIRS})
   endif ()
 endif ()
+if (Python_Interpreter_FOUND)
+  file(
+    GENERATE
+    OUTPUT "python_executable.txt"
+    CONTENT "${Python_EXECUTABLE}")
+endif()
 
 #
 include(${CMAKE_CURRENT_SOURCE_DIR}/gdal.cmake)
@@ -225,6 +231,7 @@ endif ()
 # Google OSS-Fuzz project utilities
 add_subdirectory(fuzzers)
 if (BUILD_TESTING)
+  add_subdirectory(perftests)
   # Google OSS-Fuzz tests
   add_subdirectory(fuzzers/tests)
 endif ()

@@ -15,7 +15,7 @@ Synopsis
 
 .. code-block::
 
-    ogr2ogr [--help-general] [-skipfailures] [-append] [-update]
+    ogr2ogr [--help-general] [-skipfailures] [-append | -upsert] [-update]
             [-select field_list] [-where restricted_where|@filename]
             [-progress] [-sql <sql statement>|@filename] [-dialect dialect]
             [-preserve_fid] [-fid FID] [-limit nb_features]
@@ -43,6 +43,7 @@ Synopsis
             [-relaxedFieldNameMatch] [-forceNullable] [-unsetDefault]
             [-fieldTypeToString All|(type1[,type2]*)] [-unsetFieldWidth]
             [-mapFieldType type1|All=type2[,type3=type4]*]
+            [-dateTimeTo UTC|UTC(+|-)HH|UTC(+|-)HH:MM]]
             [-fieldmap identity | index1[,index2]*]
             [-splitlistfields] [-maxsubfields val]
             [-resolveDomains]
@@ -69,7 +70,29 @@ output coordinate system or even reprojecting the features during translation.
 
 .. option:: -append
 
-    Append to existing layer instead of creating new
+    Append to existing layer instead of creating new. This option also enables
+    :option:`-update`.
+
+.. option:: -upsert
+
+    .. versionadded:: 3.6
+
+    Variant of :option:`-append` where the :cpp:func:`OGRLayer::UpsertFeature`
+    operation is used to insert or update features instead of appending with
+    :cpp:func:`OGRLayer::CreateFeature`.
+
+    This is currently implemented only in a few drivers:
+    :ref:`vector.gpkg` and :ref:`vector.mongodbv3`.
+
+    The upsert operation uses the FID of the input feature, when it is set
+    and is a "significant" (that is the FID column name is not the empty string),
+    as the key to update existing features. It is crucial to make sure that
+    the FID in the source and target layers are consistent.
+
+    For the GPKG driver, it is also possible to upsert features whose FID is unset
+    or non-significant (:option:`-unsetFid` can be used to ignore the FID from
+    the source feature), when there is a UNIQUE column that is not the
+    integer primary key.
 
 .. option:: -overwrite
 
@@ -376,6 +399,16 @@ output coordinate system or even reprojecting the features during translation.
     Note that this does not influence the field types used by the source
     driver, and is only an afterwards conversion.
 
+.. option:: -dateTimeTo UTC|UTC(+|-)HH|UTC(+|-)HH:MM]
+
+    .. versionadded: 3.7
+
+    Converts date time values from the timezone specified in the source value
+    to the target timezone expressed with :option:`-dateTimeTo`.
+    Datetime whose timezone is unknown or localtime are not modified.
+
+    HH must be in the [0,14] range and MM=00, 15, 30 or 45.
+
 .. option:: -unsetFieldWidth
 
     Set field width and precision to 0.
@@ -518,44 +551,32 @@ Basic conversion from Shapefile to GeoPackage:
 
 .. code-block::
 
-  ogr2ogr \
-    -f GPKG output.gpkg \
-    input.shp
+  ogr2ogr output.gpkg input.shp
 
 Change the coordinate reference system from ``EPSG:4326`` to ``EPSG:3857``:
 
 .. code-block::
 
-  ogr2ogr \
-    -s_srs EPSG:4326 \
-    -t_srs EPSG:3857 \
-    -f GPKG output.gpkg \
-    input.gpkg
+  ogr2ogr -s_srs EPSG:4326 -t_srs EPSG:3857 output.gpkg input.gpkg
 
-Example appending to an existing layer (both ``-update`` and ``-append`` flags need to be used):
+Example appending to an existing layer:
 
 .. code-block::
 
-    ogr2ogr -update -append -f PostgreSQL PG:dbname=warmerda abc.tab
+    ogr2ogr -append -f PostgreSQL PG:dbname=warmerda abc.tab
 
 Clip input layer with a bounding box (<xmin> <ymin> <xmax> <ymax>):
 
 .. code-block::
 
-  ogr2ogr \
-    -spat -13.931 34.886 46.23 74.12 \
-    -f GPKG output.gpkg \
-    natural_earth_vector.gpkg
+  ogr2ogr -spat -13.931 34.886 46.23 74.12 output.gpkg natural_earth_vector.gpkg
 
 Filter Features by a ``-where`` clause:
 
 .. code-block::
 
-  ogr2ogr \
-    -where "\"POP_EST\" < 1000000" \
-    -f GPKG output.gpkg \
-    natural_earth_vector.gpkg \
-    ne_10m_admin_0_countries
+  ogr2ogr -where "\"POP_EST\" < 1000000" \
+    output.gpkg natural_earth_vector.gpkg ne_10m_admin_0_countries
 
 
 Example reprojecting from ETRS_1989_LAEA_52N_10E to EPSG:4326 and clipping to a bounding box:

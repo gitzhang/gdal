@@ -62,23 +62,20 @@ fossil clone https://www.gaia-gis.it/fossil/librasterlite2 librasterlite2.fossil
 
 (git clone --depth 1 https://github.com/OSGeo/PROJ && cd PROJ && mkdir build && cd build && CC='ccache gcc' CXX='ccache g++' CFLAGS='-DPROJ_RENAME_SYMBOLS' CXXFLAGS='-DPROJ_RENAME_SYMBOLS' cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=ON || cat config.log && make -j3)
 sudo sh -c "cd $PWD/PROJ/build && make -j3 install"
-sudo sh -c "cd /usr/local/share/proj && curl http://download.osgeo.org/proj/proj-datumgrid-1.8.tar.gz > proj-datumgrid-1.8.tar.gz && tar xvzf proj-datumgrid-1.8.tar.gz"
 sudo sh -c "apt-get remove -y libproj-dev"
 
 export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
 # Configure GDAL
-./autogen.sh
-CC='ccache gcc' CXX='ccache g++' LDFLAGS='-lstdc++' ./configure --prefix=/usr --without-libtool --with-jpeg12 --with-python=/usr/bin/python3 --with-poppler --with-spatialite --with-mysql --with-liblzma --with-webp --with-epsilon --with-proj=/usr/local --with-poppler --with-hdf5 --with-sosi --with-mysql --with-rasterlite2 --enable-debug --with-libtiff=internal --with-hide-internal-symbols
-
-make USER_DEFS=-Werror -j3
-(cd apps && make USER_DEFS=-Werror -j3 test_ogrsf)
+mkdir build
+cd build
+CFLAGS="-Werror -DPROJ_RENAME_SYMBOLS" CXXFLAGS="-Werror -DPROJ_RENAME_SYMBOLS" LDFLAGS='-lstdc++' cmake .. -DUSE_CCACHE=ON -DPROJ_ROOT=/usr/local -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=/usr -DGDAL_USE_GEOTIFF_INTERNAL:BOOL=ON -DGDAL_USE_TIFF_INTERNAL:BOOL=ON
+make -j3
 sudo rm -f /usr/lib/libgdal.so*
 sudo make install
 sudo ldconfig
 sudo ln -s libgdal.so /usr/lib/libgdal.so.20
-
-(cd autotest/cpp && make -j3)
+cd ..
 
 ccache -s
 
@@ -92,10 +89,12 @@ export PYTEST="python3 -m pytest -vv -p no:sugar --color=no"
 # userfaultfd doesn't seem to work under Docker and/or 32bit (stalls on netcdf.py otherwise)
 export CPL_ENABLE_USERFAULTFD=NO
 
-(cd autotest/cpp && make quick_test)
+(cd build && make quicktest)
 
 # install pip and use it to install test dependencies
 pip3 install -U -r autotest/requirements.txt
+
+cd build
 
 # Fails with ERROR 1: OGDI DataSource Open Failed: Could not find the dynamic library "vrf"
 rm autotest/ogr/ogr_ogdi.py

@@ -71,6 +71,9 @@ using namespace std;
 #include "gdalwarper.h"
 #include "ogr_srs_api.h"
 
+// From gdal_priv.h
+void CPL_DLL GDALEnablePixelTypeSignedByteWarning(GDALRasterBandH hBand, bool b);
+
 typedef void GDALMajorObjectShadow;
 typedef void GDALDriverShadow;
 typedef void GDALDatasetShadow;
@@ -79,6 +82,7 @@ typedef void GDALColorTableShadow;
 typedef void GDALRasterAttributeTableShadow;
 typedef void GDALTransformerInfoShadow;
 typedef void GDALAsyncReaderShadow;
+typedef void GDALRelationshipShadow;
 
 typedef GDALExtendedDataTypeHS GDALExtendedDataTypeHS;
 typedef GDALEDTComponentHS GDALEDTComponentHS;
@@ -143,6 +147,7 @@ typedef int GDALRIOResampleAlg;
 typedef enum {
     GDT_Unknown = 0,
     /*! Eight bit unsigned integer */           GDT_Byte = 1,
+    /*! Eight bit signed integer */             GDT_Int8 = 14,
     /*! Sixteen bit unsigned integer */         GDT_UInt16 = 2,
     /*! Sixteen bit signed integer */           GDT_Int16 = 3,
     /*! Thirty two bit unsigned integer */      GDT_UInt32 = 4,
@@ -155,7 +160,7 @@ typedef enum {
     /*! Complex Int32 */                        GDT_CInt32 = 9,
     /*! Complex Float32 */                      GDT_CFloat32 = 10,
     /*! Complex Float64 */                      GDT_CFloat64 = 11,
-    GDT_TypeCount = 12          /* maximum type # + 1 */
+    GDT_TypeCount = 15          /* maximum type # + 1 */
 } GDALDataType;
 
 /*! Types of color interpretation for raster bands. */
@@ -249,6 +254,30 @@ typedef enum {
 	GARIO_ERROR = 2,
 	GARIO_COMPLETE = 3
 } GDALAsyncStatusType;
+
+/** Cardinality of relationship.
+ *
+ * @since GDAL 3.6
+ */
+%rename (RelationshipCardinality) GDALRelationshipCardinality;
+typedef enum {
+  /*! One-to-one */ GRC_ONE_TO_ONE=0,
+  /*! One-to-many */ GRC_ONE_TO_MANY=1,
+  /*! Many-to-one */ GRC_MANY_TO_ONE=2,
+  /*! Many-to-many */ GRC_MANY_TO_MANY=3
+} GDALRelationshipCardinality;
+
+/** Type of relationship.
+ *
+ * @since GDAL 3.6
+ */
+%rename (RelationshipType) GDALRelationshipType;
+typedef enum {
+  /*! Composite relationship */ GRT_COMPOSITE=0,
+  /*! Association relationship */ GRT_ASSOCIATION=1,
+  /*! Aggregation relationship */ GRT_AGGREGATION=2,
+} GDALRelationshipType;
+
 #endif
 
 #if defined(SWIGPYTHON)
@@ -576,6 +605,13 @@ RETURN_NONE GDALGCPsToGeoTransform( int nGCPs, GDAL_GCP const * pGCPs,
 
 //************************************************************************
 //
+// Define the Relationship object.
+//
+//************************************************************************
+%include "Relationship.i"
+
+//************************************************************************
+//
 // Raster Operations
 //
 //************************************************************************
@@ -729,6 +765,8 @@ retStringAndCPLFree *GetJPEG2000StructureAsString( const char* pszFilename, char
 }
 }
 
+%rename (HasTriangulation) GDALHasTriangulation;
+int GDALHasTriangulation();
 
 //************************************************************************
 //
@@ -1094,6 +1132,30 @@ struct GDALInfoOptions {
 %rename (InfoInternal) GDALInfo;
 #endif
 retStringAndCPLFree *GDALInfo( GDALDatasetShadow *hDataset, GDALInfoOptions *infoOptions );
+
+//************************************************************************
+// gdal.VectorInfo()
+//************************************************************************
+
+#ifdef SWIGJAVA
+%rename (VectorInfoOptions) GDALVectorInfoOptions;
+#endif
+struct GDALVectorInfoOptions {
+%extend {
+    GDALVectorInfoOptions(char** options) {
+        return GDALVectorInfoOptionsNew(options, NULL);
+    }
+
+    ~GDALVectorInfoOptions() {
+        GDALVectorInfoOptionsFree( self );
+    }
+}
+};
+
+#ifdef SWIGPYTHON
+%rename (VectorInfoInternal) GDALVectorInfo;
+#endif
+retStringAndCPLFree *GDALVectorInfo( GDALDatasetShadow *hDataset, GDALVectorInfoOptions *infoOptions );
 
 //************************************************************************
 // gdal.MultiDimInfo()

@@ -37,7 +37,7 @@ sudo apt-get install -y --allow-unauthenticated libpng-dev libjpeg-dev libgif-de
 sudo ln -s /usr/lib/ogdi/libvrf.so /usr/lib
 
 # Build odbc-cpp library for HANA
-(git clone https://github.com/SAP/odbc-cpp-wrapper.git && mkdir odbc-cpp-wrapper/build && cd odbc-cpp-wrapper/build && cmake .. && make -j 2 && make install)
+(wget https://github.com/SAP/odbc-cpp-wrapper/archive/refs/tags/v1.1.tar.gz -O odbc-cpp-wrapper.tar.gz && mkdir odbc-cpp-wrapper && tar -xvf odbc-cpp-wrapper.tar.gz -C odbc-cpp-wrapper --strip-components=1 && mkdir odbc-cpp-wrapper/build && cd odbc-cpp-wrapper/build && cmake .. && make -j 2 && make install && cd ../.. && rm -rf odbc-cpp-wrapper)
 
 wget https://github.com/Esri/file-geodatabase-api/raw/master/FileGDB_API_1.5/FileGDB_API_1_5_64gcc51.tar.gz
 tar xzf FileGDB_API_1_5_64gcc51.tar.gz
@@ -101,13 +101,8 @@ rm -f "$WORK_DIR/ccache.tar.gz"
 
 export PRELOAD=$(clang -print-file-name=libclang_rt.asan-x86_64.so)
 
-cd autotest
-
-# Don't run these
-rm -f ogr/ogr_fgdb.py ogr/ogr_pgeo.py
-
 # install test dependencies
-sudo python3 -m pip install -U -r ./requirements.txt
+sudo python3 -m pip install -U -r autotest/requirements.txt
 sudo python3 -m pip install -U hdbcli
 
 # Run each module in its own pytest process.
@@ -124,11 +119,16 @@ sudo python3 -m pip install -U hdbcli
 export SKIP_MEM_INTENSIVE_TEST=YES
 export SKIP_VIRTUALMEM=YES
 export LD_PRELOAD=$PRELOAD
-export ASAN_OPTIONS=allocator_may_return_null=1:symbolize=1:suppressions=$PWD/asan_suppressions.txt
-export LSAN_OPTIONS=detect_leaks=1,print_suppressions=0,suppressions=$PWD/lsan_suppressions.txt
+export ASAN_OPTIONS=allocator_may_return_null=1:symbolize=1:suppressions=$PWD/autotest/asan_suppressions.txt
+export LSAN_OPTIONS=detect_leaks=1,print_suppressions=0,suppressions=$PWD/autotest/lsan_suppressions.txt
 
-gdalinfo gcore/data/byte.tif
+gdalinfo autotest/gcore/data/byte.tif
 python3 -c "from osgeo import gdal; print('yes')"
+
+cd build/autotest
+
+# Don't run these
+rm -f ogr/ogr_fgdb.py ogr/ogr_pgeo.py
 
 echo "#!/bin/sh" > pytest_wrapper.sh
 echo 'ARGS="$*"' >> pytest_wrapper.sh
@@ -142,7 +142,7 @@ rm ogr/ogr_ogdi.py
 # new-delete-type-mismatch error in gpsbabel binary that we can't suppress
 rm ogr/ogr_gpsbabel.py
 
-find \
+find -L \
     ogr gcore gdrivers osr alg gnm utilities pyscripts \
     -name '*.py' ! -name netcdf_cfchecks.py ! -name "__init__.py" ! -path 'ogr/data/*' \
     -print \

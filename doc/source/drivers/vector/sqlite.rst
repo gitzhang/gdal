@@ -227,6 +227,16 @@ Transaction support
 
 The driver implements transactions at the database level, per :ref:`rfc-54`
 
+Relationships
+-------------
+
+.. versionadded:: 3.6
+
+Relationship retrieval is supported. Relationships will be reported for tables which utilize FOREIGN KEY
+constraints.
+
+Relationship creation is supported since GDAL 3.7, for one-to-many relationships only.
+
 Dataset open options
 ~~~~~~~~~~~~~~~~~~~~
 
