@@ -7,29 +7,15 @@
  ******************************************************************************
  * Copyright (c) 1999, Frank Warmerdam
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "ogr_tiger.h"
 #include "cpl_conv.h"
 
-static const char FILE_CODE[] = "4";
+#include <cinttypes>
+
+static const char FOUR_FILE_CODE[] = "4";
 
 static const TigerFieldInfo rt4_fields[] = {
     // fieldname    fmt  type  OFTType         beg  end  len  bDefine bSet
@@ -52,7 +38,7 @@ static const TigerRecordInfo rt4_info = {
 
 TigerAltName::TigerAltName(OGRTigerDataSource *poDSIn,
                            CPL_UNUSED const char *pszPrototypeModule)
-    : TigerFileBase(&rt4_info, FILE_CODE)
+    : TigerFileBase(&rt4_info, FOUR_FILE_CODE)
 {
     OGRFieldDefn oField("", OFTInteger);
 
@@ -91,10 +77,11 @@ OGRFeature *TigerAltName::GetFeature(int nRecordId)
     if (fpPrimary == nullptr)
         return nullptr;
 
-    if (VSIFSeekL(fpPrimary, nRecordId * nRecordLength, SEEK_SET) != 0)
+    const auto nOffset = static_cast<uint64_t>(nRecordId) * nRecordLength;
+    if (VSIFSeekL(fpPrimary, nOffset, SEEK_SET) != 0)
     {
-        CPLError(CE_Failure, CPLE_FileIO, "Failed to seek to %d of %s4",
-                 nRecordId * nRecordLength, pszModule);
+        CPLError(CE_Failure, CPLE_FileIO,
+                 "Failed to seek to %" PRIu64 " of %s4", nOffset, pszModule);
         return nullptr;
     }
 
@@ -112,7 +99,7 @@ OGRFeature *TigerAltName::GetFeature(int nRecordId)
     /* -------------------------------------------------------------------- */
 
     OGRFeature *poFeature = new OGRFeature(poFeatureDefn);
-    int anFeatList[5];
+    int anFeatList[5] = {0};
     int nFeatCount = 0;
 
     SetFields(psRTInfo, poFeature, achRecord);

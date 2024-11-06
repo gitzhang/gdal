@@ -8,23 +8,7 @@
  * Copyright (c) 1999, Frank Warmerdam
  * Copyright (c) 2008-2010, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_string.h"
@@ -75,14 +59,17 @@ class PAuxDataset final : public RawDataset
     {
         return m_oSRS.IsEmpty() ? nullptr : &m_oSRS;
     }
+
     CPLErr GetGeoTransform(double *) override;
     CPLErr SetGeoTransform(double *) override;
 
     int GetGCPCount() override;
+
     const OGRSpatialReference *GetGCPSpatialRef() const override
     {
         return m_oGCPSRS.IsEmpty() ? nullptr : &m_oGCPSRS;
     }
+
     const GDAL_GCP *GetGCPs() override;
 
     char **GetFileList() override;
@@ -679,7 +666,7 @@ GDALDataset *PAuxDataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     /*      Create a corresponding GDALDataset.                             */
     /* -------------------------------------------------------------------- */
-    PAuxDataset *poDS = new PAuxDataset();
+    auto poDS = std::make_unique<PAuxDataset>();
 
     /* -------------------------------------------------------------------- */
     /*      Load the .aux file into a string list suitable to be            */
@@ -697,33 +684,27 @@ GDALDataset *PAuxDataset::Open(GDALOpenInfo *poOpenInfo)
     // some cases.  See bug 947.
     if (pszLine == nullptr)
     {
-        delete poDS;
         return nullptr;
     }
 
-    char **papszTokens = CSLTokenizeString(pszLine);
+    const CPLStringList aosTokens(CSLTokenizeString(pszLine));
 
-    if (CSLCount(papszTokens) < 3)
+    if (aosTokens.size() < 3)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "RawDefinition missing or corrupt in %s.",
                  poOpenInfo->pszFilename);
-        delete poDS;
-        CSLDestroy(papszTokens);
         return nullptr;
     }
 
-    poDS->nRasterXSize = atoi(papszTokens[0]);
-    poDS->nRasterYSize = atoi(papszTokens[1]);
-    poDS->nBands = atoi(papszTokens[2]);
+    poDS->nRasterXSize = atoi(aosTokens[0]);
+    poDS->nRasterYSize = atoi(aosTokens[1]);
+    int l_nBands = atoi(aosTokens[2]);
     poDS->eAccess = poOpenInfo->eAccess;
 
-    CSLDestroy(papszTokens);
-
     if (!GDALCheckDatasetDimensions(poDS->nRasterXSize, poDS->nRasterYSize) ||
-        !GDALCheckBandCount(poDS->nBands, FALSE))
+        !GDALCheckBandCount(l_nBands, FALSE))
     {
-        delete poDS;
         return nullptr;
     }
 
@@ -739,7 +720,6 @@ GDALDataset *PAuxDataset::Open(GDALOpenInfo *poOpenInfo)
             CPLError(CE_Failure, CPLE_OpenFailed,
                      "File %s is missing or read-only, check permissions.",
                      osTarget.c_str());
-            delete poDS;
             return nullptr;
         }
     }
@@ -751,7 +731,6 @@ GDALDataset *PAuxDataset::Open(GDALOpenInfo *poOpenInfo)
         {
             CPLError(CE_Failure, CPLE_OpenFailed,
                      "File %s is missing or unreadable.", osTarget.c_str());
-            delete poDS;
             return nullptr;
         }
     }
@@ -760,8 +739,7 @@ GDALDataset *PAuxDataset::Open(GDALOpenInfo *poOpenInfo)
     /*      Collect raw definitions of each channel and create              */
     /*      corresponding bands.                                            */
     /* -------------------------------------------------------------------- */
-    int iBand = 0;
-    for (int i = 0; i < poDS->nBands; i++)
+    for (int i = 0; i < l_nBands; i++)
     {
         char szDefnName[32] = {'\0'};
         snprintf(szDefnName, sizeof(szDefnName), "ChanDefinition-%d", i + 1);
@@ -772,56 +750,51 @@ GDALDataset *PAuxDataset::Open(GDALOpenInfo *poOpenInfo)
             continue;
         }
 
-        papszTokens = CSLTokenizeString(pszLine);
-        if (CSLCount(papszTokens) < 4)
+        const CPLStringList aosTokensBand(CSLTokenizeString(pszLine));
+        if (aosTokensBand.size() < 4)
         {
             // Skip the band with broken description
-            CSLDestroy(papszTokens);
             continue;
         }
 
         GDALDataType eType = GDT_Unknown;
-        if (EQUAL(papszTokens[0], "16U"))
+        if (EQUAL(aosTokensBand[0], "16U"))
             eType = GDT_UInt16;
-        else if (EQUAL(papszTokens[0], "16S"))
+        else if (EQUAL(aosTokensBand[0], "16S"))
             eType = GDT_Int16;
-        else if (EQUAL(papszTokens[0], "32R"))
+        else if (EQUAL(aosTokensBand[0], "32R"))
             eType = GDT_Float32;
         else
             eType = GDT_Byte;
 
         bool bNative = true;
-        if (CSLCount(papszTokens) > 4)
+        if (CSLCount(aosTokensBand) > 4)
         {
 #ifdef CPL_LSB
-            bNative = EQUAL(papszTokens[4], "Swapped");
+            bNative = EQUAL(aosTokensBand[4], "Swapped");
 #else
-            bNative = EQUAL(papszTokens[4], "Unswapped");
+            bNative = EQUAL(aosTokensBand[4], "Unswapped");
 #endif
         }
 
         const vsi_l_offset nBandOffset = CPLScanUIntBig(
-            papszTokens[1], static_cast<int>(strlen(papszTokens[1])));
-        const int nPixelOffset = atoi(papszTokens[2]);
-        const int nLineOffset = atoi(papszTokens[3]);
+            aosTokensBand[1], static_cast<int>(strlen(aosTokensBand[1])));
+        const int nPixelOffset = atoi(aosTokensBand[2]);
+        const int nLineOffset = atoi(aosTokensBand[3]);
 
         if (nPixelOffset <= 0 || nLineOffset <= 0)
         {
             // Skip the band with broken offsets.
-            CSLDestroy(papszTokens);
             continue;
         }
 
-        poDS->SetBand(iBand + 1,
-                      new PAuxRasterBand(poDS, iBand + 1, poDS->fpImage,
-                                         nBandOffset, nPixelOffset, nLineOffset,
-                                         eType, bNative));
-        iBand++;
-
-        CSLDestroy(papszTokens);
+        auto poBand = std::make_unique<PAuxRasterBand>(
+            poDS.get(), poDS->nBands + 1, poDS->fpImage, nBandOffset,
+            nPixelOffset, nLineOffset, eType, bNative);
+        if (!poBand->IsValid())
+            return nullptr;
+        poDS->SetBand(poDS->nBands + 1, std::move(poBand));
     }
-
-    poDS->nBands = iBand;
 
     /* -------------------------------------------------------------------- */
     /*      Get the projection.                                             */
@@ -845,12 +818,12 @@ GDALDataset *PAuxDataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     /*      Check for overviews.                                            */
     /* -------------------------------------------------------------------- */
-    poDS->oOvManager.Initialize(poDS, osTarget);
+    poDS->oOvManager.Initialize(poDS.get(), osTarget);
 
     poDS->ScanForGCPs();
     poDS->bAuxUpdated = FALSE;
 
-    return poDS;
+    return poDS.release();
 }
 
 /************************************************************************/
@@ -976,7 +949,8 @@ GDALDataset *PAuxDataset::Create(const char *pszFilename, int nXSize,
         {
             nPixelOffset = GDALGetDataTypeSizeBytes(eType);
             nLineOffset = nXSize * nPixelSizeSum;
-            nNextImgOffset = nImgOffset + nPixelOffset * nXSize;
+            nNextImgOffset =
+                nImgOffset + static_cast<vsi_l_offset>(nPixelOffset) * nXSize;
         }
         else if (EQUAL(pszInterleave, "PIXEL"))
         {

@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2011, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "ogr_svg.h"
@@ -34,7 +18,7 @@
 /************************************************************************/
 
 OGRSVGDataSource::OGRSVGDataSource()
-    : pszName(nullptr), papoLayers(nullptr), nLayers(0)
+    : papoLayers(nullptr), nLayers(0)
 #ifdef HAVE_EXPAT
       ,
       eValidity(SVG_VALIDITY_UNKNOWN), bIsCloudmade(false),
@@ -53,7 +37,6 @@ OGRSVGDataSource::~OGRSVGDataSource()
     for (int i = 0; i < nLayers; i++)
         delete papoLayers[i];
     CPLFree(papoLayers);
-    CPLFree(pszName);
 }
 
 /************************************************************************/
@@ -108,7 +91,7 @@ void OGRSVGDataSource::dataHandlerValidateCbk(CPL_UNUSED const char *data,
                                               CPL_UNUSED int nLen)
 {
     nDataHandlerCounter++;
-    if (nDataHandlerCounter >= BUFSIZ)
+    if (nDataHandlerCounter >= PARSER_BUF_SIZE)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "File probably corrupted (million laugh pattern)");
@@ -140,8 +123,6 @@ int OGRSVGDataSource::Open(const char *pszFilename)
 
 {
 #ifdef HAVE_EXPAT
-    pszName = CPLStrdup(pszFilename);
-
     /* -------------------------------------------------------------------- */
     /*      Try to open the file.                                           */
     /* -------------------------------------------------------------------- */
@@ -165,7 +146,7 @@ int OGRSVGDataSource::Open(const char *pszFilename)
     XML_SetElementHandler(oParser, ::startElementValidateCbk, nullptr);
     XML_SetCharacterDataHandler(oParser, ::dataHandlerValidateCbk);
 
-    char aBuf[BUFSIZ];
+    std::vector<char> aBuf(PARSER_BUF_SIZE);
     int nDone = 0;
     unsigned int nLen = 0;
     int nCount = 0;
@@ -177,15 +158,15 @@ int OGRSVGDataSource::Open(const char *pszFilename)
     do
     {
         nDataHandlerCounter = 0;
-        nLen = (unsigned int)VSIFReadL(aBuf, 1, sizeof(aBuf), fp);
-        nDone = VSIFEofL(fp);
-        if (XML_Parse(oParser, aBuf, nLen, nDone) == XML_STATUS_ERROR)
+        nLen = (unsigned int)VSIFReadL(aBuf.data(), 1, aBuf.size(), fp);
+        nDone = nLen < aBuf.size();
+        if (XML_Parse(oParser, aBuf.data(), nLen, nDone) == XML_STATUS_ERROR)
         {
-            if (nLen <= BUFSIZ - 1)
+            if (nLen <= PARSER_BUF_SIZE - 1)
                 aBuf[nLen] = 0;
             else
-                aBuf[BUFSIZ - 1] = 0;
-            if (strstr(aBuf, "<?xml") && strstr(aBuf, "<svg"))
+                aBuf[PARSER_BUF_SIZE - 1] = 0;
+            if (strstr(aBuf.data(), "<?xml") && strstr(aBuf.data(), "<svg"))
             {
                 CPLError(
                     CE_Failure, CPLE_AppDefined,
@@ -207,7 +188,7 @@ int OGRSVGDataSource::Open(const char *pszFilename)
         }
         else
         {
-            /* After reading 50 * BUFSIZE bytes, and not finding whether the
+            /* After reading 50 * PARSER_BUF_SIZE bytes, and not finding whether the
              * file */
             /* is SVG or not, we give up and fail silently */
             nCount++;
@@ -262,13 +243,4 @@ int OGRSVGDataSource::Open(const char *pszFilename)
     }
     return FALSE;
 #endif
-}
-
-/************************************************************************/
-/*                            TestCapability()                          */
-/************************************************************************/
-
-int OGRSVGDataSource::TestCapability(CPL_UNUSED const char *pszCap)
-{
-    return FALSE;
 }

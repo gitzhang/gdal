@@ -9,27 +9,12 @@
 ###############################################################################
 # Copyright (c) 2021, Idan Miara <idan@miara.com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 import os
 
+import gdaltest
 import pytest
 import test_py_scripts
 
@@ -46,6 +31,41 @@ from osgeo.gdal_array import flip_code
 from osgeo_utils import gdal2xyz
 from osgeo_utils.auxiliary.raster_creation import create_flat_raster
 from osgeo_utils.samples import gdallocationinfo
+
+pytestmark = pytest.mark.skipif(
+    test_py_scripts.get_py_script("gdal2xyz") is None,
+    reason="gdal2xyz not available",
+)
+
+
+@pytest.fixture()
+def script_path():
+    return test_py_scripts.get_py_script("gdal2xyz")
+
+
+###############################################################################
+#
+
+
+def test_gdal2xyz_help(script_path):
+
+    if gdaltest.is_travis_branch("sanitize"):
+        pytest.skip("fails on sanitize for unknown reason")
+
+    assert "ERROR" not in test_py_scripts.run_py_script(
+        script_path, "gdal2xyz", "--help"
+    )
+
+
+###############################################################################
+#
+
+
+def test_gdal2xyz_version(script_path):
+
+    assert "ERROR" not in test_py_scripts.run_py_script(
+        script_path, "gdal2xyz", "--version"
+    )
 
 
 def test_gdal2xyz_py_1():
@@ -86,6 +106,7 @@ def test_gdal2xyz_py_1():
             dst_nodata=dst_nodata,
             skip_nodata=skip_nodata,
             pre_allocate_np_arrays=pre_allocate_np_arrays,
+            progress_callback=None,
         )
         _pixels, _lines, data2 = gdallocationinfo.gdallocationinfo(
             ds,
@@ -102,39 +123,55 @@ def test_gdal2xyz_py_1():
 # Test -b at beginning
 
 
-def test_gdal2xyz_py_2():
+def test_gdal2xyz_py_2(script_path, tmp_path):
 
-    script = "gdal2xyz"
-    folder = test_py_scripts.get_py_script(script)
-    if folder is None:
-        pytest.skip()
+    out_xyz = str(tmp_path / "out.xyz")
 
     arguments = "-b 1"
-    arguments += " " + test_py_scripts.get_data_path("gcore") + "byte.tif"
-    arguments += " tmp/out.xyz"
+    arguments += " " + test_py_scripts.get_data_path("gcore") + "byte.tif "
+    arguments += out_xyz
 
-    test_py_scripts.run_py_script(folder, script, arguments)
+    _, err = test_py_scripts.run_py_script(
+        script_path, "gdal2xyz", arguments, return_stderr=True
+    )
+    assert "UseExceptions" not in err
 
-    assert os.path.exists("tmp/out.xyz")
-    os.unlink("tmp/out.xyz")
+    assert os.path.exists(out_xyz)
 
 
 ###############################################################################
 # Test -b at end
 
 
-def test_gdal2xyz_py_3():
+def test_gdal2xyz_py_3(script_path, tmp_path):
 
-    script = "gdal2xyz"
-    folder = test_py_scripts.get_py_script(script)
-    if folder is None:
-        pytest.skip()
+    out_xyz = str(tmp_path / "out.xyz")
 
-    arguments = test_py_scripts.get_data_path("gcore") + "byte.tif"
-    arguments += " tmp/out.xyz"
+    arguments = test_py_scripts.get_data_path("gcore") + "byte.tif "
+    arguments += out_xyz
     arguments += " -b 1"
 
-    test_py_scripts.run_py_script(folder, script, arguments)
+    test_py_scripts.run_py_script(script_path, "gdal2xyz", arguments)
 
-    assert os.path.exists("tmp/out.xyz")
-    os.unlink("tmp/out.xyz")
+    assert os.path.exists(out_xyz)
+
+
+###############################################################################
+# Test -srcnodata and -dstnodata
+
+
+def test_gdal2xyz_py_srcnodata_dstnodata(script_path, tmp_path):
+
+    out_xyz = str(tmp_path / "out.xyz")
+
+    arguments = "-allbands -srcnodata 0 0 0 -dstnodata 1 2 3"
+    arguments += " " + test_py_scripts.get_data_path("gcore") + "rgbsmall.tif "
+    arguments += out_xyz
+
+    test_py_scripts.run_py_script(script_path, "gdal2xyz", arguments)
+
+    assert os.path.exists(out_xyz)
+    with open(out_xyz, "rb") as f:
+        l = f.readline()
+
+    assert l.startswith(b"-44.838604 -22.9343 1 2 3")

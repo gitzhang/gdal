@@ -10,23 +10,7 @@
 ###############################################################################
 # Copyright (c) 2018-2021, NextGIS <info@nextgis.com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 import os
@@ -47,6 +31,7 @@ import pytest
 
 pytestmark = [
     pytest.mark.require_driver("NGW"),
+    pytest.mark.random_order(disabled=True),
     pytest.mark.skipif(
         "CI" in os.environ,
         reason="NGW tests are flaky. See https://github.com/OSGeo/gdal/issues/4453",
@@ -124,19 +109,18 @@ def get_new_name():
 def test_ngw_2():
 
     create_url = "NGW:" + gdaltest.ngw_test_server + "/resource/0/" + get_new_name()
-    gdal.PushErrorHandler()
-    description = "GDAL Raster test group"
-    gdaltest.ngw_ds = gdal.GetDriverByName("NGW").Create(
-        create_url,
-        0,
-        0,
-        0,
-        gdal.GDT_Unknown,
-        options=[
-            "DESCRIPTION=" + description,
-        ],
-    )
-    gdal.PopErrorHandler()
+    with gdal.quiet_errors():
+        description = "GDAL Raster test group"
+        gdaltest.ngw_ds = gdal.GetDriverByName("NGW").Create(
+            create_url,
+            0,
+            0,
+            0,
+            gdal.GDT_Unknown,
+            options=[
+                "DESCRIPTION=" + description,
+            ],
+        )
 
     assert gdaltest.ngw_ds is not None, "Create datasource failed."
     assert (
@@ -272,15 +256,12 @@ def test_ngw_7():
         pytest.skip()
 
     gdal.ErrorReset()
-    gdal.SetConfigOption("CPL_ACCUM_ERROR_MSG", "ON")
-    gdal.PushErrorHandler("CPLQuietErrorHandler")
+    with gdal.config_option("CPL_ACCUM_ERROR_MSG", "ON"), gdaltest.error_handler():
 
-    ovr_band = gdaltest.ngw_ds.GetRasterBand(1).GetOverview(21)
-    assert ovr_band is not None
-    ovr_band.Checksum()
+        ovr_band = gdaltest.ngw_ds.GetRasterBand(1).GetOverview(21)
+        assert ovr_band is not None
+        ovr_band.Checksum()
 
-    gdal.PopErrorHandler()
-    gdal.SetConfigOption("CPL_ACCUM_ERROR_MSG", "OFF")
     msg = gdal.GetLastErrorMsg()
 
     assert gdal.GetLastErrorType() != gdal.CE_Failure, msg

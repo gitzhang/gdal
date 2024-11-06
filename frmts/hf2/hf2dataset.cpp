@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2010-2012, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_string.h"
@@ -659,7 +643,7 @@ GDALDataset *HF2Dataset::Open(GDALOpenInfo *poOpenInfo)
             oSRS.SetUTM(std::abs(static_cast<int>(nUTMZone)), nUTMZone > 0);
         }
         if (bHasSRS)
-            poDS->m_oSRS = oSRS;
+            poDS->m_oSRS = std::move(oSRS);
     }
 
     /* -------------------------------------------------------------------- */
@@ -974,8 +958,8 @@ GDALDataset *HF2Dataset::CreateCopy(const char *pszFilename,
     const int nXBlocks = (nXSize + nTileSize - 1) / nTileSize;
     const int nYBlocks = (nYSize + nTileSize - 1) / nTileSize;
 
-    void *pTileBuffer = (void *)VSI_MALLOC_VERBOSE(
-        nTileSize * nTileSize * (GDALGetDataTypeSize(eReqDT) / 8));
+    void *pTileBuffer = VSI_MALLOC3_VERBOSE(nTileSize, nTileSize,
+                                            GDALGetDataTypeSizeBytes(eReqDT));
     if (pTileBuffer == nullptr)
     {
         VSIFCloseL(fp);
@@ -1061,7 +1045,7 @@ GDALDataset *HF2Dataset::CreateCopy(const char *pszFilename,
                 for (int k = 1; k < nReqYSize * nReqXSize; k++)
                 {
                     float fVal = ((float *)pTileBuffer)[k];
-                    if (CPLIsNan(fVal))
+                    if (std::isnan(fVal))
                     {
                         CPLError(CE_Failure, CPLE_NotSupported,
                                  "NaN value found");

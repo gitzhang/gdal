@@ -8,23 +8,7 @@
  *
  *  Copyright (c) 2018-2020, NextGIS <info@nextgis.com>
  *
- *  Permission is hereby granted, free of charge, to any person obtaining a copy
- *  of this software and associated documentation files (the "Software"), to
- *deal in the Software without restriction, including without limitation the
- *rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- *sell copies of the Software, and to permit persons to whom the Software is
- *  furnished to do so, subject to the following conditions:
- *
- *  The above copyright notice and this permission notice shall be included in
- *all copies or substantial portions of the Software.
- *
- *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- *FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- *IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  *******************************************************************************/
 
 #include "ogr_ngw.h"
@@ -52,6 +36,7 @@ class NGWWrapperRasterBand : public GDALProxyRasterBand
         eDataType = poBaseBand->GetRasterDataType();
         poBaseBand->GetBlockSize(&nBlockXSize, &nBlockYSize);
     }
+
     virtual ~NGWWrapperRasterBand()
     {
     }
@@ -381,7 +366,7 @@ bool OGRNGWDataset::Init(int nOpenFlagsIn)
 
                 CPLFree(pszRasterUrl);
 
-                poRasterDS = reinterpret_cast<GDALDataset *>(GDALOpenEx(
+                poRasterDS = GDALDataset::FromHandle(GDALOpenEx(
                     pszConnStr,
                     GDAL_OF_READONLY | GDAL_OF_RASTER | GDAL_OF_INTERNAL,
                     nullptr, nullptr, nullptr));
@@ -598,9 +583,8 @@ void OGRNGWDataset::AddRaster(const CPLJSONObject &oRasterJsonObj,
  * ICreateLayer
  */
 OGRLayer *OGRNGWDataset::ICreateLayer(const char *pszNameIn,
-                                      OGRSpatialReference *poSpatialRef,
-                                      OGRwkbGeometryType eGType,
-                                      char **papszOptions)
+                                      const OGRGeomFieldDefn *poGeomFieldDefn,
+                                      CSLConstList papszOptions)
 {
     if (!IsUpdateMode())
     {
@@ -608,6 +592,10 @@ OGRLayer *OGRNGWDataset::ICreateLayer(const char *pszNameIn,
                  "Operation not available in read-only mode");
         return nullptr;
     }
+
+    const auto eGType = poGeomFieldDefn ? poGeomFieldDefn->GetType() : wkbNone;
+    const auto poSpatialRef =
+        poGeomFieldDefn ? poGeomFieldDefn->GetSpatialRef() : nullptr;
 
     // Check permissions as we create new layer in memory and will create in
     // during SyncToDisk.
@@ -634,8 +622,9 @@ OGRLayer *OGRNGWDataset::ICreateLayer(const char *pszNameIn,
         return nullptr;
     }
 
-    poSpatialRef->AutoIdentifyEPSG();
-    const char *pszEPSG = poSpatialRef->GetAuthorityCode(nullptr);
+    OGRSpatialReference *poSRSClone = poSpatialRef->Clone();
+    poSRSClone->AutoIdentifyEPSG();
+    const char *pszEPSG = poSRSClone->GetAuthorityCode(nullptr);
     int nEPSG = -1;
     if (pszEPSG != nullptr)
     {
@@ -646,6 +635,7 @@ OGRLayer *OGRNGWDataset::ICreateLayer(const char *pszNameIn,
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "Unsupported spatial reference EPSG code: %d", nEPSG);
+        poSRSClone->Release();
         return nullptr;
     }
 
@@ -667,6 +657,7 @@ OGRLayer *OGRNGWDataset::ICreateLayer(const char *pszNameIn,
                          "Use the layer creation option OVERWRITE=YES to "
                          "replace it.",
                          pszNameIn);
+                poSRSClone->Release();
                 return nullptr;
             }
         }
@@ -675,7 +666,6 @@ OGRLayer *OGRNGWDataset::ICreateLayer(const char *pszNameIn,
     // Create layer.
     std::string osKey = CSLFetchNameValueDef(papszOptions, "KEY", "");
     std::string osDesc = CSLFetchNameValueDef(papszOptions, "DESCRIPTION", "");
-    OGRSpatialReference *poSRSClone = poSpatialRef->Clone();
     poSRSClone->SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
     OGRNGWLayer *poLayer =
         new OGRNGWLayer(this, pszNameIn, poSRSClone, eGType, osKey, osDesc);
@@ -1126,7 +1116,7 @@ OGRLayer *OGRNGWDataset::ExecuteSQL(const char *pszStatement,
 
             std::set<std::string> aosFields;
             bool bSkip = false;
-            for (int i = 0; i < oSelect.result_columns; ++i)
+            for (int i = 0; i < oSelect.result_columns(); ++i)
             {
                 swq_col_func col_func = oSelect.column_defs[i].col_func;
                 if (col_func != SWQCF_NONE)
@@ -1267,7 +1257,7 @@ CPLErr OGRNGWDataset::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
                                 int nXSize, int nYSize, void *pData,
                                 int nBufXSize, int nBufYSize,
                                 GDALDataType eBufType, int nBandCount,
-                                int *panBandMap, GSpacing nPixelSpace,
+                                BANDMAP_TYPE panBandMap, GSpacing nPixelSpace,
                                 GSpacing nLineSpace, GSpacing nBandSpace,
                                 GDALRasterIOExtraArg *psExtraArg)
 {
@@ -1292,7 +1282,7 @@ CPLErr OGRNGWDataset::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
 
                 // Fill buffer transparent color.
                 memset(pData, 0,
-                       nBufXSize * nBufYSize * nBandCount *
+                       static_cast<size_t>(nBufXSize) * nBufYSize * nBandCount *
                            GDALGetDataTypeSizeBytes(eBufType));
                 return CE_None;
             }

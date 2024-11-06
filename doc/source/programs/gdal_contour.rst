@@ -15,12 +15,12 @@ Synopsis
 
 .. code-block::
 
-    gdal_contour [-b <band>] [-a <attribute_name>] [-amin <attribute_name>] [-amax <attribute_name>]
-                 [-3d] [-inodata]
-                 [-snodata n] [-i <interval>]
-                 [-f <formatname>] [[-dsco NAME=VALUE] ...] [[-lco NAME=VALUE] ...]
+    gdal_contour [--help] [--help-general]
+                 [-b <band>] [-a <attribute_name>] [-amin <attribute_name>] [-amax <attribute_name>]
+                 [-3d] [-inodata] [-snodata <n>] [-f <formatname>] [-i <interval>]
+                 [-dsco <NAME>=<VALUE>]... [-lco <NAME>=<VALUE>]...
                  [-off <offset>] [-fl <level> <level>...] [-e <exp_base>]
-                 [-nln <outlayername>] [-q] [-p]
+                 [-nln <outlayername>] [-q] [-p] [-gt <n>|unlimited]
                  <src_filename> <dst_filename>
 
 Description
@@ -33,6 +33,8 @@ The contour line-strings are oriented consistently and the high side will
 be on the right, i.e. a line string goes clockwise around a top.
 
 .. program:: gdal_contour
+
+.. include:: options/help_and_help_general.rst
 
 .. option:: -b <band>
 
@@ -81,21 +83,25 @@ be on the right, i.e. a line string goes clockwise around a top.
 
         If not specified, the format is guessed from the extension (previously was ESRI Shapefile).
 
-.. option:: -dsco <NAME=VALUE>
+.. option:: -dsco <NAME>=<VALUE>
 
     Dataset creation option (format specific)
 
-.. option:: -lco <NAME=VALUE>
+.. option:: -lco <NAME>=<VALUE>
 
     Layer creation option (format specific)
 
 .. option:: -i <interval>
 
     Elevation interval between contours.
+    Must specify either -i or -fl or -e.
 
 .. option:: -off <offset>
 
     Offset from zero relative to which to interpret intervals.
+
+    For example, `-i 100` requests contours at ...-100, 0, 100...
+    Further adding `-off 25` makes that request instead ...-75, 25, 125...
 
 .. option:: -fl <level>
 
@@ -104,6 +110,7 @@ be on the right, i.e. a line string goes clockwise around a top.
 .. option:: -e <base>
 
     Generate levels on an exponential scale: `base ^ k`, for `k` an integer.
+    Must specify either -i or -fl or -e.
 
     .. versionadded:: 2.4.0
 
@@ -117,9 +124,18 @@ be on the right, i.e. a line string goes clockwise around a top.
 
     .. versionadded:: 2.4.0
 
+.. option:: -gt <n>
+
+    Group n features per transaction (default 100 000). Increase the value for
+    better performance when writing into DBMS drivers that have transaction
+    support. ``n`` can be set to unlimited to load the data into a single
+    transaction. If set to 0, no explicit transaction is done.
+
+    .. versionadded:: 3.10
+
 .. option:: -q
 
-    Be quiet.
+    Be quiet: do not print progress indicators.
 
 C API
 -----

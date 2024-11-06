@@ -10,23 +10,7 @@
 # Copyright (c) 2006, Swapnil Hajare <dreamil@gmail.com>
 # Copyright (c) 2009-2010, Even Rouault <even dot rouault at spatialys.com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 import os
@@ -46,7 +30,7 @@ pytestmark = pytest.mark.require_driver("AIG")
 def test_aigrid_1():
 
     tst = gdaltest.GDALTest("AIG", "aigrid/abc3x1", 1, 3)
-    return tst.testOpen()
+    tst.testOpen()
 
 
 ###############################################################################
@@ -108,7 +92,7 @@ def test_aigrid_3():
 def test_aigrid_4():
 
     tst = gdaltest.GDALTest("AIG", "aigrid/ABC3X1UC", 1, 3)
-    return tst.testOpen()
+    tst.testOpen()
 
 
 ###############################################################################
@@ -161,10 +145,10 @@ def test_aigrid_broken():
     gdal.VSIFCloseL(f)
 
     ds = gdal.Open("tmp/broken_aigrid")
-    with gdaltest.error_handler():
-        assert ds.GetRasterBand(1).Checksum() == -1
-    with gdaltest.error_handler():
-        assert ds.GetRasterBand(1).Checksum() == -1
+    with pytest.raises(Exception):
+        ds.GetRasterBand(1).Checksum()
+    with pytest.raises(Exception):
+        ds.GetRasterBand(1).Checksum()
     ds = None
 
     shutil.rmtree("tmp/broken_aigrid")
@@ -202,11 +186,10 @@ def test_aigrid_online_1():
         pass
 
     for filename in list_files:
-        if not gdaltest.download_file(
+        gdaltest.download_or_skip(
             "http://download.osgeo.org/gdal/data/aig/nzdem/" + filename,
             "nzdem/" + filename,
-        ):
-            pytest.skip()
+        )
 
     tst = gdaltest.GDALTest(
         "AIG", "tmp/cache/nzdem/nzdem500/hdr.adf", 1, 45334, filename_absolute=1
@@ -252,10 +235,9 @@ def test_aigrid_online_1():
 
 def test_aigrid_online_2():
 
-    if not gdaltest.download_file(
+    gdaltest.download_or_skip(
         "http://download.osgeo.org/gdal/data/aig/ai_bug_6886.zip", "ai_bug_6886.zip"
-    ):
-        pytest.skip()
+    )
 
     try:
         os.stat("tmp/cache/ai_bug")
@@ -272,7 +254,7 @@ def test_aigrid_online_2():
     tst = gdaltest.GDALTest(
         "AIG", "tmp/cache/ai_bug/ai_bug/hdr.adf", 1, 16018, filename_absolute=1
     )
-    return tst.testOpen()
+    tst.testOpen()
 
 
 ###############################################################################

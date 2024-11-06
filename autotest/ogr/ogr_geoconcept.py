@@ -10,26 +10,8 @@
 # Copyright (c) 2008, Frank Warmerdam <warmerdam@pobox.com>
 # Copyright (c) 2008, Even Rouault <even dot rouault at spatialys.com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
-
-import os
 
 import ogrtest
 import pytest
@@ -44,10 +26,6 @@ pytestmark = pytest.mark.require_driver("Geoconcept")
 @pytest.fixture(autouse=True, scope="module")
 def startup_and_cleanup():
     yield
-    try:
-        os.remove("tmp/tmp.gxt")
-    except OSError:
-        pass
 
 
 ###############################################################################
@@ -80,20 +58,16 @@ def test_ogr_gxt_1():
         "000-2007-0050-6585-LAMB93",
     ]
 
-    tr = ogrtest.check_features_against_list(lyr, "idSel", expect)
-    assert tr
+    ogrtest.check_features_against_list(lyr, "idSel", expect)
 
     lyr.ResetReading()
 
     feat = lyr.GetNextFeature()
 
-    assert (
-        ogrtest.check_feature_geometry(
-            feat,
-            "MULTIPOLYGON (((50000 7130000,600000 7130000,600000 6580000,50000 6580000,50000 7130000)))",
-            max_error=0.000000001,
-        )
-        == 0
+    ogrtest.check_feature_geometry(
+        feat,
+        "MULTIPOLYGON (((50000 7130000,600000 7130000,600000 6580000,50000 6580000,50000 7130000)))",
+        max_error=0.000000001,
     )
 
     srs = osr.SpatialReference()
@@ -129,20 +103,16 @@ def test_ogr_gxt_2():
         "000-2007-0050-6585-LAMB93",
     ]
 
-    tr = ogrtest.check_features_against_list(lyr, "idSel", expect)
-    assert tr
+    ogrtest.check_features_against_list(lyr, "idSel", expect)
 
     lyr.ResetReading()
 
     feat = lyr.GetNextFeature()
 
-    assert (
-        ogrtest.check_feature_geometry(
-            feat,
-            "MULTIPOLYGON (((50000 7130000,600000 7130000,600000 6580000,50000 6580000,50000 7130000)))",
-            max_error=0.000000001,
-        )
-        == 0
+    ogrtest.check_feature_geometry(
+        feat,
+        "MULTIPOLYGON (((50000 7130000,600000 7130000,600000 6580000,50000 6580000,50000 7130000)))",
+        max_error=0.000000001,
     )
 
 
@@ -150,21 +120,16 @@ def test_ogr_gxt_2():
 # Read a GXT file containing 2 points, duplicate it, and check the newly written file
 
 
-def test_ogr_gxt_3():
+def test_ogr_gxt_3(tmp_path):
 
     ds = None
 
     src_ds = ogr.Open("data/geoconcept/points.gxt")
 
-    try:
-        os.remove("tmp/tmp.gxt")
-    except OSError:
-        pass
-
     # Duplicate all the points from the source GXT
     src_lyr = src_ds.GetLayerByName("points.points")
 
-    ds = ogr.GetDriverByName("Geoconcept").CreateDataSource("tmp/tmp.gxt")
+    ds = ogr.GetDriverByName("Geoconcept").CreateDataSource(tmp_path / "tmp.gxt")
 
     srs = osr.SpatialReference()
     srs.SetWellKnownGeogCS("WGS84")
@@ -189,7 +154,7 @@ def test_ogr_gxt_3():
     ds = None
 
     # Read the newly written GXT file and check its features and geometries
-    ds = ogr.Open("tmp/tmp.gxt")
+    ds = ogr.Open(tmp_path / "tmp.gxt")
     gxt_lyr = ds.GetLayerByName("points.points")
 
     assert gxt_lyr.GetSpatialRef().IsSame(
@@ -198,36 +163,29 @@ def test_ogr_gxt_3():
 
     expect = ["PID1", "PID2"]
 
-    tr = ogrtest.check_features_against_list(gxt_lyr, "Primary_ID", expect)
-    assert tr
+    ogrtest.check_features_against_list(gxt_lyr, "Primary_ID", expect)
 
     gxt_lyr.ResetReading()
 
     expect = ["SID1", "SID2"]
 
-    tr = ogrtest.check_features_against_list(gxt_lyr, "Secondary_ID", expect)
-    assert tr
+    ogrtest.check_features_against_list(gxt_lyr, "Secondary_ID", expect)
 
     gxt_lyr.ResetReading()
 
     expect = ["TID1", None]
 
-    tr = ogrtest.check_features_against_list(gxt_lyr, "Third_ID", expect)
-    assert tr
+    ogrtest.check_features_against_list(gxt_lyr, "Third_ID", expect)
 
     gxt_lyr.ResetReading()
 
     feat = gxt_lyr.GetNextFeature()
 
-    assert (
-        ogrtest.check_feature_geometry(feat, "POINT(0 1)", max_error=0.000000001) == 0
-    )
+    ogrtest.check_feature_geometry(feat, "POINT(0 1)", max_error=0.000000001)
 
     feat = gxt_lyr.GetNextFeature()
 
-    assert (
-        ogrtest.check_feature_geometry(feat, "POINT(2 3)", max_error=0.000000001) == 0
-    )
+    ogrtest.check_feature_geometry(feat, "POINT(2 3)", max_error=0.000000001)
 
 
 ###############################################################################
@@ -240,49 +198,35 @@ def test_ogr_gxt_multipolygon_singlepart_nohole():
     lyr = ds.GetLayer(0)
     feat = lyr.GetNextFeature()
 
-    if (
-        ogrtest.check_feature_geometry(
-            feat, "MULTIPOLYGON (((0 0,0 1,1 1,1 0,0 0)))", max_error=0.000000001
-        )
-        != 0
-    ):
-        feat.DumpReadable()
-        pytest.fail()
+    ogrtest.check_feature_geometry(
+        feat, "MULTIPOLYGON (((0 0,0 1,1 1,1 0,0 0)))", max_error=0.000000001
+    )
 
 
 ###############################################################################
 #
 
 
+@pytest.mark.require_geos
 def test_ogr_gxt_multipolygon_singlepart_hole():
-
-    if not ogrtest.have_geos():
-        pytest.skip()
 
     ds = ogr.Open("data/geoconcept/geoconcept_multipolygon_singlepart_hole.txt")
     lyr = ds.GetLayer(0)
     feat = lyr.GetNextFeature()
 
-    if (
-        ogrtest.check_feature_geometry(
-            feat,
-            "MULTIPOLYGON (((0 0,0 1,1 1,1 0,0 0),(0.1 0.1,0.1 0.9,0.9 0.9,0.1 0.1)))",
-            max_error=0.000000001,
-        )
-        != 0
-    ):
-        feat.DumpReadable()
-        pytest.fail()
+    ogrtest.check_feature_geometry(
+        feat,
+        "MULTIPOLYGON (((0 0,0 1,1 1,1 0,0 0),(0.1 0.1,0.1 0.9,0.9 0.9,0.1 0.1)))",
+        max_error=0.000000001,
+    )
 
 
 ###############################################################################
 #
 
 
+@pytest.mark.require_geos
 def test_ogr_gxt_multipolygon_twoparts_second_with_hole():
-
-    if not ogrtest.have_geos():
-        pytest.skip()
 
     ds = ogr.Open(
         "data/geoconcept/geoconcept_multipolygon_twoparts_second_with_hole.txt"
@@ -290,36 +234,24 @@ def test_ogr_gxt_multipolygon_twoparts_second_with_hole():
     lyr = ds.GetLayer(0)
     feat = lyr.GetNextFeature()
 
-    if (
-        ogrtest.check_feature_geometry(
-            feat,
-            "MULTIPOLYGON (((-10 -10,-10 -9,-9 -9,-10 -10)),((0 0,0 1,1 1,1 0,0 0),(0.1 0.1,0.1 0.9,0.9 0.9,0.1 0.1)))",
-            max_error=0.000000001,
-        )
-        != 0
-    ):
-        feat.DumpReadable()
-        pytest.fail()
+    ogrtest.check_feature_geometry(
+        feat,
+        "MULTIPOLYGON (((-10 -10,-10 -9,-9 -9,-10 -10)),((0 0,0 1,1 1,1 0,0 0),(0.1 0.1,0.1 0.9,0.9 0.9,0.1 0.1)))",
+        max_error=0.000000001,
+    )
 
 
 ###############################################################################
 #
 
 
+@pytest.mark.require_geos
 def test_ogr_gxt_line():
-
-    if not ogrtest.have_geos():
-        pytest.skip()
 
     ds = ogr.Open("data/geoconcept/line.gxt")
     lyr = ds.GetLayer(0)
     feat = lyr.GetNextFeature()
 
-    if (
-        ogrtest.check_feature_geometry(
-            feat, "LINESTRING (440720 3751320,441920 3750120)", max_error=0.000000001
-        )
-        != 0
-    ):
-        feat.DumpReadable()
-        pytest.fail()
+    ogrtest.check_feature_geometry(
+        feat, "LINESTRING (440720 3751320,441920 3750120)", max_error=0.000000001
+    )

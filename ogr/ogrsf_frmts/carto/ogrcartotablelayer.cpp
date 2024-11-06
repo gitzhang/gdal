@@ -7,29 +7,13 @@
  ******************************************************************************
  * Copyright (c) 2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "ogr_carto.h"
 #include "ogr_p.h"
 #include "ogr_pgdump.h"
-#include "ogrgeojsonreader.h"
+#include "ogrlibjsonutils.h"
 
 /************************************************************************/
 /*                    OGRCARTOEscapeIdentifier( )                     */
@@ -300,7 +284,7 @@ OGRCARTOTableLayer::GetLayerDefnInternal(CPL_UNUSED json_object *poObjIn)
                         if (nDim == 3)
                             eType = wkbSetZ(eType);
                         auto poFieldDefn =
-                            cpl::make_unique<OGRCartoGeomFieldDefn>(pszAttname,
+                            std::make_unique<OGRCartoGeomFieldDefn>(pszAttname,
                                                                     eType);
                         if (bNotNull)
                             poFieldDefn->SetNullable(FALSE);
@@ -618,8 +602,9 @@ OGRErr OGRCARTOTableLayer::FlushDeferredCopy(bool bReset)
 /*                          CreateGeomField()                           */
 /************************************************************************/
 
-OGRErr OGRCARTOTableLayer::CreateGeomField(OGRGeomFieldDefn *poGeomFieldIn,
-                                           CPL_UNUSED int bApproxOK)
+OGRErr
+OGRCARTOTableLayer::CreateGeomField(const OGRGeomFieldDefn *poGeomFieldIn,
+                                    CPL_UNUSED int bApproxOK)
 {
     if (!poDS->IsReadWrite())
     {
@@ -652,16 +637,16 @@ OGRErr OGRCARTOTableLayer::CreateGeomField(OGRGeomFieldDefn *poGeomFieldIn,
     }
 
     auto poGeomField =
-        cpl::make_unique<OGRCartoGeomFieldDefn>(pszNameIn, eType);
+        std::make_unique<OGRCartoGeomFieldDefn>(pszNameIn, eType);
     if (EQUAL(poGeomField->GetNameRef(), ""))
     {
         if (poFeatureDefn->GetGeomFieldCount() == 0)
             poGeomField->SetName("the_geom");
     }
-    auto l_poSRS = poGeomFieldIn->GetSpatialRef();
-    if (l_poSRS)
+    const auto poSRSIn = poGeomFieldIn->GetSpatialRef();
+    if (poSRSIn)
     {
-        l_poSRS = l_poSRS->Clone();
+        auto l_poSRS = poSRSIn->Clone();
         l_poSRS->SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
         poGeomField->SetSpatialRef(l_poSRS);
         l_poSRS->Release();
@@ -670,12 +655,12 @@ OGRErr OGRCARTOTableLayer::CreateGeomField(OGRGeomFieldDefn *poGeomFieldIn,
     if (bLaunderColumnNames)
     {
         char *pszSafeName =
-            OGRPGCommonLaunderName(poGeomField->GetNameRef(), "PG");
+            OGRPGCommonLaunderName(poGeomField->GetNameRef(), "CARTO", false);
         poGeomField->SetName(pszSafeName);
         CPLFree(pszSafeName);
     }
 
-    OGRSpatialReference *poSRS = poGeomField->GetSpatialRef();
+    const OGRSpatialReference *poSRS = poGeomField->GetSpatialRef();
     int nSRID = 0;
     if (poSRS != nullptr)
         nSRID = poDS->FetchSRSId(poSRS);
@@ -713,7 +698,7 @@ OGRErr OGRCARTOTableLayer::CreateGeomField(OGRGeomFieldDefn *poGeomFieldIn,
 /*                            CreateField()                             */
 /************************************************************************/
 
-OGRErr OGRCARTOTableLayer::CreateField(OGRFieldDefn *poFieldIn,
+OGRErr OGRCARTOTableLayer::CreateField(const OGRFieldDefn *poFieldIn,
                                        CPL_UNUSED int bApproxOK)
 {
     GetLayerDefn();
@@ -734,7 +719,8 @@ OGRErr OGRCARTOTableLayer::CreateField(OGRFieldDefn *poFieldIn,
     OGRFieldDefn oField(poFieldIn);
     if (bLaunderColumnNames)
     {
-        char *pszName = OGRPGCommonLaunderName(oField.GetNameRef());
+        char *pszName =
+            OGRPGCommonLaunderName(oField.GetNameRef(), "CARTO", false);
         oField.SetName(pszName);
         CPLFree(pszName);
     }
@@ -1632,11 +1618,11 @@ void OGRCARTOTableLayer::BuildWhere()
         char szBox3D_2[128];
         char *pszComma;
 
-        CPLsnprintf(szBox3D_1, sizeof(szBox3D_1), "%.18g %.18g", sEnvelope.MinX,
+        CPLsnprintf(szBox3D_1, sizeof(szBox3D_1), "%.17g %.17g", sEnvelope.MinX,
                     sEnvelope.MinY);
         while ((pszComma = strchr(szBox3D_1, ',')) != nullptr)
             *pszComma = '.';
-        CPLsnprintf(szBox3D_2, sizeof(szBox3D_2), "%.18g %.18g", sEnvelope.MaxX,
+        CPLsnprintf(szBox3D_2, sizeof(szBox3D_2), "%.17g %.17g", sEnvelope.MaxX,
                     sEnvelope.MaxY);
         while ((pszComma = strchr(szBox3D_2, ',')) != nullptr)
             *pszComma = '.';
@@ -1905,7 +1891,7 @@ void OGRCARTOTableLayer::SetDeferredCreation(OGRwkbGeometryType eGType,
     if (eGType != wkbNone)
     {
         auto poFieldDefn =
-            cpl::make_unique<OGRCartoGeomFieldDefn>("the_geom", eGType);
+            std::make_unique<OGRCartoGeomFieldDefn>("the_geom", eGType);
         poFieldDefn->SetNullable(bGeomNullable);
         if (poSRSIn != nullptr)
         {

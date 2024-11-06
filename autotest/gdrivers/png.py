@@ -10,23 +10,7 @@
 # Copyright (c) 2004, Frank Warmerdam <warmerdam@pobox.com>
 # Copyright (c) 2008-2012, Even Rouault <even dot rouault at spatialys.com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 import array
@@ -40,13 +24,20 @@ from osgeo import gdal
 pytestmark = pytest.mark.require_driver("PNG")
 
 ###############################################################################
+@pytest.fixture(autouse=True, scope="module")
+def module_disable_exceptions():
+    with gdaltest.disable_exceptions():
+        yield
+
+
+###############################################################################
 # Read test of simple byte reference data.
 
 
 def test_png_1():
 
     tst = gdaltest.GDALTest("PNG", "png/test.png", 1, 57921)
-    return tst.testOpen()
+    tst.testOpen()
 
 
 ###############################################################################
@@ -57,7 +48,7 @@ def test_png_2():
 
     tst = gdaltest.GDALTest("PNG", "png/test.png", 1, 57921)
 
-    return tst.testCreateCopy()
+    tst.testCreateCopy()
 
 
 ###############################################################################
@@ -100,7 +91,7 @@ def test_png_4():
 
     tst = gdaltest.GDALTest("PNG", "rgbsmall.tif", 3, 21349)
 
-    return tst.testCreateCopy()
+    tst.testCreateCopy()
 
 
 ###############################################################################
@@ -110,7 +101,7 @@ def test_png_4():
 def test_png_5():
 
     tst = gdaltest.GDALTest("PNG", "png/rgba16.png", 3, 1815)
-    return tst.testOpen()
+    tst.testOpen()
 
 
 ###############################################################################
@@ -121,7 +112,7 @@ def test_png_6():
 
     tst = gdaltest.GDALTest("PNG", "png/rgba16.png", 4, 4873)
 
-    return tst.testCreateCopy()
+    tst.testCreateCopy()
 
 
 ###############################################################################
@@ -169,17 +160,15 @@ def test_png_8():
     assert b is not None, "band 1 is missing"
 
     # We're not interested in returned value but internal state of GDAL.
-    gdal.PushErrorHandler("CPLQuietErrorHandler")
-    b.ComputeBandStats()
-    err = gdal.GetLastErrorNo()
-    gdal.PopErrorHandler()
+    with gdal.quiet_errors():
+        b.ComputeBandStats()
+        err = gdal.GetLastErrorNo()
 
     assert err != 0, "error condition expected"
 
-    gdal.PushErrorHandler("CPLQuietErrorHandler")
-    ds_dst = drv.CreateCopy("tmp/idat_broken.png", ds_src)
-    err = gdal.GetLastErrorNo()
-    gdal.PopErrorHandler()
+    with gdal.quiet_errors():
+        ds_dst = drv.CreateCopy("tmp/idat_broken.png", ds_src)
+        err = gdal.GetLastErrorNo()
     ds_src = None
 
     assert err != 0, "error condition expected"
@@ -197,7 +186,7 @@ def test_png_9():
 
     tst = gdaltest.GDALTest("PNG", "byte.tif", 1, 4672)
 
-    return tst.testCreateCopy(vsimem=1)
+    tst.testCreateCopy(vsimem=1)
 
 
 ###############################################################################
@@ -229,9 +218,8 @@ def test_png_11():
 
     tst = gdaltest.GDALTest("PNG", "byte.tif", 1, 4672)
 
-    ret = tst.testCreateCopy(vsimem=1, interrupt_during_copy=True)
+    tst.testCreateCopy(vsimem=1, interrupt_during_copy=True)
     gdal.Unlink("/vsimem/byte.tif.tst")
-    return ret
 
 
 ###############################################################################
@@ -348,7 +336,7 @@ def test_png_14():
     assert nbits == "2"
 
     # Test (wrong) explicit NBITS
-    with gdaltest.error_handler():
+    with gdal.quiet_errors():
         gdal.GetDriverByName("PNG").CreateCopy(
             "/vsimem/tmp.png", src_ds, options=["NBITS=7"]
         )
@@ -427,5 +415,60 @@ def test_png_whole_image_optim(options, nbands, xsize, ysize):
         assert ds.ReadRaster(buf_type=gdal.GDT_UInt16) == src_ds.ReadRaster(
             buf_type=gdal.GDT_UInt16
         )
+
+    gdal.Unlink(filename)
+
+
+###############################################################################
+def test_png_copy_mdd():
+
+    src_ds = gdal.GetDriverByName("MEM").Create("", 1, 1)
+    src_ds.SetMetadataItem("FOO", "BAR")
+    src_ds.SetMetadataItem("BAR", "BAZ", "OTHER_DOMAIN")
+    src_ds.SetMetadataItem("should_not", "be_copied", "IMAGE_STRUCTURE")
+
+    filename = "/vsimem/test_png_copy_mdd.png"
+
+    gdal.GetDriverByName("PNG").CreateCopy(filename, src_ds)
+    ds = gdal.Open(filename)
+    assert set(ds.GetMetadataDomainList()) == set(["", "DERIVED_SUBDATASETS"])
+    assert ds.GetMetadata_Dict() == {"FOO": "BAR"}
+    assert ds.GetMetadata_Dict("OTHER_DOMAIN") == {}
+    ds = None
+
+    gdal.GetDriverByName("PNG").CreateCopy(
+        filename, src_ds, options=["COPY_SRC_MDD=NO"]
+    )
+    ds = gdal.Open(filename)
+    assert ds.GetMetadata_Dict() == {}
+    assert ds.GetMetadata_Dict("OTHER_DOMAIN") == {}
+    ds = None
+
+    gdal.GetDriverByName("PNG").CreateCopy(
+        filename, src_ds, options=["COPY_SRC_MDD=YES"]
+    )
+    ds = gdal.Open(filename)
+    assert set(ds.GetMetadataDomainList()) == set(
+        ["", "DERIVED_SUBDATASETS", "OTHER_DOMAIN"]
+    )
+    assert ds.GetMetadata_Dict() == {"FOO": "BAR"}
+    assert ds.GetMetadata_Dict("OTHER_DOMAIN") == {"BAR": "BAZ"}
+    ds = None
+
+    gdal.GetDriverByName("PNG").CreateCopy(
+        filename, src_ds, options=["SRC_MDD=OTHER_DOMAIN"]
+    )
+    ds = gdal.Open(filename)
+    assert ds.GetMetadata_Dict() == {}
+    assert ds.GetMetadata_Dict("OTHER_DOMAIN") == {"BAR": "BAZ"}
+    ds = None
+
+    gdal.GetDriverByName("PNG").CreateCopy(
+        filename, src_ds, options=["SRC_MDD=", "SRC_MDD=OTHER_DOMAIN"]
+    )
+    ds = gdal.Open(filename)
+    assert ds.GetMetadata_Dict() == {"FOO": "BAR"}
+    assert ds.GetMetadata_Dict("OTHER_DOMAIN") == {"BAR": "BAZ"}
+    ds = None
 
     gdal.Unlink(filename)

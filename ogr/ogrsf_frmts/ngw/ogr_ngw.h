@@ -8,23 +8,7 @@
  *
  *  Copyright (c) 2018-2020, NextGIS
  *
- *  Permission is hereby granted, free of charge, to any person obtaining a copy
- *  of this software and associated documentation files (the "Software"), to
- *deal in the Software without restriction, including without limitation the
- *rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- *sell copies of the Software, and to permit persons to whom the Software is
- *  furnished to do so, subject to the following conditions:
- *
- *  The above copyright notice and this permission notice shall be included in
- *all copies or substantial portions of the Software.
- *
- *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- *FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- *IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  *******************************************************************************/
 #ifndef OGR_NGW_H_INCLUDED
 #define OGR_NGW_H_INCLUDED
@@ -106,7 +90,7 @@ std::string CreateResource(const std::string &osUrl,
                            char **papszHTTPOptions);
 bool UpdateResource(const std::string &osUrl, const std::string &osResourceId,
                     const std::string &osPayload, char **papszHTTPOptions);
-void FillResmeta(CPLJSONObject &oRoot, char **papszMetadata);
+void FillResmeta(const CPLJSONObject &oRoot, char **papszMetadata);
 std::string GetResmetaSuffix(CPLJSONObject::Type eType);
 bool DeleteFeature(const std::string &osUrl, const std::string &osResourceId,
                    const std::string &osFeatureId, char **papszHTTPOptions);
@@ -180,7 +164,7 @@ class OGRNGWLayer final : public OGRLayer
     virtual OGRFeatureDefn *GetLayerDefn() override;
     virtual int TestCapability(const char *) override;
 
-    virtual OGRErr CreateField(OGRFieldDefn *poField,
+    virtual OGRErr CreateField(const OGRFieldDefn *poField,
                                int bApproxOK = TRUE) override;
     virtual OGRErr DeleteField(int iField) override;
     virtual OGRErr ReorderFields(int *panMap) override;
@@ -197,7 +181,7 @@ class OGRNGWLayer final : public OGRLayer
     virtual CPLErr SetMetadataItem(const char *pszName, const char *pszValue,
                                    const char *pszDomain = "") override;
 
-    virtual OGRErr SetIgnoredFields(const char **papszFields) override;
+    virtual OGRErr SetIgnoredFields(CSLConstList papszFields) override;
     virtual OGRErr SetAttributeFilter(const char *pszQuery) override;
     virtual void SetSpatialFilter(OGRGeometry *poGeom) override;
     virtual void SetSpatialFilter(int iGeomField, OGRGeometry *poGeom) override;
@@ -268,12 +252,12 @@ class OGRNGWDataset final : public GDALDataset
     {
         return nLayers;
     }
+
     virtual OGRLayer *GetLayer(int) override;
     virtual int TestCapability(const char *) override;
     virtual OGRLayer *ICreateLayer(const char *pszName,
-                                   OGRSpatialReference *poSpatialRef = nullptr,
-                                   OGRwkbGeometryType eGType = wkbUnknown,
-                                   char **papszOptions = nullptr) override;
+                                   const OGRGeomFieldDefn *poGeomFieldDefn,
+                                   CSLConstList papszOptions) override;
     virtual OGRErr DeleteLayer(int) override;
     virtual CPLErr SetMetadata(char **papszMetadata,
                                const char *pszDomain = "") override;
@@ -289,21 +273,24 @@ class OGRNGWDataset final : public GDALDataset
     virtual CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
                              int nXSize, int nYSize, void *pData, int nBufXSize,
                              int nBufYSize, GDALDataType eBufType,
-                             int nBandCount, int *panBandMap,
+                             int nBandCount, BANDMAP_TYPE panBandMap,
                              GSpacing nPixelSpace, GSpacing nLineSpace,
                              GSpacing nBandSpace,
                              GDALRasterIOExtraArg *psExtraArg) override;
 
   private:
     char **GetHeaders() const;
+
     std::string GetUrl() const
     {
         return osUrl;
     }
+
     std::string GetResourceId() const
     {
         return osResourceId;
     }
+
     void FillMetadata(const CPLJSONObject &oRootObject);
     bool FillResources(char **papszOptions, int nOpenFlagsIn);
     void AddLayer(const CPLJSONObject &oResourceJsonObject, char **papszOptions,
@@ -312,30 +299,37 @@ class OGRNGWDataset final : public GDALDataset
                    char **papszOptions);
     bool Init(int nOpenFlagsIn);
     bool FlushMetadata(char **papszMetadata);
+
     inline bool IsUpdateMode() const
     {
         return eAccess == GA_Update;
     }
+
     bool IsBatchMode() const
     {
         return nBatchSize >= 0;
     }
+
     bool HasFeaturePaging() const
     {
         return bHasFeaturePaging;
     }
+
     int GetPageSize() const
     {
         return bHasFeaturePaging ? nPageSize : -1;
     }
+
     int GetBatchSize() const
     {
         return nBatchSize;
     }
+
     bool IsExtInNativeData() const
     {
         return bExtInNativeData;
     }
+
     void FetchPermissions();
     void FillCapabilities(char **papszOptions);
 

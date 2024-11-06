@@ -8,23 +8,7 @@
  * Copyright (c) 2006, Frank Warmerdam
  * Copyright (c) 2008-2011, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_string.h"
@@ -153,7 +137,7 @@ GDALDataset *DIPExDataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     /*      Create a corresponding GDALDataset.                             */
     /* -------------------------------------------------------------------- */
-    DIPExDataset *poDS = new DIPExDataset();
+    auto poDS = std::make_unique<DIPExDataset>();
 
     poDS->eAccess = poOpenInfo->eAccess;
     poDS->fp = poOpenInfo->fpL;
@@ -167,7 +151,6 @@ GDALDataset *DIPExDataset::Open(GDALOpenInfo *poOpenInfo)
         CPLError(CE_Failure, CPLE_FileIO,
                  "Attempt to read 1024 byte header filed on file %s\n",
                  poOpenInfo->pszFilename);
-        delete poDS;
         return nullptr;
     }
 
@@ -192,7 +175,6 @@ GDALDataset *DIPExDataset::Open(GDALOpenInfo *poOpenInfo)
     GIntBig nDiff = static_cast<GIntBig>(nEnd) - nStart + 1;
     if (nDiff <= 0 || nDiff > INT_MAX)
     {
-        delete poDS;
         return nullptr;
     }
     poDS->nRasterYSize = static_cast<int>(nDiff);
@@ -202,7 +184,6 @@ GDALDataset *DIPExDataset::Open(GDALOpenInfo *poOpenInfo)
     nDiff = static_cast<GIntBig>(nEnd) - nStart + 1;
     if (nDiff <= 0 || nDiff > INT_MAX)
     {
-        delete poDS;
         return nullptr;
     }
     poDS->nRasterXSize = static_cast<int>(nDiff);
@@ -212,7 +193,6 @@ GDALDataset *DIPExDataset::Open(GDALOpenInfo *poOpenInfo)
     if (!GDALCheckDatasetDimensions(poDS->nRasterXSize, poDS->nRasterYSize) ||
         !GDALCheckBandCount(nBands, FALSE))
     {
-        delete poDS;
         return nullptr;
     }
 
@@ -229,7 +209,6 @@ GDALDataset *DIPExDataset::Open(GDALOpenInfo *poOpenInfo)
         poDS->eRasterDataType = GDT_Float64;
     else
     {
-        delete poDS;
         CPLError(CE_Failure, CPLE_AppDefined,
                  "Unrecognized image data type %d, with BytesPerSample=%d.",
                  nDIPExDataType, nBytesPerSample);
@@ -238,7 +217,6 @@ GDALDataset *DIPExDataset::Open(GDALOpenInfo *poOpenInfo)
 
     if (nLineOffset <= 0 || nLineOffset > INT_MAX / nBands)
     {
-        delete poDS;
         CPLError(CE_Failure, CPLE_AppDefined,
                  "Invalid values: nLineOffset = %d, nBands = %d.", nLineOffset,
                  nBands);
@@ -251,17 +229,14 @@ GDALDataset *DIPExDataset::Open(GDALOpenInfo *poOpenInfo)
     CPLErrorReset();
     for (int iBand = 0; iBand < nBands; iBand++)
     {
-        poDS->SetBand(iBand + 1,
-                      new RawRasterBand(poDS, iBand + 1, poDS->fp,
-                                        1024 + iBand * nLineOffset,
-                                        nBytesPerSample, nLineOffset * nBands,
-                                        poDS->eRasterDataType, CPL_IS_LSB,
-                                        RawRasterBand::OwnFP::NO));
-        if (CPLGetLastErrorType() != CE_None)
-        {
-            delete poDS;
+        auto poBand = RawRasterBand::Create(
+            poDS.get(), iBand + 1, poDS->fp, 1024 + iBand * nLineOffset,
+            nBytesPerSample, nLineOffset * nBands, poDS->eRasterDataType,
+            RawRasterBand::ByteOrder::ORDER_LITTLE_ENDIAN,
+            RawRasterBand::OwnFP::NO);
+        if (!poBand)
             return nullptr;
-        }
+        poDS->SetBand(iBand + 1, std::move(poBand));
     }
 
     /* -------------------------------------------------------------------- */
@@ -305,7 +280,7 @@ GDALDataset *DIPExDataset::Open(GDALOpenInfo *poOpenInfo)
         oSR.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
         if (oSR.importFromEPSG(poDS->sHeader.SRID) == OGRERR_NONE)
         {
-            poDS->m_oSRS = oSR;
+            poDS->m_oSRS = std::move(oSR);
         }
     }
 
@@ -318,10 +293,10 @@ GDALDataset *DIPExDataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     /*      Check for external overviews.                                   */
     /* -------------------------------------------------------------------- */
-    poDS->oOvManager.Initialize(poDS, poOpenInfo->pszFilename,
+    poDS->oOvManager.Initialize(poDS.get(), poOpenInfo->pszFilename,
                                 poOpenInfo->GetSiblingFiles());
 
-    return poDS;
+    return poDS.release();
 }
 
 /************************************************************************/

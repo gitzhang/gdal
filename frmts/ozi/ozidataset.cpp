@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2010-2012, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "gdal_frmts.h"
@@ -74,12 +58,13 @@ class OZIRasterBand final : public GDALPamRasterBand
 
     int nXBlocks;
     int nZoomLevel;
-    GDALColorTable *poColorTable;
+    std::unique_ptr<GDALColorTable> poColorTable{};
     GByte *pabyTranslationTable;
 
   public:
     OZIRasterBand(OZIDataset *, int nZoomLevel, int nRasterXSize,
-                  int nRasterYSize, int nXBlocks, GDALColorTable *poColorTable);
+                  int nRasterYSize, int nXBlocks,
+                  std::unique_ptr<GDALColorTable> &&poColorTableIn);
     virtual ~OZIRasterBand();
 
     virtual CPLErr IReadBlock(int, int, void *) override;
@@ -162,9 +147,10 @@ static short ReadShort(VSILFILE *fp, int bOzi3 = FALSE, int nKeyInit = 0)
 
 OZIRasterBand::OZIRasterBand(OZIDataset *poDSIn, int nZoomLevelIn,
                              int nRasterXSizeIn, int nRasterYSizeIn,
-                             int nXBlocksIn, GDALColorTable *poColorTableIn)
+                             int nXBlocksIn,
+                             std::unique_ptr<GDALColorTable> &&poColorTableIn)
     : nXBlocks(nXBlocksIn), nZoomLevel(nZoomLevelIn),
-      poColorTable(poColorTableIn), pabyTranslationTable(nullptr)
+      poColorTable(std::move(poColorTableIn)), pabyTranslationTable(nullptr)
 {
     poDS = poDSIn;
     nBand = 1;
@@ -184,7 +170,6 @@ OZIRasterBand::OZIRasterBand(OZIDataset *poDSIn, int nZoomLevelIn,
 
 OZIRasterBand::~OZIRasterBand()
 {
-    delete poColorTable;
     CPLFree(pabyTranslationTable);
 }
 
@@ -203,7 +188,7 @@ GDALColorInterp OZIRasterBand::GetColorInterpretation()
 
 GDALColorTable *OZIRasterBand::GetColorTable()
 {
-    return poColorTable;
+    return poColorTable.get();
 }
 
 /************************************************************************/
@@ -613,7 +598,7 @@ GDALDataset *OZIDataset::Open(GDALOpenInfo *poOpenInfo)
             return nullptr;
         }
 
-        GDALColorTable *poColorTable = new GDALColorTable();
+        auto poColorTable = std::make_unique<GDALColorTable>();
         GByte abyColorTable[256 * 4];
         VSIFReadL(abyColorTable, 1, 1024, fp);
         if (bOzi3)
@@ -629,7 +614,7 @@ GDALDataset *OZIDataset::Open(GDALOpenInfo *poOpenInfo)
         }
 
         poDS->papoOvrBands[i] =
-            new OZIRasterBand(poDS, i, nW, nH, nTileX, poColorTable);
+            new OZIRasterBand(poDS, i, nW, nH, nTileX, std::move(poColorTable));
 
         if (i > 0)
         {
@@ -637,9 +622,8 @@ GDALDataset *OZIDataset::Open(GDALOpenInfo *poOpenInfo)
                 poDS->papoOvrBands[i]->GetIndexColorTranslationTo(
                     poDS->papoOvrBands[0], nullptr, nullptr);
 
-            delete poDS->papoOvrBands[i]->poColorTable;
-            poDS->papoOvrBands[i]->poColorTable =
-                poDS->papoOvrBands[0]->poColorTable->Clone();
+            poDS->papoOvrBands[i]->poColorTable.reset(
+                poDS->papoOvrBands[0]->poColorTable->Clone());
             poDS->papoOvrBands[i]->pabyTranslationTable = pabyTranslationTable;
         }
     }

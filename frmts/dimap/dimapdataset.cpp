@@ -10,23 +10,7 @@
  * Copyright (c) 2007, Frank Warmerdam <warmerdam@pobox.com>
  * Copyright (c) 2008-2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_minixml.h"
@@ -94,8 +78,8 @@ class DIMAPDataset final : public GDALPamDataset
     char **GetFileList() override;
 
     CPLErr IRasterIO(GDALRWFlag, int, int, int, int, void *, int, int,
-                     GDALDataType, int, int *, GSpacing, GSpacing, GSpacing,
-                     GDALRasterIOExtraArg *psExtraArg) override;
+                     GDALDataType, int, BANDMAP_TYPE, GSpacing, GSpacing,
+                     GSpacing, GDALRasterIOExtraArg *psExtraArg) override;
 
     static int Identify(GDALOpenInfo *);
     static GDALDataset *Open(GDALOpenInfo *);
@@ -270,6 +254,7 @@ class DIMAPRasterBand final : public GDALPamRasterBand
 
   public:
     DIMAPRasterBand(DIMAPDataset *, int, VRTSourcedRasterBand *);
+
     ~DIMAPRasterBand() override
     {
     }
@@ -349,7 +334,7 @@ CPLErr DIMAPDataset::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
                                int nXSize, int nYSize, void *pData,
                                int nBufXSize, int nBufYSize,
                                GDALDataType eBufType, int nBandCount,
-                               int *panBandMap, GSpacing nPixelSpace,
+                               BANDMAP_TYPE panBandMap, GSpacing nPixelSpace,
                                GSpacing nLineSpace, GSpacing nBandSpace,
                                GDALRasterIOExtraArg *psExtraArg)
 
@@ -554,17 +539,17 @@ GDALDataset *DIMAPDataset::Open(GDALOpenInfo *poOpenInfo)
     }
 
     VSIStatBufL sStat;
-    CPLString osMDFilename(osFilename);
+    std::string osMDFilename(osFilename);
     if (VSIStatL(osFilename.c_str(), &sStat) == 0 && VSI_ISDIR(sStat.st_mode))
     {
         osMDFilename = CPLFormCIFilename(osFilename, "METADATA.DIM", nullptr);
 
         /* DIMAP2 */
-        if (VSIStatL(osMDFilename, &sStat) != 0)
+        if (VSIStatL(osMDFilename.c_str(), &sStat) != 0)
         {
             osMDFilename =
                 CPLFormCIFilename(osFilename, "VOL_PHR.XML", nullptr);
-            if (VSIStatL(osMDFilename, &sStat) != 0)
+            if (VSIStatL(osMDFilename.c_str(), &sStat) != 0)
             {
                 // DIMAP VHR2020 file.
                 osMDFilename =
@@ -576,7 +561,7 @@ GDALDataset *DIMAPDataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     /*      Ingest the xml file.                                            */
     /* -------------------------------------------------------------------- */
-    CPLXMLNode *psProduct = CPLParseXMLFile(osMDFilename);
+    CPLXMLNode *psProduct = CPLParseXMLFile(osMDFilename.c_str());
     if (psProduct == nullptr)
         return nullptr;
 
@@ -592,9 +577,9 @@ GDALDataset *DIMAPDataset::Open(GDALOpenInfo *poOpenInfo)
 
     const int nProductVersion = dfMetadataFormatVersion >= 2.0 ? 2 : 1;
 
-    CPLString osImageDSFilename;
-    CPLString osDIMAPFilename;
-    CPLString osRPCFilename;
+    std::string osImageDSFilename;
+    std::string osDIMAPFilename;
+    std::string osRPCFilename;
     CPLXMLNode *psProductDim = nullptr;
     CPLXMLNode *psProductStrip = nullptr;
 
@@ -662,7 +647,7 @@ GDALDataset *DIMAPDataset::Open(GDALOpenInfo *poOpenInfo)
                         }
                         else
                         {
-                            CPLString osPath = CPLGetPath(osMDFilename);
+                            CPLString osPath = CPLGetPath(osMDFilename.c_str());
                             osDIMAPFilename =
                                 CPLFormFilename(osPath, pszHref, nullptr);
                         }
@@ -674,7 +659,7 @@ GDALDataset *DIMAPDataset::Open(GDALOpenInfo *poOpenInfo)
 
                         if (strlen(pszDataFileHref) > 0)
                         {
-                            CPLString osPath = CPLGetPath(osMDFilename);
+                            CPLString osPath = CPLGetPath(osMDFilename.c_str());
                             osImageDSFilename = CPLFormFilename(
                                 osPath, pszDataFileHref, nullptr);
                         }
@@ -692,7 +677,7 @@ GDALDataset *DIMAPDataset::Open(GDALOpenInfo *poOpenInfo)
                 }
             }
 
-            psProductDim = CPLParseXMLFile(osDIMAPFilename);
+            psProductDim = CPLParseXMLFile(osDIMAPFilename.c_str());
             if (psProductDim == nullptr)
             {
                 CPLDestroyXMLNode(psProduct);
@@ -724,7 +709,7 @@ GDALDataset *DIMAPDataset::Open(GDALOpenInfo *poOpenInfo)
 
                     if (strlen(pszHref) > 0)  // STRIP product found.
                     {
-                        CPLString osPath = CPLGetPath(osDIMAPFilename);
+                        CPLString osPath = CPLGetPath(osDIMAPFilename.c_str());
                         osSTRIPFilename =
                             CPLFormCIFilename(osPath, pszHref, nullptr);
                         if (VSIStatL(osSTRIPFilename, &sStat) == 0)
@@ -755,7 +740,7 @@ GDALDataset *DIMAPDataset::Open(GDALOpenInfo *poOpenInfo)
 
                     if (strlen(pszHref) > 0)  // RPC product found.
                     {
-                        CPLString osPath = CPLGetPath(osDIMAPFilename);
+                        CPLString osPath = CPLGetPath(osDIMAPFilename.c_str());
                         osRPCFilename =
                             CPLFormCIFilename(osPath, pszHref, nullptr);
 
@@ -778,11 +763,11 @@ GDALDataset *DIMAPDataset::Open(GDALOpenInfo *poOpenInfo)
     poDS->psProduct = psProduct;
     poDS->psProductDim = psProductDim;
     poDS->psProductStrip = psProductStrip;
-    poDS->osRPCFilename = osRPCFilename;
+    poDS->osRPCFilename = std::move(osRPCFilename);
     poDS->nProductVersion = nProductVersion;
-    poDS->osMDFilename = osMDFilename;
-    poDS->osImageDSFilename = osImageDSFilename;
-    poDS->osDIMAPFilename = osDIMAPFilename;
+    poDS->osMDFilename = std::move(osMDFilename);
+    poDS->osImageDSFilename = std::move(osImageDSFilename);
+    poDS->osDIMAPFilename = std::move(osDIMAPFilename);
 
     const int res = (nProductVersion == 2) ? poDS->ReadImageInformation2()
                                            : poDS->ReadImageInformation();
@@ -825,8 +810,8 @@ int DIMAPDataset::ReadImageInformation()
     /*      Try and open the file.                                          */
     /* -------------------------------------------------------------------- */
 
-    auto poImageDS =
-        std::unique_ptr<GDALDataset>(GDALDataset::Open(osImageFilename));
+    auto poImageDS = std::unique_ptr<GDALDataset>(GDALDataset::Open(
+        osImageFilename, GDAL_OF_RASTER | GDAL_OF_VERBOSE_ERROR));
     if (poImageDS == nullptr)
     {
         return FALSE;
@@ -1129,6 +1114,7 @@ int DIMAPDataset::ReadImageInformation2()
 
     CPLXMLNode *psDataFiles =
         CPLGetXMLNode(psDoc, "Raster_Data.Data_Access.Data_Files");
+
     /*  <Data_Files>
             <Data_File tile_R="1" tile_C="1">
                <DATA_FILE_PATH href="IMG_foo_R1C1.TIF"/>
@@ -1231,8 +1217,8 @@ int DIMAPDataset::ReadImageInformation2()
     /* -------------------------------------------------------------------- */
     /*      Try and open the file.                                          */
     /* -------------------------------------------------------------------- */
-    auto poImageDS =
-        std::unique_ptr<GDALDataset>(GDALDataset::Open(osImageDSFilename));
+    auto poImageDS = std::unique_ptr<GDALDataset>(GDALDataset::Open(
+        osImageDSFilename, GDAL_OF_RASTER | GDAL_OF_VERBOSE_ERROR));
     if (poImageDS == nullptr)
     {
         return FALSE;
@@ -1414,22 +1400,30 @@ int DIMAPDataset::ReadImageInformation2()
                 }
                 case 4:
                 {
+                    poBand->SetColorInterpretation(GCI_NIRBand);
                     poBand->SetDescription("NIR");
                     break;
                 }
                 case 5:
                 {
+                    poBand->SetColorInterpretation(GCI_RedEdgeBand);
                     poBand->SetDescription("Red Edge");
                     break;
                 }
                 case 6:
                 {
+                    poBand->SetColorInterpretation(GCI_CoastalBand);
                     poBand->SetDescription("Deep Blue");
                     break;
                 }
                 default:
                     break;
             }
+        }
+        else if (l_nBands == 1 && osSpectralProcessing == "PAN")
+        {
+            poBand->SetColorInterpretation(GCI_PanBand);
+            poBand->SetDescription("Panchromatic");
         }
         SetBand(iBand, poBand);
     }
@@ -1515,6 +1509,8 @@ int DIMAPDataset::ReadImageInformation2()
         "",
         "Processing_Information.Product_Settings.Geometric_Settings",
         "GEOMETRIC_",
+        "Processing_Information.Product_Settings.Radiometric_Settings",
+        "RADIOMETRIC_",
         "Quality_Assessment.Imaging_Quality_Measurement",
         "CLOUDCOVER_",
         nullptr,

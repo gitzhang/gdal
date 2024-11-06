@@ -10,23 +10,7 @@
  * Copyright (c) 1998, Frank Warmerdam
  * Copyright (c) 2007-2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #ifndef CPL_CONV_H_INCLUDED
@@ -56,9 +40,21 @@ const char CPL_DLL *CPL_STDCALL CPLGetConfigOption(const char *, const char *)
     CPL_WARN_UNUSED_RESULT;
 const char CPL_DLL *CPL_STDCALL CPLGetThreadLocalConfigOption(
     const char *, const char *) CPL_WARN_UNUSED_RESULT;
+const char CPL_DLL *CPL_STDCALL
+CPLGetGlobalConfigOption(const char *, const char *) CPL_WARN_UNUSED_RESULT;
 void CPL_DLL CPL_STDCALL CPLSetConfigOption(const char *, const char *);
 void CPL_DLL CPL_STDCALL CPLSetThreadLocalConfigOption(const char *pszKey,
                                                        const char *pszValue);
+
+/** Callback for CPLSubscribeToSetConfigOption() */
+typedef void (*CPLSetConfigOptionSubscriber)(const char *pszKey,
+                                             const char *pszValue,
+                                             bool bThreadLocal,
+                                             void *pUserData);
+int CPL_DLL CPLSubscribeToSetConfigOption(
+    CPLSetConfigOptionSubscriber pfnCallback, void *pUserData);
+void CPL_DLL CPLUnsubscribeToSetConfigOption(int nSubscriberId);
+
 /*! @cond Doxygen_Suppress */
 void CPL_DLL CPL_STDCALL CPLFreeConfig(void);
 /*! @endcond */
@@ -101,6 +97,7 @@ const char CPL_DLL *CPLReadLine3L(VSILFILE *, int, int *, CSLConstList);
 double CPL_DLL CPLAtof(const char *);
 double CPL_DLL CPLAtofDelim(const char *, char);
 double CPL_DLL CPLStrtod(const char *, char **);
+double CPL_DLL CPLStrtodM(const char *, char **);
 double CPL_DLL CPLStrtodDelim(const char *, char **, char);
 float CPL_DLL CPLStrtof(const char *, char **);
 float CPL_DLL CPLStrtofDelim(const char *, char **, char);
@@ -286,6 +283,9 @@ void CPL_DLL *CPLZLibDeflate(const void *ptr, size_t nBytes, int nLevel,
                              size_t *pnOutBytes);
 void CPL_DLL *CPLZLibInflate(const void *ptr, size_t nBytes, void *outptr,
                              size_t nOutAvailableBytes, size_t *pnOutBytes);
+void CPL_DLL *CPLZLibInflateEx(const void *ptr, size_t nBytes, void *outptr,
+                               size_t nOutAvailableBytes,
+                               bool bAllowResizeOutptr, size_t *pnOutBytes);
 
 /* -------------------------------------------------------------------- */
 /*      XML validation.                                                 */
@@ -308,6 +308,12 @@ void CPLCleanupSetlocaleMutex(void);
     @return TRUE if i is power of two otherwise return FALSE
 */
 int CPL_DLL CPLIsPowerOfTwo(unsigned int i);
+
+/* -------------------------------------------------------------------- */
+/*      Terminal related                                                */
+/* -------------------------------------------------------------------- */
+
+bool CPL_DLL CPLIsInteractive(FILE *f);
 
 CPL_C_END
 
@@ -336,6 +342,7 @@ extern "C++"
     // setlocale(LC_NUMERIC, NULL) returning "C", such as current proj.4
     // versions, will not work depending on the actual implementation
     class CPLThreadLocaleCPrivate;
+
     class CPL_DLL CPLThreadLocaleC
     {
         CPL_DISALLOW_COPY_ASSIGN(CPLThreadLocaleC)
@@ -407,24 +414,6 @@ extern "C++"
             "target type not derived from source type");
         CPLAssert(f == nullptr || dynamic_cast<To>(f) != nullptr);
         return static_cast<To>(f);
-    }
-    }  // namespace cpl
-}  // extern "C++"
-
-#endif /* def __cplusplus */
-
-#if defined(__cplusplus) && defined(GDAL_COMPILATION)
-
-extern "C++"
-{
-#include <memory>  // for std::unique_ptr
-    namespace cpl
-    {
-    /** std::make_unique<> implementation borrowed from C++14 */
-    template <typename T, typename... Args>
-    std::unique_ptr<T> make_unique(Args &&...args)
-    {
-        return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
     }
     }  // namespace cpl
 }  // extern "C++"

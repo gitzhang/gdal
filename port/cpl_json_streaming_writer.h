@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2019, Even Rouault <even.rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #ifndef CPL_JSON_STREAMING_WRITER_H
@@ -55,14 +39,17 @@ class CPL_DLL CPLJSonStreamingWriter
     std::string m_osIndentAcc{};
     int m_nLevel = 0;
     bool m_bNewLineEnabled = true;
+
     struct State
     {
         bool bIsObj = false;
         bool bFirstChild = true;
+
         explicit State(bool bIsObjIn) : bIsObj(bIsObjIn)
         {
         }
     };
+
     std::vector<State> m_states{};
     bool m_bWaitForValue = false;
 
@@ -81,6 +68,7 @@ class CPL_DLL CPLJSonStreamingWriter
     {
         m_bPretty = bPretty;
     }
+
     void SetIndentationSize(int nSpaces);
 
     // cppcheck-suppress functionStatic
@@ -92,14 +80,17 @@ class CPL_DLL CPLJSonStreamingWriter
     void Add(const std::string &str);
     void Add(const char *pszStr);
     void Add(bool bVal);
+
     void Add(int nVal)
     {
         Add(static_cast<std::int64_t>(nVal));
     }
+
     void Add(unsigned int nVal)
     {
         Add(static_cast<std::int64_t>(nVal));
     }
+
     void Add(std::int64_t nVal);
     void Add(std::uint64_t nVal);
     void Add(float fVal, int nPrecision = 9);
@@ -109,6 +100,7 @@ class CPL_DLL CPLJSonStreamingWriter
     void StartObj();
     void EndObj();
     void AddObjKey(const std::string &key);
+
     struct CPL_DLL ObjectContext
     {
         CPLJSonStreamingWriter &m_serializer;
@@ -121,11 +113,13 @@ class CPL_DLL CPLJSonStreamingWriter
         {
             m_serializer.StartObj();
         }
+
         ~ObjectContext()
         {
             m_serializer.EndObj();
         }
     };
+
     inline ObjectContext MakeObjectContext()
     {
         return ObjectContext(*this);
@@ -133,6 +127,7 @@ class CPL_DLL CPLJSonStreamingWriter
 
     void StartArray();
     void EndArray();
+
     struct CPL_DLL ArrayContext
     {
         CPLJSonStreamingWriter &m_serializer;
@@ -151,6 +146,7 @@ class CPL_DLL CPLJSonStreamingWriter
                 serializer.SetNewline(false);
             m_serializer.StartArray();
         }
+
         ~ArrayContext()
         {
             m_serializer.EndArray();
@@ -158,6 +154,7 @@ class CPL_DLL CPLJSonStreamingWriter
                 m_serializer.SetNewline(m_bNewLineEnabledBackup);
         }
     };
+
     inline ArrayContext MakeArrayContext(bool bForceSingleLine = false)
     {
         return ArrayContext(*this, bForceSingleLine);
@@ -167,6 +164,7 @@ class CPL_DLL CPLJSonStreamingWriter
     {
         return m_bNewLineEnabled;
     }
+
     void SetNewline(bool bEnabled)
     {
         m_bNewLineEnabled = bEnabled;

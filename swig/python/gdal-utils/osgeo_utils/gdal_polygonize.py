@@ -12,23 +12,7 @@
 #  Copyright (c) 2009-2013, Even Rouault <even dot rouault at spatialys.com>
 #  Copyright (c) 2021, Idan Miara <idan@miara.com>
 #
-#  Permission is hereby granted, free of charge, to any person obtaining a
-#  copy of this software and associated documentation files (the "Software"),
-#  to deal in the Software without restriction, including without limitation
-#  the rights to use, copy, modify, merge, publish, distribute, sublicense,
-#  and/or sell copies of the Software, and to permit persons to whom the
-#  Software is furnished to do so, subject to the following conditions:
-#
-#  The above copyright notice and this permission notice shall be included
-#  in all copies or substantial portions of the Software.
-#
-#  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-#  OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-#  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-#  THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-#  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-#  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-#  DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 # ******************************************************************************
 
 import sys
@@ -37,19 +21,22 @@ from typing import Optional, Union
 
 from osgeo import gdal, ogr
 from osgeo_utils.auxiliary.gdal_argparse import GDALArgumentParser, GDALScript
-from osgeo_utils.auxiliary.util import GetOutputDriverFor
+from osgeo_utils.auxiliary.util import GetOutputDriverFor, enable_gdal_exceptions
 
 
+@enable_gdal_exceptions
 def gdal_polygonize(
     src_filename: Optional[str] = None,
     band_number: Union[int, str] = 1,
     dst_filename: Optional[str] = None,
+    overwrite: bool = False,
     driver_name: Optional[str] = None,
     dst_layername: Optional[str] = None,
     dst_fieldname: Optional[str] = None,
     quiet: bool = False,
     mask: str = "default",
     options: Optional[list] = None,
+    layer_creation_options: Optional[list] = None,
     connectedness8: bool = False,
 ):
 
@@ -105,7 +92,36 @@ def gdal_polygonize(
         dst_ds = ogr.Open(dst_filename, update=1)
         gdal.PopErrorHandler()
     except Exception:
-        dst_ds = None
+        try:
+            dst_ds = ogr.Open(dst_filename)
+        except Exception:
+            dst_ds = None
+        if dst_ds and not overwrite:
+            raise Exception(
+                f"{dst_filename} exists, but cannot be updated. You may need to remove it before or use -overwrite"
+            )
+
+    if dst_ds is not None and overwrite:
+        cnt = dst_ds.GetLayerCount()
+        iLayer = None  # initialize in case there are no loop iterations
+        for iLayer in range(cnt):
+            poLayer = dst_ds.GetLayer(iLayer)
+            if poLayer is not None and poLayer.GetName() == dst_layername:
+                break
+
+        delete_ok = False
+        if iLayer != cnt:
+            if dst_ds.TestCapability(ogr.ODsCDeleteLayer) == 1:
+                try:
+                    delete_ok = dst_ds.DeleteLayer(iLayer) == ogr.OGRERR_NONE
+                except Exception:
+                    delete_ok = False
+
+        if not delete_ok:
+            if cnt == 1:
+                dst_ds = None
+                if gdal.VSIStatL(dst_filename):
+                    gdal.Unlink(dst_filename)
 
     # =============================================================================
     # 	Create output file.
@@ -115,6 +131,9 @@ def gdal_polygonize(
         if not quiet:
             print("Creating output %s of format %s." % (dst_filename, driver_name))
         dst_ds = drv.CreateDataSource(dst_filename)
+        if dst_ds is None:
+            print('Cannot create datasource "%s"' % dst_filename)
+            return 1
 
     # =============================================================================
     #       Find or create destination layer.
@@ -128,7 +147,12 @@ def gdal_polygonize(
     if dst_layer is None:
 
         srs = src_ds.GetSpatialRef()
-        dst_layer = dst_ds.CreateLayer(dst_layername, geom_type=ogr.wkbPolygon, srs=srs)
+        dst_layer = dst_ds.CreateLayer(
+            dst_layername,
+            geom_type=ogr.wkbPolygon,
+            srs=srs,
+            options=layer_creation_options if layer_creation_options else [],
+        )
 
         if dst_fieldname is None:
             dst_fieldname = "DN"
@@ -141,6 +165,11 @@ def gdal_polygonize(
         dst_layer.CreateField(fd)
         dst_field = 0
     else:
+        if layer_creation_options:
+            print(
+                "Warning: layer_creation_options will be ignored as the layer already exists"
+            )
+
         if dst_fieldname is not None:
             dst_field = dst_layer.GetLayerDefn().GetFieldIndex(dst_fieldname)
             if dst_field < 0:
@@ -158,9 +187,14 @@ def gdal_polygonize(
     else:
         prog_func = gdal.TermProgress_nocb
 
+    dst_layer.StartTransaction()
     result = gdal.Polygonize(
         srcband, maskband, dst_layer, dst_field, options, callback=prog_func
     )
+    if result == gdal.CE_None:
+        dst_layer.CommitTransaction()
+    else:
+        dst_layer.RollbackTransaction()
 
     srcband = None
     src_ds = None
@@ -181,7 +215,7 @@ class GDALPolygonize(GDALScript):
             the pixel value of that polygon.
             A raster mask may also be provided to determine which pixels are eligible for processing.
             The utility will create the output vector datasource if it does not already exist,
-            defaulting to GML format.
+            otherwise it will try to append to an existing one.
             The utility is based on the GDALPolygonize() function
             which has additional details on the algorithm."""
         )
@@ -209,10 +243,9 @@ class GDALPolygonize(GDALScript):
             "-o",
             dest="options",
             type=str,
-            action="extend",
-            nargs="*",
+            action="append",
             metavar="name=value",
-            help="Specify a special argument to the algorithm.",
+            help="Specify a special argument to the algorithm. This may be specified multiple times.",
         )
 
         parser.add_argument(
@@ -256,6 +289,22 @@ class GDALPolygonize(GDALScript):
             help="Select the output format. "
             "if not specified, the format is guessed from the extension. "
             "Use the short format name.",
+        )
+
+        parser.add_argument(
+            "-lco",
+            dest="layer_creation_options",
+            type=str,
+            action="append",
+            metavar="name=value",
+            help="Specify a layer creation option. This may be specified multiple times.",
+        )
+
+        parser.add_argument(
+            "-overwrite",
+            dest="overwrite",
+            action="store_true",
+            help="overwrite output file if it already exists",
         )
 
         parser.add_argument(

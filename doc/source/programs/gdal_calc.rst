@@ -1,7 +1,7 @@
 .. _gdal_calc:
 
 ================================================================================
-gdal_calc.py
+gdal_calc
 ================================================================================
 
 .. only:: html
@@ -15,8 +15,9 @@ Synopsis
 
 .. code-block::
 
-    gdal_calc.py --calc=expression --outfile=out_filename [-A filename]
-                 [--A_band=n] [-B...-Z filename] [other_options]
+    gdal_calc [--help] [--help-general]
+                 --calc=expression --outfile=<out_filename> [-A <filename>]
+                 [--A_band=<n>] [-B...-Z <filename>] [<other_options>]
 
 .. rubric::  DESCRIPTION
    :name: description
@@ -27,15 +28,13 @@ arithmetic supported by numpy arrays such as ``+``, ``-``, ``*``, and
 Note that all files must have the same dimensions (unless extent option is used),
 but no projection checking is performed (unless projectionCheck option is used).
 
-.. option:: --help
+.. note::
 
-    Show this help message and exit
+    gdal_calc is a Python utility, and is only available if GDAL Python bindings are available.
 
-.. option:: -h
+.. include:: options/help_and_help_general.rst
 
-    The same as :option:`--help`.
-
-.. option:: --calc=expression
+.. option:: --calc=<expression>
 
     Calculation in numpy syntax using ``+``, ``-``, ``/``, ``*``, or any numpy array functions (i.e. ``log10()``).
     Multiple ``--calc`` options can be listed to produce a multiband file (GDAL >= 3.2).
@@ -83,7 +82,7 @@ but no projection checking is performed (unless projectionCheck option is used).
 
     .. note::
 
-       Despite the datatype set using ``--type``, when doing intermediate aritmethic operations using operands of the
+       Despite the datatype set using ``--type``, when doing intermediate arithmetic operations using operands of the
        same type, the operation result will honor the original datatype. This may lead into unexpected results in the final result.
 
     .. note::
@@ -182,80 +181,75 @@ They are not available using the command prompt.
 
     Allows specifying a ColorTable object (with Palette Index interpretation) to be used for the output raster.
 
-Example
--------
+Examples
+--------
 
 Add two files together:
 
-.. code-block::
+.. code-block:: bash
 
-    gdal_calc.py -A input1.tif -B input2.tif --outfile=result.tif --calc="A+B"
+    gdal_calc -A input1.tif -B input2.tif --outfile=result.tif --calc="A+B"
 
 Average of two layers:
 
-.. code-block::
+.. code-block:: bash
 
-    gdal_calc.py -A input1.tif -B input2.tif --outfile=result.tif --calc="(A+B)/2"
+    gdal_calc -A input1.tif -B input2.tif --outfile=result.tif --calc="(A+B)/2"
 
 .. note::
 
    In the previous example, beware that if A and B inputs are of the same datatype, for example integers, you
    may need to force the conversion of one of the operands before the division operation.
 
-   .. code-block::
+   .. code-block:: bash
 
-      gdal_calc.py -A input.tif -B input2.tif --outfile=result.tif --calc="(A.astype(numpy.float64) + B) / 2"
+      gdal_calc -A input.tif -B input2.tif --outfile=result.tif --calc="(A.astype(numpy.float64) + B) / 2"
 
 Add three files together (two options with the same result):
 
-.. code-block::
+.. code-block:: bash
 
-    gdal_calc.py -A input1.tif -B input2.tif -C input3.tif --outfile=result.tif --calc="A+B+C"
+    gdal_calc -A input1.tif -B input2.tif -C input3.tif --outfile=result.tif --calc="A+B+C"
 
-.. versionadded:: 3.3
+.. code-block:: bash
 
-.. code-block::
-
-    gdal_calc.py -A input1.tif -A input2.tif -A input3.tif --outfile=result.tif --calc="numpy.sum(A,axis=0)".
+    gdal_calc -A input1.tif -A input2.tif -A input3.tif --outfile=result.tif --calc="numpy.sum(A,axis=0)".
 
 Average of three layers (two options with the same result):
 
-.. code-block::
+.. code-block:: bash
 
-    gdal_calc.py -A input1.tif -B input2.tif -C input3.tif --outfile=result.tif --calc="(A+B+C)/3"
+    gdal_calc -A input1.tif -B input2.tif -C input3.tif --outfile=result.tif --calc="(A+B+C)/3"
 
-.. versionadded:: 3.3
+.. code-block:: bash
 
-.. code-block::
-
-    gdal_calc.py -A input1.tif input2.tif input3.tif --outfile=result.tif --calc="numpy.average(a,axis=0)".
+    gdal_calc -A input1.tif input2.tif input3.tif --outfile=result.tif --calc="numpy.average(a,axis=0)".
 
 Maximum of three layers  (two options with the same result):
 
-.. code-block::
+.. code-block:: bash
 
-    gdal_calc.py -A input1.tif -B input2.tif -C input3.tif --outfile=result.tif --calc="numpy.max((A,B,C),axis=0)"
+    gdal_calc -A input1.tif -B input2.tif -C input3.tif --outfile=result.tif --calc="numpy.max((A,B,C),axis=0)"
 
-.. versionadded:: 3.3
+.. code-block:: bash
 
-.. code-block::
-
-    gdal_calc.py -A input1.tif input2.tif input3.tif --outfile=result.tif --calc="numpy.max(A,axis=0)"
+    gdal_calc -A input1.tif input2.tif input3.tif --outfile=result.tif --calc="numpy.max(A,axis=0)"
 
 Set values of zero and below to null:
 
-.. code-block::
+.. code-block:: bash
 
-    gdal_calc.py -A input.tif --outfile=result.tif --calc="A*(A>0)" --NoDataValue=0
+    gdal_calc -A input.tif --outfile=result.tif --calc="A*(A>0)" --NoDataValue=0
 
 Using logical operator to keep a range of values from input:
 
-.. code-block::
+.. code-block:: bash
 
-    gdal_calc.py -A input.tif --outfile=result.tif --calc="A*logical_and(A>100,A<150)"
+    gdal_calc -A input.tif --outfile=result.tif --calc="A*logical_and(A>100,A<150)"
 
 Work with multiple bands:
 
-.. code-block::
+.. code-block:: bash
 
-    gdal_calc.py -A input.tif --A_band=1 -B input.tif --B_band=2 --outfile=result.tif --calc="(A+B)/2" --calc="B*logical_and(A>100,A<150)"
+    gdal_calc -A input.tif --A_band=1 -B input.tif --B_band=2 \
+      --outfile=result.tif --calc="(A+B)/2" --calc="B*logical_and(A>100,A<150)"

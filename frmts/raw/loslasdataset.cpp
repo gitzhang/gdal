@@ -8,29 +8,15 @@
  ******************************************************************************
  * Copyright (c) 2010, Frank Warmerdam
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_string.h"
 #include "gdal_frmts.h"
 #include "ogr_srs_api.h"
 #include "rawdataset.h"
+
+#include <algorithm>
 
 /**
 
@@ -91,6 +77,7 @@ class LOSLASDataset final : public RawDataset
     ~LOSLASDataset() override;
 
     CPLErr GetGeoTransform(double *padfTransform) override;
+
     const OGRSpatialReference *GetSpatialRef() const override
     {
         return &m_oSRS;
@@ -202,9 +189,8 @@ GDALDataset *LOSLASDataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     /*      Create a corresponding GDALDataset.                             */
     /* -------------------------------------------------------------------- */
-    LOSLASDataset *poDS = new LOSLASDataset();
-    poDS->fpImage = poOpenInfo->fpL;
-    poOpenInfo->fpL = nullptr;
+    auto poDS = std::make_unique<LOSLASDataset>();
+    std::swap(poDS->fpImage, poOpenInfo->fpL);
 
     /* -------------------------------------------------------------------- */
     /*      Read the header.                                                */
@@ -220,7 +206,6 @@ GDALDataset *LOSLASDataset::Open(GDALOpenInfo *poOpenInfo)
     if (!GDALCheckDatasetDimensions(poDS->nRasterXSize, poDS->nRasterYSize) ||
         poDS->nRasterXSize > (INT_MAX - 4) / 4)
     {
-        delete poDS;
         return nullptr;
     }
 
@@ -247,13 +232,15 @@ GDALDataset *LOSLASDataset::Open(GDALOpenInfo *poOpenInfo)
     /*      the first since the data comes with the southern most record    */
     /*      first, not the northernmost like we would want.                 */
     /* -------------------------------------------------------------------- */
-    poDS->SetBand(
-        1, new RawRasterBand(poDS, 1, poDS->fpImage,
-                             static_cast<vsi_l_offset>(poDS->nRasterYSize) *
-                                     poDS->nRecordLength +
-                                 4,
-                             4, -1 * poDS->nRecordLength, GDT_Float32,
-                             CPL_IS_LSB, RawRasterBand::OwnFP::NO));
+    auto poBand = RawRasterBand::Create(
+        poDS.get(), 1, poDS->fpImage,
+        static_cast<vsi_l_offset>(poDS->nRasterYSize) * poDS->nRecordLength + 4,
+        4, -1 * poDS->nRecordLength, GDT_Float32,
+        RawRasterBand::ByteOrder::ORDER_LITTLE_ENDIAN,
+        RawRasterBand::OwnFP::NO);
+    if (!poBand)
+        return nullptr;
+    poDS->SetBand(1, std::move(poBand));
 
     if (EQUAL(CPLGetExtension(poOpenInfo->pszFilename), "las"))
     {
@@ -278,7 +265,7 @@ GDALDataset *LOSLASDataset::Open(GDALOpenInfo *poOpenInfo)
     poDS->adfGeoTransform[2] = 0.0;
     poDS->adfGeoTransform[3] = min_lat + (poDS->nRasterYSize - 0.5) * delta_lat;
     poDS->adfGeoTransform[4] = 0.0;
-    poDS->adfGeoTransform[5] = -1 * delta_lat;
+    poDS->adfGeoTransform[5] = -1.0 * delta_lat;
 
     /* -------------------------------------------------------------------- */
     /*      Initialize any PAM information.                                 */
@@ -289,9 +276,9 @@ GDALDataset *LOSLASDataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     /*      Check for overviews.                                            */
     /* -------------------------------------------------------------------- */
-    poDS->oOvManager.Initialize(poDS, poOpenInfo->pszFilename);
+    poDS->oOvManager.Initialize(poDS.get(), poOpenInfo->pszFilename);
 
-    return poDS;
+    return poDS.release();
 }
 
 /************************************************************************/

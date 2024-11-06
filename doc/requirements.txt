@@ -1,5 +1,7 @@
 # This file may be used to create an environment using:
 # $ pip install --upgrade -r <this file>
+fsspec
+numpy
 sphinx
 breathe
 sphinx_bootstrap_theme
@@ -8,3 +10,4 @@ sphinx_rtd_theme
 recommonmark
 sphinx-markdown-tables
 sphinxcontrib-spelling
+sphinxcontrib-jquery

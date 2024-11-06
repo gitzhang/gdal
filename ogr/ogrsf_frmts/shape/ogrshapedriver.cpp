@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 1999,  Les Technologies SoftMap Inc.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "ogrshape.h"
@@ -50,19 +34,28 @@ static int OGRShapeDriverIdentify(GDALOpenInfo *poOpenInfo)
     if (!poOpenInfo->bStatOK)
         return FALSE;
     if (poOpenInfo->bIsDirectory)
-        return -1;  // Unsure.
+    {
+        if (STARTS_WITH(poOpenInfo->pszFilename, "/vsizip/") &&
+            (strstr(poOpenInfo->pszFilename, ".shp.zip") ||
+             strstr(poOpenInfo->pszFilename, ".SHP.ZIP")))
+        {
+            return TRUE;
+        }
+
+        return GDAL_IDENTIFY_UNKNOWN;  // Unsure.
+    }
     if (poOpenInfo->fpL == nullptr)
     {
         return FALSE;
     }
-    CPLString osExt(CPLGetExtension(poOpenInfo->pszFilename));
-    if (EQUAL(osExt, "SHP") || EQUAL(osExt, "SHX"))
+    const std::string osExt(CPLGetExtension(poOpenInfo->pszFilename));
+    if (EQUAL(osExt.c_str(), "SHP") || EQUAL(osExt.c_str(), "SHX"))
     {
         return poOpenInfo->nHeaderBytes >= 4 &&
                (memcmp(poOpenInfo->pabyHeader, "\x00\x00\x27\x0A", 4) == 0 ||
                 memcmp(poOpenInfo->pabyHeader, "\x00\x00\x27\x0D", 4) == 0);
     }
-    if (EQUAL(osExt, "DBF"))
+    if (EQUAL(osExt.c_str(), "DBF"))
     {
         if (poOpenInfo->nHeaderBytes < 32)
             return FALSE;
@@ -82,8 +75,8 @@ static int OGRShapeDriverIdentify(GDALOpenInfo *poOpenInfo)
             return FALSE;
         return TRUE;
     }
-    if (EQUAL(osExt, "shz") ||
-        (EQUAL(osExt, "zip") &&
+    if (EQUAL(osExt.c_str(), "shz") ||
+        (EQUAL(osExt.c_str(), "zip") &&
          (CPLString(poOpenInfo->pszFilename).endsWith(".shp.zip") ||
           CPLString(poOpenInfo->pszFilename).endsWith(".SHP.ZIP"))))
     {
@@ -95,7 +88,7 @@ static int OGRShapeDriverIdentify(GDALOpenInfo *poOpenInfo)
     if (!STARTS_WITH(poOpenInfo->pszFilename, "/vsitar/") &&
         EQUAL(CPLGetFilename(poOpenInfo->pszFilename), ".cur_input"))
     {
-        return -1;
+        return GDAL_IDENTIFY_UNKNOWN;
     }
 #endif
     return FALSE;
@@ -340,6 +333,10 @@ void RegisterOGRShape()
     poDriver->SetMetadataItem(GDAL_DMD_HELPTOPIC,
                               "drivers/vector/shapefile.html");
     poDriver->SetMetadataItem(GDAL_DMD_SUPPORTED_SQL_DIALECTS, "OGRSQL SQLITE");
+    poDriver->SetMetadataItem(GDAL_DMD_NUMERIC_FIELD_WIDTH_INCLUDES_SIGN,
+                              "YES");
+    poDriver->SetMetadataItem(
+        GDAL_DMD_NUMERIC_FIELD_WIDTH_INCLUDES_DECIMAL_SEPARATOR, "YES");
 
     poDriver->SetMetadataItem(
         GDAL_DMD_OPENOPTIONLIST,
@@ -414,6 +411,9 @@ void RegisterOGRShape()
 
     poDriver->SetMetadataItem(GDAL_DMD_CREATIONFIELDDATATYPES,
                               "Integer Integer64 Real String Date");
+    poDriver->SetMetadataItem(GDAL_DMD_CREATIONFIELDDATASUBTYPES, "Boolean");
+    poDriver->SetMetadataItem(GDAL_DMD_CREATION_FIELD_DEFN_FLAGS,
+                              "WidthPrecision");
     poDriver->SetMetadataItem(GDAL_DMD_ALTER_FIELD_DEFN_FLAGS,
                               "Name Type WidthPrecision");
     poDriver->SetMetadataItem(GDAL_DCAP_VIRTUALIO, "YES");

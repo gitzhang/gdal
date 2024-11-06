@@ -8,25 +8,7 @@
  * Copyright (c) 2012-2014, Martin Landa <landa.martin gmail.com>
  * Copyright (c) 2012-2014, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person
- * obtaining a copy of this software and associated documentation
- * files (the "Software"), to deal in the Software without
- * restriction, including without limitation the rights to use, copy,
- * modify, merge, publish, distribute, sublicense, and/or sell copies
- * of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be
- * included in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
- * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
- * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include <algorithm>
@@ -330,7 +312,7 @@ int VFKDataBlockSQLite::LoadGeometryLineStringSBP()
                 (VFKFeatureSQLite *)poDataBlockPoints->GetFeature("ID", id);
             if (poPoint)
             {
-                OGRGeometry *pt = poPoint->GetGeometry();
+                const OGRGeometry *pt = poPoint->GetGeometry();
                 if (pt)
                 {
                     oOGRLine.addPoint(pt->toPoint());
@@ -434,15 +416,8 @@ int VFKDataBlockSQLite::LoadGeometryLineStringHP()
         VFKFeatureSQLite *poLine =
             poDataBlockLines->GetFeature(vrColumn, vrValue, 2, TRUE);
 
-        OGRGeometry *poOgrGeometry = nullptr;
-        if (!poLine)
-        {
-            poOgrGeometry = nullptr;
-        }
-        else
-        {
-            poOgrGeometry = poLine->GetGeometry();
-        }
+        const OGRGeometry *poOgrGeometry =
+            poLine ? poLine->GetGeometry() : nullptr;
         if (!poOgrGeometry || !poFeature->SetGeometry(poOgrGeometry))
         {
             CPLDebug("OGR-VFK",
@@ -1227,7 +1202,7 @@ void VFKDataBlockSQLite::UpdateVfkBlocks(int nGeometries)
   \param iFID feature id to set up
   \param rowId list of rows to update
 */
-void VFKDataBlockSQLite::UpdateFID(GIntBig iFID, std::vector<int> rowId)
+void VFKDataBlockSQLite::UpdateFID(GIntBig iFID, const std::vector<int> &rowId)
 {
     CPLString osSQL, osValue;
     VFKReaderSQLite *poReader = (VFKReaderSQLite *)m_poReader;

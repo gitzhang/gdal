@@ -8,23 +8,7 @@
  * Copyright (c) 2018, Ivan Lucena
  * Copyright (c) 2018, Even Rouault
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_port.h"
@@ -36,6 +20,7 @@
 #include "ogr_spatialref.h"
 #include "ogr_srs_api.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <limits>
 
@@ -275,11 +260,10 @@ GDALDataset *BYNDataset::Open(GDALOpenInfo *poOpenInfo)
     /*      Create a corresponding GDALDataset.                             */
     /* -------------------------------------------------------------------- */
 
-    BYNDataset *poDS = new BYNDataset();
+    auto poDS = std::make_unique<BYNDataset>();
 
     poDS->eAccess = poOpenInfo->eAccess;
-    poDS->fpImage = poOpenInfo->fpL;
-    poOpenInfo->fpL = nullptr;
+    std::swap(poDS->fpImage, poOpenInfo->fpL);
 
     /* -------------------------------------------------------------------- */
     /*      Read the header.                                                */
@@ -333,7 +317,6 @@ GDALDataset *BYNDataset::Open(GDALOpenInfo *poOpenInfo)
 
     if (!GDALCheckDatasetDimensions(poDS->nRasterXSize, poDS->nRasterYSize))
     {
-        delete poDS;
         return nullptr;
     }
 
@@ -360,7 +343,6 @@ GDALDataset *BYNDataset::Open(GDALOpenInfo *poOpenInfo)
         eDT = GDT_Int32;
     else
     {
-        delete poDS;
         return nullptr;
     }
 
@@ -372,11 +354,12 @@ GDALDataset *BYNDataset::Open(GDALOpenInfo *poOpenInfo)
 
     int bIsLSB = poDS->hHeader.nByteOrder == 1 ? 1 : 0;
 
-    BYNRasterBand *poBand = new BYNRasterBand(
-        poDS, 1, poDS->fpImage, BYN_HDR_SZ, nDTSize,
+    auto poBand = std::make_unique<BYNRasterBand>(
+        poDS.get(), 1, poDS->fpImage, BYN_HDR_SZ, nDTSize,
         poDS->nRasterXSize * nDTSize, eDT, CPL_IS_LSB == bIsLSB);
-
-    poDS->SetBand(1, poBand);
+    if (!poBand->IsValid())
+        return nullptr;
+    poDS->SetBand(1, std::move(poBand));
 
     /* -------------------------------------------------------------------- */
     /*      Initialize any PAM information.                                 */
@@ -389,9 +372,9 @@ GDALDataset *BYNDataset::Open(GDALOpenInfo *poOpenInfo)
     /*      Check for overviews.                                            */
     /* -------------------------------------------------------------------- */
 
-    poDS->oOvManager.Initialize(poDS, poOpenInfo->pszFilename);
+    poDS->oOvManager.Initialize(poDS.get(), poOpenInfo->pszFilename);
 
-    return poDS;
+    return poDS.release();
 }
 
 /************************************************************************/
@@ -497,7 +480,7 @@ const OGRSpatialReference *BYNDataset::GetSpatialRef() const
     {
         /* Return COMPD_CS with GEOGCS and VERT_CS */
 
-        m_oSRS = oSRSComp;
+        m_oSRS = std::move(oSRSComp);
         m_oSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
         return &m_oSRS;
     }
@@ -792,7 +775,7 @@ GDALDataset *BYNDataset::Create(const char *pszFilename, int nXSize, int nYSize,
     VSIFWriteL(abyBuf, BYN_HDR_SZ, 1, fp);
     VSIFCloseL(fp);
 
-    return reinterpret_cast<GDALDataset *>(GDALOpen(pszFilename, GA_Update));
+    return GDALDataset::FromHandle(GDALOpen(pszFilename, GA_Update));
 }
 
 /************************************************************************/

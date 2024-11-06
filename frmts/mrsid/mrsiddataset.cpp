@@ -8,23 +8,7 @@
  * Copyright (c) 2003, Andrey Kiselev <dron@ak4719.spb.edu>
  * Copyright (c) 2007-2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #define NO_DELETE
@@ -35,6 +19,8 @@
 #include "gdaljp2metadata.h"
 #include "ogr_spatialref.h"
 #include <string>
+
+#include "mrsiddrivercore.h"
 
 #include <geo_normalize.h>
 #include <geovalues.h>
@@ -76,6 +62,7 @@ template <class T> class LTIDLLPixel : public T
         : T(colorSpace, numBands, dataType)
     {
     }
+
     virtual ~LTIDLLPixel()
     {
     }
@@ -88,15 +75,18 @@ template <class T> class LTIDLLReader : public T
         : T(fileSpec, useWorldFile)
     {
     }
+
     explicit LTIDLLReader(LTIOStreamInf &oStream, bool useWorldFile = false)
         : T(oStream, useWorldFile)
     {
     }
+
     explicit LTIDLLReader(LTIOStreamInf *poStream,
                           LTIOStreamInf *poWorldFile = nullptr)
         : T(poStream, poWorldFile)
     {
     }
+
     virtual ~LTIDLLReader()
     {
     }
@@ -108,6 +98,7 @@ template <class T> class LTIDLLNavigator : public T
     explicit LTIDLLNavigator(const LTIImage &image) : T(image)
     {
     }
+
     virtual ~LTIDLLNavigator()
     {
     }
@@ -121,6 +112,7 @@ template <class T> class LTIDLLBuffer : public T
         : T(pixelProps, totalNumCols, totalNumRows, data)
     {
     }
+
     virtual ~LTIDLLBuffer()
     {
     }
@@ -132,6 +124,7 @@ template <class T> class LTIDLLCopy : public T
     explicit LTIDLLCopy(const T &original) : T(original)
     {
     }
+
     virtual ~LTIDLLCopy()
     {
     }
@@ -143,6 +136,7 @@ template <class T> class LTIDLLWriter : public T
     explicit LTIDLLWriter(LTIImageStage *image) : T(image)
     {
     }
+
     virtual ~LTIDLLWriter()
     {
     }
@@ -154,6 +148,7 @@ template <class T> class LTIDLLDefault : public T
     LTIDLLDefault() : T()
     {
     }
+
     virtual ~LTIDLLDefault()
     {
     }
@@ -169,9 +164,11 @@ class MrSIDProgress : public LTIProgressDelegate
     MrSIDProgress(GDALProgressFunc f, void *arg) : m_f(f), m_arg(arg)
     {
     }
+
     virtual ~MrSIDProgress()
     {
     }
+
     virtual LT_STATUS setProgressStatus(float fraction) override
     {
         if (!m_f)
@@ -241,9 +238,12 @@ class MrSIDDataset final : public GDALJP2AbstractDataset
     void GetGTIFDefn();
     char *GetOGISDefn(GTIFDefn *);
 
+    int m_nInRasterIO = 0;  // Prevent infinite recursion in IRasterIO()
+
     virtual CPLErr IRasterIO(GDALRWFlag, int, int, int, int, void *, int, int,
-                             GDALDataType, int, int *, GSpacing nPixelSpace,
-                             GSpacing nLineSpace, GSpacing nBandSpace,
+                             GDALDataType, int, BANDMAP_TYPE,
+                             GSpacing nPixelSpace, GSpacing nLineSpace,
+                             GSpacing nBandSpace,
                              GDALRasterIOExtraArg *psExtraArg) override;
 
   protected:
@@ -827,7 +827,7 @@ CPLErr MrSIDDataset::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
                                int nXSize, int nYSize, void *pData,
                                int nBufXSize, int nBufYSize,
                                GDALDataType eBufType, int nBandCount,
-                               int *panBandMap, GSpacing nPixelSpace,
+                               BANDMAP_TYPE panBandMap, GSpacing nPixelSpace,
                                GSpacing nLineSpace, GSpacing nBandSpace,
                                GDALRasterIOExtraArg *psExtraArg)
 
@@ -846,11 +846,17 @@ CPLErr MrSIDDataset::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
     if (CPLTestBool(CPLGetConfigOption("GDAL_ONE_BIG_READ", "NO")))
         bUseBlockedIO = FALSE;
 
-    if (bUseBlockedIO)
-        return GDALDataset::BlockBasedRasterIO(
+    if (bUseBlockedIO && !m_nInRasterIO)
+    {
+        ++m_nInRasterIO;
+        const CPLErr eErr = GDALDataset::BlockBasedRasterIO(
             eRWFlag, nXOff, nYOff, nXSize, nYSize, pData, nBufXSize, nBufYSize,
             eBufType, nBandCount, panBandMap, nPixelSpace, nLineSpace,
             nBandSpace, psExtraArg);
+        --m_nInRasterIO;
+        return eErr;
+    }
+
     CPLDebug("MrSID", "RasterIO() - using optimized dataset level IO.");
 
     /* -------------------------------------------------------------------- */
@@ -1357,32 +1363,6 @@ CPLErr MrSIDDataset::OpenZoomLevel(lt_int32 iZoom)
 }
 
 /************************************************************************/
-/*                         MrSIDIdentify()                              */
-/*                                                                      */
-/*          Identify method that only supports MrSID files.             */
-/************************************************************************/
-
-static int MrSIDIdentify(GDALOpenInfo *poOpenInfo)
-{
-    if (poOpenInfo->nHeaderBytes < 32)
-        return FALSE;
-
-    if (!STARTS_WITH_CI((const char *)poOpenInfo->pabyHeader, "msid"))
-        return FALSE;
-
-#if defined(LTI_SDK_MAJOR) && LTI_SDK_MAJOR >= 8
-    lt_uint8 gen;
-    bool raster;
-    LT_STATUS eStat = MrSIDImageReaderInterface::getMrSIDGeneration(
-        poOpenInfo->pabyHeader, gen, raster);
-    if (!LT_SUCCESS(eStat) || !raster)
-        return FALSE;
-#endif
-
-    return TRUE;
-}
-
-/************************************************************************/
 /*                          MrSIDOpen()                                 */
 /*                                                                      */
 /*          Open method that only supports MrSID files.                 */
@@ -1393,38 +1373,19 @@ static GDALDataset *MrSIDOpen(GDALOpenInfo *poOpenInfo)
     if (!MrSIDIdentify(poOpenInfo))
         return nullptr;
 
+#if defined(LTI_SDK_MAJOR) && LTI_SDK_MAJOR >= 8
+    lt_uint8 gen;
+    bool raster;
+    LT_STATUS eStat = MrSIDImageReaderInterface::getMrSIDGeneration(
+        poOpenInfo->pabyHeader, gen, raster);
+    if (!LT_SUCCESS(eStat) || !raster)
+        return nullptr;
+#endif
+
     return MrSIDDataset::Open(poOpenInfo, FALSE);
 }
 
 #ifdef MRSID_J2K
-
-static const unsigned char jpc_header[] = {0xff, 0x4f};
-
-/************************************************************************/
-/*                         JP2Identify()                                */
-/*                                                                      */
-/*        Identify method that only supports JPEG2000 files.            */
-/************************************************************************/
-
-static int JP2Identify(GDALOpenInfo *poOpenInfo)
-{
-    if (poOpenInfo->nHeaderBytes < 32)
-        return FALSE;
-
-    if (memcmp(poOpenInfo->pabyHeader, jpc_header, sizeof(jpc_header)) == 0)
-    {
-        const char *pszExtension = CPLGetExtension(poOpenInfo->pszFilename);
-
-        if (!EQUAL(pszExtension, "jpc") && !EQUAL(pszExtension, "j2k") &&
-            !EQUAL(pszExtension, "jp2") && !EQUAL(pszExtension, "jpx") &&
-            !EQUAL(pszExtension, "j2c") && !EQUAL(pszExtension, "ntf"))
-            return FALSE;
-    }
-    else if (!STARTS_WITH_CI((const char *)poOpenInfo->pabyHeader + 4, "jP  "))
-        return FALSE;
-
-    return TRUE;
-}
 
 /************************************************************************/
 /*                            JP2Open()                                 */
@@ -1434,7 +1395,7 @@ static int JP2Identify(GDALOpenInfo *poOpenInfo)
 
 static GDALDataset *JP2Open(GDALOpenInfo *poOpenInfo)
 {
-    if (!JP2Identify(poOpenInfo))
+    if (!MrSIDJP2Identify(poOpenInfo))
         return nullptr;
 
     return MrSIDDataset::Open(poOpenInfo, TRUE);
@@ -3017,6 +2978,7 @@ class MrSIDDummyImageReader : public LTIImageReader
     MrSIDDummyImageReader(GDALDataset *poSrcDS);
     ~MrSIDDummyImageReader();
     LT_STATUS initialize();
+
     lt_int64 getPhysicalFileSize(void) const
     {
         return 0;
@@ -3032,10 +2994,12 @@ class MrSIDDummyImageReader : public LTIImageReader
 
     virtual LT_STATUS decodeStrip(LTISceneBuffer &stripBuffer,
                                   const LTIScene &stripScene);
+
     virtual LT_STATUS decodeBegin(const LTIScene &)
     {
         return LT_STS_Success;
     };
+
     virtual LT_STATUS decodeEnd()
     {
         return LT_STS_Success;
@@ -3602,50 +3566,14 @@ void GDALRegister_MrSID()
     /* -------------------------------------------------------------------- */
     /*      MrSID driver.                                                   */
     /* -------------------------------------------------------------------- */
-    if (GDALGetDriverByName("MrSID") != nullptr)
+    if (GDALGetDriverByName(MRSID_DRIVER_NAME) != nullptr)
         return;
 
     GDALDriver *poDriver = new GDALDriver();
-
-    poDriver->SetDescription("MrSID");
-    poDriver->SetMetadataItem(GDAL_DCAP_RASTER, "YES");
-    poDriver->SetMetadataItem(GDAL_DMD_LONGNAME,
-                              "Multi-resolution Seamless Image Database "
-                              "(MrSID)");
-    poDriver->SetMetadataItem(GDAL_DMD_HELPTOPIC, "drivers/raster/mrsid.html");
-    poDriver->SetMetadataItem(GDAL_DMD_EXTENSION, "sid");
-
+    MrSIDDriverSetCommonMetadata(poDriver);
 #ifdef MRSID_ESDK
-    poDriver->SetMetadataItem(GDAL_DMD_CREATIONDATATYPES,
-                              "Byte Int16 UInt16 Int32 UInt32 "
-                              "Float32 Float64");
-    poDriver->SetMetadataItem(
-        GDAL_DMD_CREATIONOPTIONLIST,
-        "<CreationOptionList>"
-        // Version 2 Options
-        "   <Option name='COMPRESSION' type='double' description='Set "
-        "compression ratio (0.0 default is meant to be lossless)'/>"
-        // Version 3 Options
-        "   <Option name='TWOPASS' type='int' description='Use twopass "
-        "optimizer algorithm'/>"
-        "   <Option name='FILESIZE' type='int' description='Set target file "
-        "size (0 implies lossless compression)'/>"
-        // Version 2 and 3 Option
-        "   <Option name='WORLDFILE' type='boolean' description='Write out "
-        "world file'/>"
-        // Version Type
-        "   <Option name='VERSION' type='int' description='Valid versions are "
-        "2 and 3, default = 3'/>"
-        "</CreationOptionList>");
-
     poDriver->pfnCreateCopy = MrSIDCreateCopy;
-
-#else
-    // In read-only mode, we support VirtualIO. I don't think this is the case
-    // for MrSIDCreateCopy().
-    poDriver->SetMetadataItem(GDAL_DCAP_VIRTUALIO, "YES");
 #endif
-    poDriver->pfnIdentify = MrSIDIdentify;
     poDriver->pfnOpen = MrSIDOpen;
 
     GetGDALDriverManager()->RegisterDriver(poDriver);
@@ -3655,35 +3583,10 @@ void GDALRegister_MrSID()
 /* -------------------------------------------------------------------- */
 #ifdef MRSID_J2K
     poDriver = new GDALDriver();
-
-    poDriver->SetDescription("JP2MrSID");
-    poDriver->SetMetadataItem(GDAL_DCAP_RASTER, "YES");
-    poDriver->SetMetadataItem(GDAL_DMD_LONGNAME, "MrSID JPEG2000");
-    poDriver->SetMetadataItem(GDAL_DMD_HELPTOPIC,
-                              "drivers/raster/jp2mrsid.html");
-    poDriver->SetMetadataItem(GDAL_DMD_EXTENSION, "jp2");
-
+    JP2MrSIDDriverSetCommonMetadata(poDriver);
 #ifdef MRSID_ESDK
-    poDriver->SetMetadataItem(GDAL_DMD_CREATIONDATATYPES, "Byte Int16 UInt16");
-    poDriver->SetMetadataItem(
-        GDAL_DMD_CREATIONOPTIONLIST,
-        "<CreationOptionList>"
-        "   <Option name='COMPRESSION' type='double' description='Set "
-        "compression ratio (0.0 default is meant to be lossless)'/>"
-        "   <Option name='WORLDFILE' type='boolean' description='Write out "
-        "world file'/>"
-        "   <Option name='XMLPROFILE' type='string' description='Use named xml "
-        "profile file'/>"
-        "</CreationOptionList>");
-
     poDriver->pfnCreateCopy = JP2CreateCopy;
-#else
-    /* In read-only mode, we support VirtualIO. I don't think this is the case
-     */
-    /* for JP2CreateCopy() */
-    poDriver->SetMetadataItem(GDAL_DCAP_VIRTUALIO, "YES");
 #endif
-    poDriver->pfnIdentify = JP2Identify;
     poDriver->pfnOpen = JP2Open;
 
     GetGDALDriverManager()->RegisterDriver(poDriver);
@@ -3709,12 +3612,15 @@ extern "C"
     void TIFFClientOpen()
     {
     }
+
     void TIFFError()
     {
     }
+
     void TIFFGetField()
     {
     }
+
     void TIFFSetField()
     {
     }

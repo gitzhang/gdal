@@ -8,29 +8,15 @@
  ******************************************************************************
  * Copyright (c) 2012, Frank Warmerdam
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_string.h"
 #include "gdal_frmts.h"
 #include "ogr_srs_api.h"
 #include "rawdataset.h"
+
+#include <algorithm>
 
 /************************************************************************/
 /* ==================================================================== */
@@ -148,30 +134,15 @@ int CTable2Dataset::Identify(GDALOpenInfo *poOpenInfo)
 GDALDataset *CTable2Dataset::Open(GDALOpenInfo *poOpenInfo)
 
 {
-    if (!Identify(poOpenInfo))
+    if (!Identify(poOpenInfo) || !poOpenInfo->fpL)
         return nullptr;
 
     /* -------------------------------------------------------------------- */
     /*      Create a corresponding GDALDataset.                             */
     /* -------------------------------------------------------------------- */
-    CTable2Dataset *poDS = new CTable2Dataset();
+    auto poDS = std::make_unique<CTable2Dataset>();
     poDS->eAccess = poOpenInfo->eAccess;
-
-    /* -------------------------------------------------------------------- */
-    /*      Open the file.                                                  */
-    /* -------------------------------------------------------------------- */
-    CPLString osFilename = poOpenInfo->pszFilename;
-
-    if (poOpenInfo->eAccess == GA_ReadOnly)
-        poDS->fpImage = VSIFOpenL(osFilename, "rb");
-    else
-        poDS->fpImage = VSIFOpenL(osFilename, "rb+");
-
-    if (poDS->fpImage == nullptr)
-    {
-        delete poDS;
-        return nullptr;
-    }
+    std::swap(poDS->fpImage, poOpenInfo->fpL);
 
     /* -------------------------------------------------------------------- */
     /*      Read the file header.                                           */
@@ -207,7 +178,6 @@ GDALDataset *CTable2Dataset::Open(GDALOpenInfo *poOpenInfo)
         /* to avoid overflow in later -8 * nRasterXSize computation */
         nRasterXSize >= INT_MAX / 8)
     {
-        delete poDS;
         return nullptr;
     }
 
@@ -231,30 +201,32 @@ GDALDataset *CTable2Dataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     /*      Setup the bands.                                                */
     /* -------------------------------------------------------------------- */
-    CPLErrorReset();
-    RawRasterBand *poBand =
-        new RawRasterBand(poDS, 1, poDS->fpImage,
-                          160 + 4 +
-                              static_cast<vsi_l_offset>(nRasterXSize) *
-                                  (nRasterYSize - 1) * 2 * 4,
-                          8, -8 * nRasterXSize, GDT_Float32, CPL_IS_LSB,
-                          RawRasterBand::OwnFP::NO);
+    auto poBand =
+        RawRasterBand::Create(poDS.get(), 1, poDS->fpImage,
+                              160 + 4 +
+                                  static_cast<vsi_l_offset>(nRasterXSize) *
+                                      (nRasterYSize - 1) * 2 * 4,
+                              8, -8 * nRasterXSize, GDT_Float32,
+                              RawRasterBand::ByteOrder::ORDER_LITTLE_ENDIAN,
+                              RawRasterBand::OwnFP::NO);
+    if (!poBand)
+        return nullptr;
     poBand->SetDescription("Latitude Offset (radians)");
-    poDS->SetBand(1, poBand);
+    poDS->SetBand(1, std::move(poBand));
 
-    poBand = new RawRasterBand(poDS, 2, poDS->fpImage,
-                               160 + static_cast<vsi_l_offset>(nRasterXSize) *
-                                         (nRasterYSize - 1) * 2 * 4,
-                               8, -8 * nRasterXSize, GDT_Float32, CPL_IS_LSB,
-                               RawRasterBand::OwnFP::NO);
+    poBand =
+        RawRasterBand::Create(poDS.get(), 2, poDS->fpImage,
+                              160 + static_cast<vsi_l_offset>(nRasterXSize) *
+                                        (nRasterYSize - 1) * 2 * 4,
+                              8, -8 * nRasterXSize, GDT_Float32,
+                              RawRasterBand::ByteOrder::ORDER_LITTLE_ENDIAN,
+                              RawRasterBand::OwnFP::NO);
+    if (!poBand)
+        return nullptr;
     poBand->SetDescription("Longitude Offset (radians)");
     poBand->SetMetadataItem("positive_value", "west");
-    poDS->SetBand(2, poBand);
-    if (CPLGetLastErrorType() != CE_None)
-    {
-        delete poDS;
-        return nullptr;
-    }
+    poDS->SetBand(2, std::move(poBand));
+
     /* -------------------------------------------------------------------- */
     /*      Initialize any PAM information.                                 */
     /* -------------------------------------------------------------------- */
@@ -264,9 +236,9 @@ GDALDataset *CTable2Dataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     /*      Check for overviews.                                            */
     /* -------------------------------------------------------------------- */
-    poDS->oOvManager.Initialize(poDS, poOpenInfo->pszFilename);
+    poDS->oOvManager.Initialize(poDS.get(), poOpenInfo->pszFilename);
 
-    return poDS;
+    return poDS.release();
 }
 
 /************************************************************************/

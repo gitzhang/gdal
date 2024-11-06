@@ -30,11 +30,21 @@ add_library(
   gdalwarpkernel.cpp
   gdalwarpoperation.cpp
   llrasterize.cpp
+  los.cpp
   polygonize.cpp
+  polygonize_polygonizer_impl.cpp
   rasterfill.cpp
   thinplatespline.cpp
   gdal_simplesurf.cpp
-  viewshed.cpp)
+  viewshed/combiner.cpp
+  viewshed/cumulative.cpp
+  viewshed/progress.cpp
+  viewshed/util.cpp
+  viewshed/viewshed.cpp
+  viewshed/viewshed_executor.cpp
+  gdalgenericinverse.cpp
+  gdal_interpolateatpoint.cpp
+)
 
 add_dependencies(alg generate_gdal_version_h)
 
@@ -47,13 +57,14 @@ target_compile_options(alg PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${GDAL_CXX_WARNING_
 target_compile_options(alg PRIVATE $<$<COMPILE_LANGUAGE:C>:${GDAL_C_WARNING_FLAGS}>)
 
 target_include_directories(
-  alg PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/marching_squares> $<TARGET_PROPERTY:gdal_GTIFF,SOURCE_DIR>
+  alg PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/marching_squares>
               $<TARGET_PROPERTY:gdal_vrt,SOURCE_DIR> $<TARGET_PROPERTY:gdal_MEM,SOURCE_DIR>)
 set_property(TARGET alg PROPERTY POSITION_INDEPENDENT_CODE ${GDAL_OBJECT_LIBRARIES_POSITION_INDEPENDENT_CODE})
 target_sources(${GDAL_LIB_TARGET_NAME} PRIVATE $<TARGET_OBJECTS:alg>)
-if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.16)
-  set_property(SOURCE gdaldither.cpp gdalmediancut.cpp PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
-endif ()
+
+if (GDAL_ENABLE_DRIVER_GTIFF)
+  target_include_directories(alg PRIVATE $<TARGET_PROPERTY:gdal_GTIFF,SOURCE_DIR>)
+endif()
 
 if (GDAL_USE_GEOS)
   target_compile_definitions(alg PRIVATE -DHAVE_GEOS=1)

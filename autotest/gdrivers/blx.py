@@ -9,23 +9,7 @@
 ###############################################################################
 # Copyright (c) 2008, Even Rouault <even dot rouault at spatialys.com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 import gdaltest
@@ -44,7 +28,7 @@ def test_blx_1():
     prj = "WGS84"
     gt = [20.0004166, 0.0008333, 0.0, 50.0004166, 0.0, -0.0008333]
     tst = gdaltest.GDALTest("BLX", "blx/s4103.blx", 1, 47024)
-    return tst.testOpen(check_prj=prj, check_gt=gt)
+    tst.testOpen(check_prj=prj, check_gt=gt)
 
 
 ###############################################################################
@@ -56,7 +40,7 @@ def test_blx_2():
     prj = "WGS84"
     gt = [20.0004166, 0.0008333, 0.0, 50.0004166, 0.0, -0.0008333]
     tst = gdaltest.GDALTest("BLX", "blx/s4103.xlb", 1, 47024)
-    return tst.testOpen(check_prj=prj, check_gt=gt)
+    tst.testOpen(check_prj=prj, check_gt=gt)
 
 
 ###############################################################################
@@ -66,7 +50,7 @@ def test_blx_2():
 def test_blx_3():
 
     tst = gdaltest.GDALTest("BLX", "blx/s4103.xlb", 1, 47024)
-    return tst.testCreateCopy(check_gt=1, check_srs=1)
+    tst.testCreateCopy(check_gt=1, check_srs=1)
 
 
 ###############################################################################
@@ -76,7 +60,7 @@ def test_blx_3():
 def test_blx_4():
 
     tst = gdaltest.GDALTest("BLX", "blx/s4103.blx", 1, 47024, options=["BIGENDIAN=YES"])
-    return tst.testCreateCopy(check_gt=1, check_srs=1)
+    tst.testCreateCopy(check_gt=1, check_srs=1)
 
 
 ###############################################################################

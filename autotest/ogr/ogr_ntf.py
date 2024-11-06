@@ -9,23 +9,7 @@
 ###############################################################################
 # Copyright (c) 2009-2010, Even Rouault <even dot rouault at spatialys.com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 # The following tests will download sample data from
@@ -83,18 +67,17 @@ import pytest
 
 from osgeo import ogr
 
-pytestmark = pytest.mark.require_driver("NTF")
+pytestmark = pytest.mark.require_driver("UK .NTF")
 
 ###############################################################################
 
 
 def test_ogr_ntf_1():
 
-    if not gdaltest.download_file(
+    gdaltest.download_or_skip(
         "http://www.ordnancesurvey.co.uk/oswebsite/products/strategi/sampledata/stratntf.exe",
         "stratntf.exe",
-    ):
-        pytest.skip()
+    )
 
     try:
         os.stat("tmp/cache/SS.ntf")
@@ -130,17 +113,14 @@ def test_ogr_ntf_1():
     feat = lyr.GetNextFeature()
     assert feat.GetGeometryRef().ExportToWkt() == "POINT (222904 127850)"
 
-    ds.Destroy()
-
 
 ###############################################################################
 def test_ogr_ntf_2():
 
-    if not gdaltest.download_file(
+    gdaltest.download_or_skip(
         "http://www.ordnancesurvey.co.uk/oswebsite/products/meridian2/sampledata/meridian2ntf.exe",
         "meridian2ntf.exe",
-    ):
-        pytest.skip()
+    )
 
     try:
         os.stat("tmp/cache/Port_Talbot_NTF/SS78.ntf")
@@ -182,5 +162,3 @@ def test_ogr_ntf_2():
         feat.GetGeometryRef().ExportToWkt()
         == "LINESTRING (275324 189274,275233 189114,275153 189048)"
     )
-
-    ds.Destroy()

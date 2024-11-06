@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2019, Winor Chen <wchen329 at wisc.edu>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 #ifndef __NETCDFSG_H__
 #define __NETCDFSG_H__
@@ -73,10 +57,12 @@ class Point
               new double[dim]))
     {
     }
+
     double &operator[](size_t i)
     {
         return this->values.get()[i];
     }
+
     int getOrder()
     {
         return this->size;
@@ -240,10 +226,12 @@ class SGeometry_PropertyScanner
     {
         return this->v_headers;
     }
+
     std::vector<int> &ids()
     {
         return this->v_ids;
     }
+
     SGeometry_PropertyScanner(int ncid, int cid) : nc(ncid)
     {
         this->open(cid);
@@ -415,6 +403,7 @@ class SG_Exception_Value_Violation : public SG_Exception
     {
         return err_msg.c_str();
     }
+
     SG_Exception_Value_Violation(const char *containername, const char *type,
                                  const char *badvalue)
         : err_msg(std::string("[") + std::string(containername) +
@@ -434,6 +423,7 @@ class SG_Exception_Value_Required : public SG_Exception
     {
         return err_msg.c_str();
     }
+
     SG_Exception_Value_Required(const char *containername, const char *type,
                                 const char *expvalue)
         : err_msg(std::string("[") + std::string(containername) +

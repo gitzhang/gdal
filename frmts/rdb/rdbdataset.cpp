@@ -8,23 +8,7 @@
  ******************************************************************************
  * Copyright (c) 2019, RIEGL Laser Measurement Systems GmbH (support@riegl.com)
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "ogrgeojsonreader.h"
@@ -49,6 +33,7 @@ void RDBOverview::addRDBNode(RDBNode &oRDBNode, double dfXMin, double dfYMin,
 
     aoRDBNodes.push_back(oRDBNode);
 }
+
 void RDBOverview::setTileSize(double dfTileSizeIn)
 {
     dfTileSize = dfTileSizeIn;
@@ -58,10 +43,12 @@ void RDBOverview::setTileSize(double dfTileSizeIn)
 template <typename T> struct CPLMallocGuard
 {
     T *const pData = nullptr;
+
     explicit CPLMallocGuard(std::size_t count)
         : pData(static_cast<T *>(CPLMalloc(sizeof(T) * count)))
     {
     }
+
     ~CPLMallocGuard()
     {
         CPLFree(pData);
@@ -103,6 +90,7 @@ template <typename T> class RDBRasterBandInternal final : public RDBRasterBand
     ~RDBRasterBandInternal()
     {
     }
+
     RDBRasterBandInternal(
         RDBDataset *poDSIn, const std::string &osAttributeNameIn,
         const riegl::rdb::pointcloud::PointAttribute &oPointAttributeIn,
@@ -210,6 +198,7 @@ template <typename T> class RDBRasterBandInternal final : public RDBRasterBand
             return 0.0;
         }
     }
+
     virtual CPLErr IReadBlock(int nBlockXOff, int nBlockYOff,
                               void *pImageIn) override
     {
@@ -333,6 +322,7 @@ template <typename T> class RDBRasterBandInternal final : public RDBRasterBand
         }
         return static_cast<int>(aoVRTRasterBand.size());
     }
+
     virtual GDALRasterBand *GetOverview(int i) override
     {
         return aoVRTRasterBand[i];
@@ -637,6 +627,7 @@ GDALDataset *RDBDataset::Open(GDALOpenInfo *poOpenInfo)
 
     return nullptr;
 }
+
 int RDBDataset::Identify(GDALOpenInfo *poOpenInfo)
 {
     const char *psHeader = reinterpret_cast<char *>(poOpenInfo->pabyHeader);
@@ -776,6 +767,7 @@ const char *RDBRasterBand::GetDescription() const
 }
 
 }  // namespace rdb
+
 void GDALRegister_RDB()
 {
     if (!GDAL_CHECK_VERSION("RDB"))

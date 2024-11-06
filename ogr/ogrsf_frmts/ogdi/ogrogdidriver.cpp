@@ -8,46 +8,13 @@
  ******************************************************************************
  * Copyright (c) 2000, Daniel Morissette
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "ogrogdi.h"
+#include "ogrogdidrivercore.h"
+
 #include "cpl_conv.h"
-
-/************************************************************************/
-/*                           ~OGROGDIDriver()                           */
-/************************************************************************/
-
-OGROGDIDriver::~OGROGDIDriver()
-
-{
-}
-
-/************************************************************************/
-/*                              GetName()                               */
-/************************************************************************/
-
-const char *OGROGDIDriver::GetName()
-
-{
-    return "OGR_OGDI";
-}
 
 /************************************************************************/
 /*                         MyOGDIReportErrorFunction()                  */
@@ -66,9 +33,10 @@ static int MyOGDIReportErrorFunction(int errorcode, const char *error_message)
 /*                                Open()                                */
 /************************************************************************/
 
-OGRDataSource *OGROGDIDriver::Open(const char *pszFilename, int bUpdate)
+static GDALDataset *OGROGDIDriverOpen(GDALOpenInfo *poOpenInfo)
 
 {
+    const char *pszFilename = poOpenInfo->pszFilename;
     if (!STARTS_WITH_CI(pszFilename, "gltp:"))
         return nullptr;
 
@@ -86,6 +54,7 @@ OGRDataSource *OGROGDIDriver::Open(const char *pszFilename, int bUpdate)
         poDS = nullptr;
     }
 
+    const bool bUpdate = (poOpenInfo->nOpenFlags & GDAL_OF_UPDATE) != 0;
     if (poDS != nullptr && bUpdate)
     {
         CPLError(CE_Failure, CPLE_OpenFailed,
@@ -98,16 +67,6 @@ OGRDataSource *OGROGDIDriver::Open(const char *pszFilename, int bUpdate)
 }
 
 /************************************************************************/
-/*                           TestCapability()                           */
-/************************************************************************/
-
-int OGROGDIDriver::TestCapability(CPL_UNUSED const char *pszCap)
-
-{
-    return FALSE;
-}
-
-/************************************************************************/
 /*                          RegisterOGROGDI()                           */
 /************************************************************************/
 
@@ -117,12 +76,13 @@ void RegisterOGROGDI()
     if (!GDAL_CHECK_VERSION("OGR/OGDI driver"))
         return;
 
-    OGRSFDriver *poDriver = new OGROGDIDriver;
-    poDriver->SetMetadataItem(GDAL_DMD_LONGNAME,
-                              "OGDI Vectors (VPF, VMAP, DCW)");
-    poDriver->SetMetadataItem(GDAL_DMD_HELPTOPIC, "drivers/vector/ogdi.html");
-    poDriver->SetMetadataItem(GDAL_DCAP_MULTIPLE_VECTOR_LAYERS, "YES");
-    poDriver->SetMetadataItem(GDAL_DMD_SUPPORTED_SQL_DIALECTS, "OGRSQL SQLITE");
+    if (GDALGetDriverByName(DRIVER_NAME) != nullptr)
+        return;
 
-    OGRSFDriverRegistrar::GetRegistrar()->RegisterDriver(poDriver);
+    GDALDriver *poDriver = new GDALDriver();
+    OGROGDIDriverSetCommonMetadata(poDriver);
+
+    poDriver->pfnOpen = OGROGDIDriverOpen;
+
+    GetGDALDriverManager()->RegisterDriver(poDriver);
 }

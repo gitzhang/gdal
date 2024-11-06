@@ -9,23 +9,7 @@
 ###############################################################################
 # Copyright (c) 2020, Even Rouault <even dot rouault at spatialys dot com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 import gdaltest
@@ -45,6 +29,7 @@ def test_ogr_mapml_basic():
     assert ds.TestCapability(ogr.ODsCCreateLayer)
     assert not ds.TestCapability("foo")
     lyr = ds.CreateLayer("test")
+    assert lyr.GetDataset().GetDescription() == ds.GetDescription()
     lyr.CreateField(ogr.FieldDefn("intfield", ogr.OFTInteger))
     lyr.CreateField(ogr.FieldDefn("int64field", ogr.OFTInteger64))
     lyr.CreateField(ogr.FieldDefn("realfield", ogr.OFTReal))
@@ -126,6 +111,7 @@ def test_ogr_mapml_basic():
     assert ds.GetLayer(-1) is None
     assert ds.GetLayer(1) is None
     lyr = ds.GetLayer(0)
+    assert lyr.GetDataset().GetDescription() == ds.GetDescription()
     srs = lyr.GetSpatialRef()
     assert srs
     assert srs.GetAuthorityCode(None) == "4326"
@@ -368,35 +354,29 @@ def test_ogr_mapml_no_class():
 
 def test_ogr_mapml_errors():
 
-    with gdaltest.error_handler():
-        assert (
-            ogr.GetDriverByName("MapML").CreateDataSource("/i_do/not/exists.mapml")
-            is None
-        )
+    with pytest.raises(Exception):
+        ogr.GetDriverByName("MapML").CreateDataSource("/i_do/not/exists.mapml")
 
     filename = "/vsimem/out.mapml"
-    with gdaltest.error_handler():
-        assert (
-            ogr.GetDriverByName("MapML").CreateDataSource(
-                filename, options=["EXTENT_UNITS=unsupported"]
-            )
-            is None
+    with pytest.raises(Exception):
+        ogr.GetDriverByName("MapML").CreateDataSource(
+            filename, options=["EXTENT_UNITS=unsupported"]
         )
 
     # Invalid XML
     gdal.FileFromMemBuffer(filename, "<mapml>")
-    with gdaltest.error_handler():
+    with pytest.raises(Exception):
         assert ogr.Open(filename) is None
 
     # Missing <body>
     gdal.FileFromMemBuffer(filename, "<mapml></mapml>")
-    with gdaltest.error_handler():
-        assert ogr.Open(filename) is None
+    with pytest.raises(Exception):
+        ogr.Open(filename)
 
     # No <feature>
     gdal.FileFromMemBuffer(filename, "<mapml><body></body></mapml>")
-    with gdaltest.error_handler():
-        assert ogr.Open(filename) is None
+    with pytest.raises(Exception):
+        ogr.Open(filename)
 
     gdal.Unlink(filename)
 

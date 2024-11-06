@@ -12,6 +12,7 @@ Free and open source
 - `Bluemapia <https://sourceforge.net/projects/bluemapia/>`_ Multi-Map(Google,Microsoft,Open Street Map, NOAA/BSB Charts,self-calibrated raster) location-based GPS app for Windows Mobile. (GPL v2)
 - `BRL-CAD <https://brlcad.org>`_ An open source solid modeling computer-aided design system.
 - `Demeter <http://demeter.sourceforge.net/>`_ Another OpenGL based terrain engine somewhat similar to VTP.
+- `DuckDB Spatial Extension <https://duckdb.org/docs/extensions/spatial>`_: Spatial extension for DuckDB
 - `EOxServer <http://eoxserver.org>`_  OGC-compliant server for Earth Observation (EO) data supporting WMS and WCS with EO application profiles (EOxServer Open License)
 - `exactextract <https://github.com/isciences/exactextract>`_ Fast and accurate raster/vector zonal statistics (Apache 2.0)
 - `Feature Data Objects (FDO)  <http://fdo.osgeo.org>`_  Open source spatial data access libraries (LGPL)
@@ -72,6 +73,7 @@ Proprietary license / Other
 
 - `3D DEM Viewer <http://www.msmacrosystem.nl/Ilwis/index.html>`_ from MS MacroSystem.
 - `Cadcorp SIS: <http://www.cadcorp.com>`_ A Windows GIS with a GDAL and OGR plugins.
+- `Carmenta Engine  <http://www.carmenta.com>`_ (previously known as SpatialAce): A GIS Rapid Application Development environment
 - `CARTO <http://www.carto.com>`_ A cloud mapping platform to analyze and visualize geospatial data.
 - `Cartographica <http://www.macgis.com>`_ Macintosh GIS package.
 - `CatchmentSIM <https://csse.com.au/index.php/products/catchmentsim>`_  A Windows terrain analysis model for hydrologic applications.
@@ -113,11 +115,9 @@ Proprietary license / Other
 - `SkylineGlobe  <http://www.skylineglobe.com>`_  The Skyline suite of interactive applications allows you to build, view, query and analyze customized, virtual 3D landscapes.
 - `SpacEyes3D  <http://www.spaceyes.com>`_  3D visualization software for cartographic data.
 - `Spatial Manager  <http://www.spatialmanager.com>`_  A product suite designed designed to manage spatial data in a simple, fast and inexpensive way. Uses GDAL to import/export data.
-- `Carmenta Engine  <http://www.carmenta.com>`_ (previously known as SpatialAce): A GIS Rapid Application Development environment
 - `TacitView  <https://www.insitu.com/information-delivery/information-processing/tacitview>`_  An imagery visualization and exploitation package for military intelligence.
 - `TatukGIS  <http://www.tatukgis.com>`_  Desktop GIS mapping and data editing application.
 - `Team Awareness Kit <https://tak.gov>`_  Suite of georeferenced imagery and situational awareness tools developed for military planning and execution, now available for civilian use.
-- `TerraGo Technologies  <http://www.terragotech.com>`_  The GeoPDF file format is used to distribute and collaborate geospatial data and uses GDAL for data import/export.
 - `TerrainView  <http://www.viewtec.net>`_  Interactive real-time 3D GIS Software.
 - `TransCAD GIS  <http://www.caliper.com>`_  Desktop Transportation Analysis Software
 - `TravTime  <https://travtime.software.informer.com/download/>`_  .NET Application for visualizing, processing and analyzing GPS data for travel time, speed, and de

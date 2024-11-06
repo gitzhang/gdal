@@ -9,23 +9,7 @@
  * Copyright (c) 2016, Avyav Kumar Singh <avyavkumar at gmail dot com>
  * Copyright (c) 2016, Even Rouault <even.roauult at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "ogr_geometry.h"
@@ -35,16 +19,6 @@
 #include "ogr_libs.h"
 
 #include <new>
-
-/************************************************************************/
-/*                         OGRPolyhedralSurface()                       */
-/************************************************************************/
-
-/**
- * \brief Create an empty PolyhedralSurface
- */
-
-OGRPolyhedralSurface::OGRPolyhedralSurface() = default;
 
 /************************************************************************/
 /*         OGRPolyhedralSurface( const OGRPolyhedralSurface& )          */
@@ -57,17 +31,6 @@ OGRPolyhedralSurface::OGRPolyhedralSurface() = default;
 
 OGRPolyhedralSurface::OGRPolyhedralSurface(const OGRPolyhedralSurface &) =
     default;
-
-/************************************************************************/
-/*                        ~OGRPolyhedralSurface()                       */
-/************************************************************************/
-
-/**
- * \brief Destructor
- *
- */
-
-OGRPolyhedralSurface::~OGRPolyhedralSurface() = default;
 
 /************************************************************************/
 /*                 operator=( const OGRPolyhedralSurface&)              */
@@ -279,16 +242,22 @@ OGRErr OGRPolyhedralSurface::importFromWkb(const unsigned char *pabyData,
 /*                            exportToWkb()                             */
 /************************************************************************/
 
-OGRErr OGRPolyhedralSurface::exportToWkb(OGRwkbByteOrder eByteOrder,
-                                         unsigned char *pabyData,
-                                         OGRwkbVariant /*eWkbVariant*/) const
+OGRErr
+OGRPolyhedralSurface::exportToWkb(unsigned char *pabyData,
+                                  const OGRwkbExportOptions *psOptions) const
 
 {
+    if (!psOptions)
+    {
+        static const OGRwkbExportOptions defaultOptions;
+        psOptions = &defaultOptions;
+    }
+
     /* -------------------------------------------------------------------- */
     /*      Set the byte order.                                             */
     /* -------------------------------------------------------------------- */
-    pabyData[0] =
-        DB2_V72_UNFIX_BYTE_ORDER(static_cast<unsigned char>(eByteOrder));
+    pabyData[0] = DB2_V72_UNFIX_BYTE_ORDER(
+        static_cast<unsigned char>(psOptions->eByteOrder));
 
     /* -------------------------------------------------------------------- */
     /*      Set the geometry feature type, ensuring that 3D flag is         */
@@ -296,7 +265,7 @@ OGRErr OGRPolyhedralSurface::exportToWkb(OGRwkbByteOrder eByteOrder,
     /* -------------------------------------------------------------------- */
     GUInt32 nGType = getIsoGeometryType();
 
-    if (OGR_SWAP(eByteOrder))
+    if (OGR_SWAP(psOptions->eByteOrder))
     {
         nGType = CPL_SWAP32(nGType);
     }
@@ -304,7 +273,7 @@ OGRErr OGRPolyhedralSurface::exportToWkb(OGRwkbByteOrder eByteOrder,
     memcpy(pabyData + 1, &nGType, 4);
 
     // Copy the raw data
-    if (OGR_SWAP(eByteOrder))
+    if (OGR_SWAP(psOptions->eByteOrder))
     {
         int nCount = CPL_SWAP32(oMP.nGeomCount);
         memcpy(pabyData + 5, &nCount, 4);
@@ -317,7 +286,7 @@ OGRErr OGRPolyhedralSurface::exportToWkb(OGRwkbByteOrder eByteOrder,
     // serialize each of the geometries
     for (auto &&poSubGeom : *this)
     {
-        poSubGeom->exportToWkb(eByteOrder, pabyData + nOffset, wkbVariantIso);
+        poSubGeom->exportToWkb(pabyData + nOffset, psOptions);
         nOffset += poSubGeom->WkbSize();
     }
 
@@ -492,6 +461,7 @@ std::string OGRPolyhedralSurface::exportToWktInternal(const OGRWktOptions &opts,
         return std::string();
     }
 }
+
 //! @endcond
 
 /************************************************************************/
@@ -532,6 +502,7 @@ OGRSurfaceCasterToPolygon OGRPolyhedralSurface::GetCasterToPolygon() const
 {
     return ::CasterToPolygon;
 }
+
 //! @endcond
 
 /************************************************************************/
@@ -552,6 +523,7 @@ OGRPolyhedralSurface::GetCasterToCurvePolygon() const
 {
     return ::CasterToCurvePolygon;
 }
+
 //! @endcond
 
 /************************************************************************/
@@ -564,6 +536,7 @@ OGRPolyhedralSurface::isCompatibleSubType(OGRwkbGeometryType eSubType) const
 {
     return wkbFlatten(eSubType) == wkbPolygon;
 }
+
 //! @endcond
 
 /************************************************************************/
@@ -575,6 +548,7 @@ const char *OGRPolyhedralSurface::getSubGeometryName() const
 {
     return "POLYGON";
 }
+
 //! @endcond
 
 /************************************************************************/
@@ -586,6 +560,7 @@ OGRwkbGeometryType OGRPolyhedralSurface::getSubGeometryType() const
 {
     return wkbPolygon;
 }
+
 //! @endcond
 
 /************************************************************************/
@@ -657,6 +632,49 @@ double OGRPolyhedralSurface::get_Area() const
 }
 
 /************************************************************************/
+/*                        get_GeodesicArea()                            */
+/************************************************************************/
+
+double OGRPolyhedralSurface::get_GeodesicArea(const OGRSpatialReference *) const
+{
+    if (IsEmpty())
+        return 0;
+
+    CPLError(CE_Failure, CPLE_NotSupported,
+             "get_GeodesicArea() not implemented for PolyhedralSurface");
+    return -1;
+}
+
+/************************************************************************/
+/*                            get_Length()                              */
+/************************************************************************/
+
+double OGRPolyhedralSurface::get_Length() const
+{
+    if (IsEmpty())
+        return 0;
+
+    CPLError(CE_Failure, CPLE_NotSupported,
+             "get_Length() not implemented for PolyhedralSurface");
+    return 0;
+}
+
+/************************************************************************/
+/*                        get_GeodesicLength()                          */
+/************************************************************************/
+
+double
+OGRPolyhedralSurface::get_GeodesicLength(const OGRSpatialReference *) const
+{
+    if (IsEmpty())
+        return 0;
+
+    CPLError(CE_Failure, CPLE_NotSupported,
+             "get_GeodesicLength() not implemented for PolyhedralSurface");
+    return -1;
+}
+
+/************************************************************************/
 /*                           PointOnSurface()                           */
 /************************************************************************/
 
@@ -687,6 +705,7 @@ OGRPolyhedralSurface::CastToMultiPolygonImpl(OGRPolyhedralSurface *poPS)
     delete poPS;
     return poMultiPolygon;
 }
+
 //! @endcond
 
 /************************************************************************/
@@ -749,6 +768,10 @@ OGRErr OGRPolyhedralSurface::addGeometry(const OGRGeometry *poNewGeom)
 /**
  * \brief Add a geometry directly to the container.
  *
+ * Ownership of the passed geometry is taken by the container rather than
+ * cloning as addCurve() does, but only if the method is successful.
+ * If the method fails, ownership still belongs to the caller.
+ *
  * This method is the same as the C function OGR_G_AddGeometryDirectly().
  *
  * There is no SFCOM analog to this method.
@@ -779,6 +802,30 @@ OGRErr OGRPolyhedralSurface::addGeometryDirectly(OGRGeometry *poNewGeom)
     oMP.nGeomCount++;
 
     return OGRERR_NONE;
+}
+
+/************************************************************************/
+/*                            addGeometry()                             */
+/************************************************************************/
+
+/**
+ * \brief Add a geometry directly to the container.
+ *
+ * There is no SFCOM analog to this method.
+ *
+ * @param geom geometry to add to the container.
+ *
+ * @return OGRERR_NONE if successful, or OGRERR_UNSUPPORTED_GEOMETRY_TYPE if
+ * the geometry type is illegal for the type of geometry container.
+ */
+
+OGRErr OGRPolyhedralSurface::addGeometry(std::unique_ptr<OGRGeometry> geom)
+{
+    OGRGeometry *poGeom = geom.release();
+    OGRErr eErr = addGeometryDirectly(poGeom);
+    if (eErr != OGRERR_NONE)
+        delete poGeom;
+    return eErr;
 }
 
 /************************************************************************/
@@ -863,11 +910,9 @@ OGRBoolean OGRPolyhedralSurface::IsEmpty() const
  * \brief Set the type as 3D geometry
  */
 
-void OGRPolyhedralSurface::set3D(OGRBoolean bIs3D)
+bool OGRPolyhedralSurface::set3D(OGRBoolean bIs3D)
 {
-    oMP.set3D(bIs3D);
-
-    OGRGeometry::set3D(bIs3D);
+    return oMP.set3D(bIs3D) && OGRGeometry::set3D(bIs3D);
 }
 
 /************************************************************************/
@@ -878,11 +923,10 @@ void OGRPolyhedralSurface::set3D(OGRBoolean bIs3D)
  * \brief Set the type as Measured
  */
 
-void OGRPolyhedralSurface::setMeasured(OGRBoolean bIsMeasured)
+bool OGRPolyhedralSurface::setMeasured(OGRBoolean bIsMeasured)
 {
-    oMP.setMeasured(bIsMeasured);
-
-    OGRGeometry::setMeasured(bIsMeasured);
+    return oMP.setMeasured(bIsMeasured) &&
+           OGRGeometry::setMeasured(bIsMeasured);
 }
 
 /************************************************************************/
@@ -897,13 +941,13 @@ void OGRPolyhedralSurface::setMeasured(OGRBoolean bIsMeasured)
  * This will also remove the M dimension if present before this call.
  *
  * @param nNewDimension New coordinate dimension value, either 2 or 3.
+ * @return (since 3.10) true in case of success, false in case of memory allocation error
  */
 
-void OGRPolyhedralSurface::setCoordinateDimension(int nNewDimension)
+bool OGRPolyhedralSurface::setCoordinateDimension(int nNewDimension)
 {
-    oMP.setCoordinateDimension(nNewDimension);
-
-    OGRGeometry::setCoordinateDimension(nNewDimension);
+    return oMP.setCoordinateDimension(nNewDimension) &&
+           OGRGeometry::setCoordinateDimension(nNewDimension);
 }
 
 /************************************************************************/
@@ -955,10 +999,29 @@ OGRErr OGRPolyhedralSurface::removeGeometry(int iGeom, int bDelete)
 }
 
 /************************************************************************/
+/*                           hasEmptyParts()                            */
+/************************************************************************/
+
+bool OGRPolyhedralSurface::hasEmptyParts() const
+{
+    return oMP.hasEmptyParts();
+}
+
+/************************************************************************/
+/*                          removeEmptyParts()                          */
+/************************************************************************/
+
+void OGRPolyhedralSurface::removeEmptyParts()
+{
+    oMP.removeEmptyParts();
+}
+
+/************************************************************************/
 /*                       assignSpatialReference()                       */
 /************************************************************************/
 
-void OGRPolyhedralSurface::assignSpatialReference(OGRSpatialReference *poSR)
+void OGRPolyhedralSurface::assignSpatialReference(
+    const OGRSpatialReference *poSR)
 {
     OGRGeometry::assignSpatialReference(poSR);
     oMP.assignSpatialReference(poSR);

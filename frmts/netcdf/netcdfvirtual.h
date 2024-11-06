@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2019, Winor Chen <wchen329 at wisc.edu>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 #ifndef __NETCDFVIRTUAL_H__
 #define __NETCDFVIRTUAL_H__
@@ -33,6 +17,8 @@
 #include <vector>
 #include "netcdfsg.h"
 #include "netcdf.h"
+
+class netCDFDataset;
 
 // netCDF Virtual
 // Provides a layer of "virtual ncID"
@@ -50,6 +36,7 @@ class SG_Exception_NVOOB : public SG_Exception
                   std::string(dsname) + std::string(" was made"))
     {
     }
+
     const char *get_err_msg() override
     {
         return this->err_msg.c_str();
@@ -66,6 +53,7 @@ class SG_Exception_DupName : public SG_Exception
                   std::string(" already exists in") + std::string(dsname))
     {
     }
+
     const char *get_err_msg() override
     {
         return this->err_msg.c_str();
@@ -135,8 +123,7 @@ class netCDFVGeneralAttribute : public netCDFVAttribute
     VClass value;
 
   public:
-    netCDFVGeneralAttribute<VClass, ntype>(const char *a_name,
-                                           const VClass *a_value)
+    netCDFVGeneralAttribute(const char *a_name, const VClass *a_value)
         : name(a_name), value(*a_value)
     {
     }
@@ -193,7 +180,9 @@ class netCDFVDimension
     {
         this->r_did = realID;
     }
+
     void invalidate();
+
     void setLen(size_t len)
     {
         this->dim_len = len;
@@ -209,18 +198,22 @@ class netCDFVDimension
     {
         return this->real_dim_name;
     }
+
     size_t getLen()
     {
         return this->dim_len;
     }
+
     int getRealID()
     {
         return this->r_did;
     }
+
     int getVirtualID()
     {
         return this->v_did;
     }
+
     bool isValid()
     {
         return this->valid;
@@ -248,7 +241,9 @@ class netCDFVVariable
     {
         return attribs;
     }
+
     void invalidate();
+
     void setRealID(int realID)
     {
         this->r_vid = realID;
@@ -257,26 +252,32 @@ class netCDFVVariable
   public:
     netCDFVVariable(const char *name, nc_type xtype, int ndims,
                     const int *dimidsp);
+
     std::string &getName()
     {
         return real_var_name;
     }
+
     int getRealID()
     {
         return r_vid;
     }
+
     nc_type getType()
     {
         return ntype;
     }
+
     int getDimCount()
     {
         return this->ndimc;
     }
+
     const int *getDimIds()
     {
         return this->dimid.get();
     }
+
     bool isValid()
     {
         return this->valid;
@@ -305,6 +306,7 @@ class netCDFVVariable
  */
 class netCDFVID
 {
+    netCDFDataset *m_poDS = nullptr;
     int &ncid;  // ncid REF. which tracks ncID changes that may be made upstream
     int dimTicket = 0;
     int varTicket = 0;
@@ -444,26 +446,25 @@ class netCDFVID
     void nc_put_vvar1_text(int varid, const size_t *index, const char *value);
     void nc_put_vvara_text(int varid, const size_t *start, const size_t *index,
                            const char *value);
-
-#ifdef NETCDF_HAS_NC4
     void nc_put_vvar1_string(int varid, const size_t *index,
                              const char **value);
-#endif
 
     // Equivalent "enquiry" functions
     netCDFVVariable &
     virtualVIDToVar(int virtualID);  // converts a virtual var ID to a real ID
     netCDFVDimension &
     virtualDIDToDim(int virtualID);  // converts a virtual dim ID to a real ID
-    int nameToVirtualVID(std::string &name);
-    int nameToVirtualDID(std::string &name);
-    bool virtualVarNameDefined(std::string &nm)
+    int nameToVirtualVID(const std::string &name);
+    int nameToVirtualDID(const std::string &name);
+
+    bool virtualVarNameDefined(const std::string &nm)
     {
         return nameVarTable.count(nm) > 0;
     }
 
     // Constructor
-    explicit netCDFVID(int &ncid_in) : ncid(ncid_in)
+    explicit netCDFVID(netCDFDataset *poDS, int &ncid_in)
+        : m_poDS(poDS), ncid(ncid_in)
     {
     }
 };

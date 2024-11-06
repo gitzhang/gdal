@@ -8,23 +8,7 @@
  ******************************************************************************
  * Copyright (c) 1999, Frank Warmerdam <warmerdam@pobox.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #ifndef ISO8211_H_INCLUDED
@@ -108,6 +92,7 @@ class CPL_ODLL DDFModule
     {
         return nFieldDefnCount;
     }
+
     DDFFieldDefn *GetField(int);
     void AddField(DDFFieldDefn *poNewFDefn);
 
@@ -116,6 +101,7 @@ class CPL_ODLL DDFModule
     {
         return _fieldControlLength;
     }
+
     void AddCloneRecord(DDFRecord *);
     void RemoveCloneRecord(DDFRecord *);
 
@@ -124,6 +110,7 @@ class CPL_ODLL DDFModule
     {
         return fpDDF;
     }
+
     int GetSizeFieldTag() const
     {
         return (int)_sizeFieldTag;
@@ -134,34 +121,42 @@ class CPL_ODLL DDFModule
     {
         return _sizeFieldPos;
     }
+
     int GetSizeFieldLength() const
     {
         return _sizeFieldLength;
     }
+
     char GetInterchangeLevel() const
     {
         return _interchangeLevel;
     }
+
     char GetLeaderIden() const
     {
         return _leaderIden;
     }
+
     char GetCodeExtensionIndicator() const
     {
         return _inlineCodeExtensionIndicator;
     }
+
     char GetVersionNumber() const
     {
         return _versionNumber;
     }
+
     char GetAppIndicator() const
     {
         return _appIndicator;
     }
+
     const char *GetExtendedCharSet() const
     {
         return _extendedCharSet;
     }
+
     void SetFieldControlLength(int nVal)
     {
         _fieldControlLength = nVal;
@@ -208,6 +203,7 @@ typedef enum
     dsc_array,
     dsc_concatenated
 } DDF_data_struct_code;
+
 typedef enum
 {
     dtc_char_string,
@@ -307,14 +303,17 @@ class CPL_ODLL DDFFieldDefn
     {
         return _arrayDescr;
     }
+
     const char *GetFormatControls() const
     {
         return _formatControls;
     }
+
     DDF_data_struct_code GetDataStructCode() const
     {
         return _data_struct_code;
     }
+
     DDF_data_type_code GetDataTypeCode() const
     {
         return _data_type_code;
@@ -335,7 +334,7 @@ class CPL_ODLL DDFFieldDefn
     int bRepeatingSubfields;
     int nFixedWidth;  // zero if variable.
 
-    int BuildSubfields();
+    void BuildSubfields();
     int ApplyFormats();
 
     DDF_data_struct_code _data_struct_code;
@@ -379,6 +378,7 @@ class CPL_ODLL DDFSubfieldDefn
     {
         return pszFormatString;
     }
+
     int SetFormat(const char *pszFormat);
 
     /**
@@ -558,27 +558,33 @@ class CPL_ODLL DDFRecord
     {
         return nReuseHeader;
     }
+
     int GetSizeFieldTag() const
     {
         return _sizeFieldTag;
     }
+
     int GetSizeFieldPos() const
     {
         return _sizeFieldPos;
     }
+
     int GetSizeFieldLength() const
     {
         return _sizeFieldLength;
     }
+
     // void        SetReuseHeader(int bFlag) { nReuseHeader = bFlag; }
     void SetSizeFieldTag(int nVal)
     {
         _sizeFieldTag = nVal;
     }
+
     void SetSizeFieldPos(int nVal)
     {
         _sizeFieldPos = nVal;
     }
+
     void SetSizeFieldLength(int nVal)
     {
         _sizeFieldLength = nVal;
@@ -587,7 +593,8 @@ class CPL_ODLL DDFRecord
     // This is really just for the DDFModule class.
     int Read();
     void Clear();
-    int ResetDirectory();
+    void ResetDirectory();
+
     void RemoveIsCloneFlag()
     {
         bIsClone = FALSE;

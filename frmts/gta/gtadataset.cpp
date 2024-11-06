@@ -8,23 +8,7 @@
  * Copyright (c) 2010, 2011, Martin Lambers <marlam@marlam.de>
  * Copyright (c) 2011-2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 /*
@@ -90,6 +74,7 @@
 #include "gdal_frmts.h"
 #include "gdal_pam.h"
 #include "gta_headers.h"
+#include "gtadrivercore.h"
 
 /************************************************************************/
 /* Helper functions                                                     */
@@ -1030,10 +1015,7 @@ CPLErr GTADataset::SetGCPs(int, const GDAL_GCP *, const OGRSpatialReference *)
 GDALDataset *GTADataset::Open(GDALOpenInfo *poOpenInfo)
 
 {
-    if (poOpenInfo->nHeaderBytes < 5)
-        return nullptr;
-
-    if (!STARTS_WITH_CI((char *)poOpenInfo->pabyHeader, "GTA"))
+    if (GTADriverIdentify(poOpenInfo) == GDAL_IDENTIFY_FALSE)
         return nullptr;
 
     /* -------------------------------------------------------------------- */
@@ -1757,41 +1739,11 @@ static GDALDataset *GTACreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
 void GDALRegister_GTA()
 
 {
-    if (GDALGetDriverByName("GTA") != nullptr)
+    if (GDALGetDriverByName(DRIVER_NAME) != nullptr)
         return;
 
     GDALDriver *poDriver = new GDALDriver();
-
-    poDriver->SetDescription("GTA");
-    poDriver->SetMetadataItem(GDAL_DCAP_RASTER, "YES");
-    poDriver->SetMetadataItem(GDAL_DMD_LONGNAME,
-                              "Generic Tagged Arrays (.gta)");
-    poDriver->SetMetadataItem(GDAL_DMD_HELPTOPIC, "drivers/raster/gta.html");
-    poDriver->SetMetadataItem(GDAL_DMD_EXTENSION, "gta");
-    poDriver->SetMetadataItem(
-        GDAL_DMD_CREATIONDATATYPES,
-        "Byte Int8 UInt16 Int16 UInt32 Int32 Float32 Float64 "
-        "CInt16 CInt32 CFloat32 CFloat64");
-    poDriver->SetMetadataItem(GDAL_DMD_CREATIONOPTIONLIST,
-                              "<CreationOptionList>"
-                              "  <Option name='COMPRESS' type='string-select'>"
-                              "    <Value>NONE</Value>"
-                              "    <Value>BZIP2</Value>"
-                              "    <Value>XZ</Value>"
-                              "    <Value>ZLIB</Value>"
-                              "    <Value>ZLIB1</Value>"
-                              "    <Value>ZLIB2</Value>"
-                              "    <Value>ZLIB3</Value>"
-                              "    <Value>ZLIB4</Value>"
-                              "    <Value>ZLIB5</Value>"
-                              "    <Value>ZLIB6</Value>"
-                              "    <Value>ZLIB7</Value>"
-                              "    <Value>ZLIB8</Value>"
-                              "    <Value>ZLIB9</Value>"
-                              "  </Option>"
-                              "</CreationOptionList>");
-
-    poDriver->SetMetadataItem(GDAL_DCAP_VIRTUALIO, "YES");
+    GTADriverSetCommonMetadata(poDriver);
 
     poDriver->pfnOpen = GTADataset::Open;
     poDriver->pfnCreateCopy = GTACreateCopy;

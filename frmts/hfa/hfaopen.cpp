@@ -9,23 +9,7 @@
  * Copyright (c) 1999, Intergraph Corporation
  * Copyright (c) 2007-2011, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ******************************************************************************
  *
  * hfaopen.cpp
@@ -3750,9 +3734,9 @@ CPLErr HFARenameReferences(HFAHandle hHFA, const char *pszNewBase,
         {
             if (strncmp(aosNL[i], pszOldBase, strlen(pszOldBase)) == 0)
             {
-                CPLString osNew = pszNewBase;
+                std::string osNew = pszNewBase;
                 osNew += aosNL[i].c_str() + strlen(pszOldBase);
-                aosNL[i] = osNew;
+                aosNL[i] = std::move(osNew);
             }
         }
 
@@ -3807,9 +3791,9 @@ CPLErr HFARenameReferences(HFAHandle hHFA, const char *pszNewBase,
         // Update the filename.
         if (strncmp(osFileName, pszOldBase, strlen(pszOldBase)) == 0)
         {
-            CPLString osNew = pszNewBase;
+            std::string osNew = pszNewBase;
             osNew += osFileName.c_str() + strlen(pszOldBase);
-            osFileName = osNew;
+            osFileName = std::move(osNew);
         }
 
         // Grow the node if needed.
@@ -3859,9 +3843,9 @@ CPLErr HFARenameReferences(HFAHandle hHFA, const char *pszNewBase,
         // Update the filename.
         if (strncmp(osFileName, pszOldBase, strlen(pszOldBase)) == 0)
         {
-            CPLString osNew = pszNewBase;
-            osNew += osFileName.c_str() + strlen(pszOldBase);
-            osFileName = osNew;
+            std::string osNew = pszNewBase;
+            osNew += (osFileName.c_str() + strlen(pszOldBase));
+            osFileName = std::move(osNew);
         }
 
         apoNodeList[iNode]->SetStringField("dependent.string", osFileName);
@@ -3926,13 +3910,22 @@ static int ESRIToUSGSZone(int nESRIZone)
 
 static const char *const apszDatumMap[] = {
     // Imagine name, WKT name.
-    "NAD27",        "North_American_Datum_1927",
-    "NAD83",        "North_American_Datum_1983",
-    "WGS 84",       "WGS_1984",
-    "WGS 1972",     "WGS_1972",
-    "GDA94",        "Geocentric_Datum_of_Australia_1994",
-    "Pulkovo 1942", "Pulkovo_1942",
-    nullptr,        nullptr};
+    "NAD27",
+    "North_American_Datum_1927",
+    "NAD83",
+    "North_American_Datum_1983",
+    "WGS 84",
+    "WGS_1984",
+    "WGS 1972",
+    "WGS_1972",
+    "GDA94",
+    "Geocentric_Datum_of_Australia_1994",
+    "Pulkovo 1942",
+    "Pulkovo_1942",
+    "Geodetic Datum 1949",
+    "New_Zealand_Geodetic_Datum_1949",
+    nullptr,
+    nullptr};
 
 const char *const *HFAGetDatumMap()
 {
@@ -4033,7 +4026,7 @@ HFAPCSStructToOSR(const Eprj_Datum *psDatum, const Eprj_ProParameters *psPro,
 
     // We make a particular effort to adapt the mapinfo->proname as
     // the PROJCS[] name per #2422.
-    auto poSRS = cpl::make_unique<OGRSpatialReference>();
+    auto poSRS = std::make_unique<OGRSpatialReference>();
     poSRS->SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
 
     if (psPro == nullptr && psMapInfo != nullptr)
@@ -4730,12 +4723,19 @@ HFAPCSStructToOSR(const Eprj_Datum *psDatum, const Eprj_ProParameters *psPro,
                                   -psDatum->params[4] * RAD2ARCSEC,
                                   -psDatum->params[5] * RAD2ARCSEC,
                                   psDatum->params[6] * 1e+6);
+                poSRS->StripTOWGS84IfKnownDatumAndAllowed();
             }
         }
     }
 
     // Try to insert authority information if possible.
     poSRS->AutoIdentifyEPSG();
+
+    auto poSRSBestMatch = poSRS->FindBestMatch(90, nullptr, nullptr);
+    if (poSRSBestMatch)
+    {
+        poSRS.reset(poSRSBestMatch);
+    }
 
     return poSRS;
 }

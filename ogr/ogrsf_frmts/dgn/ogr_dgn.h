@@ -8,23 +8,7 @@
  ******************************************************************************
  * Copyright (c) 2000, Frank Warmerdam (warmerdam@pobox.com)
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #ifndef OGR_DGN_H_INCLUDED
@@ -37,8 +21,11 @@
 /*                            OGRDGNLayer                               */
 /************************************************************************/
 
+class OGRDGNDataSource;
+
 class OGRDGNLayer final : public OGRLayer
 {
+    OGRDGNDataSource *m_poDS = nullptr;
     OGRFeatureDefn *poFeatureDefn;
 
     int iNextShapeId;
@@ -53,20 +40,22 @@ class OGRDGNLayer final : public OGRLayer
     void ConsiderBrush(DGNElemCore *, const char *pszPen,
                        OGRFeature *poFeature);
 
-    DGNElemCore **LineStringToElementGroup(OGRLineString *, int);
+    DGNElemCore **LineStringToElementGroup(const OGRLineString *, int);
     DGNElemCore **TranslateLabel(OGRFeature *);
 
     // Unused:
     // int                 bHaveSimpleQuery;
     OGRFeature *poEvalFeature;
 
-    OGRErr CreateFeatureWithGeom(OGRFeature *, OGRGeometry *);
+    OGRErr CreateFeatureWithGeom(OGRFeature *, const OGRGeometry *);
 
   public:
-    OGRDGNLayer(const char *pszName, DGNHandle hDGN, int bUpdate);
+    OGRDGNLayer(OGRDGNDataSource *poDS, const char *pszName, DGNHandle hDGN,
+                int bUpdate);
     virtual ~OGRDGNLayer();
 
     void SetSpatialFilter(OGRGeometry *) override;
+
     virtual void SetSpatialFilter(int iGeomField, OGRGeometry *poGeom) override
     {
         OGRLayer::SetSpatialFilter(iGeomField, poGeom);
@@ -78,6 +67,7 @@ class OGRDGNLayer final : public OGRLayer
 
     virtual GIntBig GetFeatureCount(int bForce = TRUE) override;
     virtual OGRErr GetExtent(OGREnvelope *psExtent, int bForce = TRUE) override;
+
     virtual OGRErr GetExtent(int iGeomField, OGREnvelope *psExtent,
                              int bForce) override
     {
@@ -92,44 +82,49 @@ class OGRDGNLayer final : public OGRLayer
     int TestCapability(const char *) override;
 
     OGRErr ICreateFeature(OGRFeature *poFeature) override;
+
+    GDALDataset *GetDataset() override;
 };
 
 /************************************************************************/
 /*                          OGRDGNDataSource                            */
 /************************************************************************/
 
-class OGRDGNDataSource final : public OGRDataSource
+class OGRDGNDataSource final : public GDALDataset
 {
-    OGRDGNLayer **papoLayers;
-    int nLayers;
+    OGRDGNLayer **papoLayers = nullptr;
+    int nLayers = 0;
 
-    char *pszName;
-    DGNHandle hDGN;
+    DGNHandle hDGN = nullptr;
 
-    char **papszOptions;
+    char **papszOptions = nullptr;
+
+    std::string m_osEncoding{};
 
   public:
     OGRDGNDataSource();
     ~OGRDGNDataSource();
 
-    int Open(const char *, int bTestOpen, int bUpdate);
-    bool PreCreate(const char *, char **);
+    bool Open(GDALOpenInfo *poOpenInfo);
+    void PreCreate(CSLConstList);
 
-    OGRLayer *ICreateLayer(const char *, OGRSpatialReference * = nullptr,
-                           OGRwkbGeometryType = wkbUnknown,
-                           char ** = nullptr) override;
+    OGRLayer *ICreateLayer(const char *pszName,
+                           const OGRGeomFieldDefn *poGeomFieldDefn,
+                           CSLConstList) override;
 
-    const char *GetName() override
-    {
-        return pszName;
-    }
     int GetLayerCount() override
     {
         return nLayers;
     }
+
     OGRLayer *GetLayer(int) override;
 
     int TestCapability(const char *) override;
+
+    const std::string &GetEncoding() const
+    {
+        return m_osEncoding;
+    }
 };
 
 #endif /* ndef OGR_DGN_H_INCLUDED */

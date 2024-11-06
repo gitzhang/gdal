@@ -1,10 +1,31 @@
-.. include:: ../substitutions.rst
-
 .. _building_from_source:
 
 ================================================================================
 Building GDAL from source
 ================================================================================
+
+.. _build_requirements:
+
+Build requirements
+--------------------------------------------------------------------------------
+
+The minimum requirements to build GDAL are:
+
+- CMake >= 3.16, and an associated build system (make, ninja, Visual Studio, etc.)
+- C99 compiler
+- C++17 compiler since GDAL 3.9 (C++11 in previous versions)
+- PROJ >= 6.3.1
+
+Additional requirements to run the GDAL test suite are:
+
+- SWIG >= 4, for building bindings to other programming languages
+- Python >= 3.8
+- Python packages listed in `autotest/requirements.txt`
+
+A number of optional libraries are also strongly recommended for most builds:
+SQLite3, expat, libcurl, zlib, libtiff, libgeotiff, libpng, libjpeg, etc.
+Consult :ref:`raster_drivers` and :ref:`vector_drivers` pages for information
+on dependencies of optional drivers.
 
 CMake (GDAL versions >= 3.5.0)
 --------------------------------------------------------------------------------
@@ -39,24 +60,30 @@ From the build directory you can now configure CMake, build and install the bina
     To enable specific drivers, add ``-DGDAL_ENABLE_DRIVER_<driver_name>=ON`` or ``-DOGR_ENABLE_DRIVER_<driver_name>=ON``.
     See :ref:`selection-of-drivers` for more details.
 
-On Windows, one may need to specify generator:
+.. note::
 
-.. code-block:: bash
+    The ``--prefix /installation/prefix`` option of CMake (>= 3.14) is supported since GDAL 3.7.0,
+    but note that contrary to setting the CMAKE_INSTALL_PREFIX at configuration time,
+    it will not result in the GDAL_DATA path to be hardcoded into the libgdal binary,
+    and is thus not recommended. It is also not supported on Windows multi-configuration
+    generator (such as VisualStudio).
 
-    cmake -G "Visual Studio 15 2017" ..
 
 If a dependency is installed in a custom location, specify the
 paths to the include directory and the library:
 
 .. code-block:: bash
 
-    cmake -DSQLITE3_INCLUDE_DIR=/opt/SQLite/include -DSQLITE3_LIBRARY=/opt/SQLite/lib/libsqlite3.so ..
+    cmake -DSQLite3_INCLUDE_DIR=/opt/SQLite/include -DSQLite3_LIBRARY=/opt/SQLite/lib/libsqlite3.so ..
 
 Alternatively, a custom prefix can be specified:
 
 .. code-block:: bash
 
     cmake -DCMAKE_PREFIX_PATH=/opt/SQLite ..
+
+It is strongly recommended (and sometimes compulsory) to specify paths on Windows
+using forward slashes as well, e.g.: ``c:/path/to/include``.
 
 You can unset existing cached variables, by using the -U switch of cmake, for example with wildcards:
 
@@ -80,6 +107,35 @@ for the shared lib, *e.g.* ``set (GDAL_LIB_OUTPUT_NAME gdal_x64 CACHE STRING "" 
     you may try removing CMakeCache.txt to start from a clean state.
 
 Refer to :ref:`using_gdal_in_cmake` for how to use GDAL in a CMake project.
+
+Building on Windows
++++++++++++++++++++
+
+On Windows, one may need to specify generator:
+
+.. code-block:: bash
+
+    cmake -G "Visual Studio 15 2017" ..
+
+
+Building on MacOS
++++++++++++++++++
+
+On MacOS, there are a couple of libraries that do not function properly when the GDAL build requirements are installed using Homebrew.
+
+The `Apache Arrow <https://arrow.apache.org/docs/index.html>`_ library included in the current distribution of Homebrew is broken, and causes a detection issue. In order to build GDAL successfully, configure CMake to not find the Arrow package:
+
+.. code-block:: bash
+
+    cmake -DCMAKE_DISABLE_FIND_PACKAGE_Arrow=ON ..
+
+
+Similarly, recent versions of Homebrew no longer bundle `Boost <https://www.boost.org/>`_ with libkml, causing a failure to find Boost headers. You should either install Boost manually or disable libkml when building on MacOS:
+
+.. code-block:: bash
+
+    cmake -DGDAL_USE_LIBKML=OFF ..
+
 
 CMake general configure options
 +++++++++++++++++++++++++++++++
@@ -142,6 +198,17 @@ All cached entries can be viewed using ``cmake -LAH`` from a build directory.
     ``<Packagename>_ROOT`` variable to define the prefix for a particular
     package. See https://cmake.org/cmake/help/latest/release/3.12.html?highlight=root#commands
 
+.. option:: CMAKE_UNITY_BUILD=OFF
+
+    .. versionadded:: 3.9
+
+    Default is OFF. This can be set to ON to build GDAL using the
+    https://cmake.org/cmake/help/latest/variable/CMAKE_UNITY_BUILD.html feature.
+    This helps speeding GDAL build times. This feature is still considered
+    experimental for now, and could hide subtle bugs (we are not aware of
+    any at writing time though). We don't recommend it for mission critical
+    builds.
+
 .. option:: ENABLE_IPO=OFF
 
     Build library using the compiler's `interprocedural optimization
@@ -156,6 +223,36 @@ All cached entries can be viewed using ``cmake -LAH`` from a build directory.
     variable, and assumes that the
     `CMAKE_SKIP_INSTALL_RPATH <https://cmake.org/cmake/help/latest/variable/CMAKE_SKIP_INSTALL_RPATH.html>`__
     variable is not set.
+
+Resource files embedding
+++++++++++++++++++++++++
+
+Starting with GDAL 3.11, if a C23-compatible compiler is used, such as
+clang >= 19 or GCC >= 15, it is possible to embed resource files inside
+the GDAL library, without relying on resource files to be available on the file
+system (such resource files are located through an hard-coded
+path at build time in ``${CMAKE_INSTALL_PREFIX}/share/gdal``, or at run-time
+through the :config:`GDAL_DATA` configuration option).
+
+The following CMake options control that behavior:
+
+.. option:: EMBED_RESOURCE_FILES=ON/OFF
+
+    .. versionadded:: 3.11
+
+    Default is OFF for shared library builds (BUILD_SHARED_LIBS=ON), and ON
+    for static library builds (BUILD_SHARED_LIBS=OFF).
+    When ON, resource files needed by GDAL will be embedded into the GDAL library
+    and/or relevant plugins.
+
+.. option:: USE_ONLY_EMBEDDED_RESOURCE_FILES=ON/OFF
+
+    .. versionadded:: 3.11
+
+    Even if EMBED_RESOURCE_FILES=ON, GDAL will still try to locate resource
+    files on the file system by default , and fallback to the embedded version if
+    not found. By setting USE_ONLY_EMBEDDED_RESOURCE_FILES=ON, no attempt
+    at locating resource files on the file system is made. Default is OFF.
 
 CMake package dependent options
 +++++++++++++++++++++++++++++++
@@ -234,7 +331,7 @@ the :ref:`/vsi7z/ <vsi7z>` virtual file system.
 
     Path to a shared or static library file.
 
-.. option:: GDAL_USE_ARC=ON/OFF
+.. option:: GDAL_USE_ARCHIVE=ON/OFF
 
     Control whether to use libarchive. Defaults to ON when libarchive is found.
 
@@ -372,8 +469,14 @@ CURL
 
 .. option:: CURL_LIBRARY_RELEASE
 
-    Path to a shared or static library file, such as ``libcurl.dll``,
+    Path to a shared or static library file, such as
     ``libcurl.so``, ``libcurl.lib``, or other name.
+
+.. option:: CURL_USE_STATIC_LIBS=ON/OFF
+
+    .. versionadded:: 3.7.1
+
+    Must be set to ON when linking against a static build of Curl.
 
 .. option:: GDAL_USE_CURL=ON/OFF
 
@@ -485,6 +588,12 @@ the XercesC library.
 
     Path to a shared or static library file.
 
+.. option:: EXPAT_USE_STATIC_LIBS=ON/OFF
+
+    .. versionadded:: 3.7.1
+
+    Must be set to ON when linking against a static build of Expat.
+
 .. option:: GDAL_USE_EXPAT=ON/OFF
 
     Control whether to use EXPAT. Defaults to ON when EXPAT is found.
@@ -577,7 +686,7 @@ If not found, an internal copy of libgeotiff can be used.
 
 .. option:: GEOTIFF_LIBRARY_RELEASE
 
-    Path to a shared or static library file, such as ``geotiff.dll``,
+    Path to a shared or static library file, such as
     ``libgeotiff.so``, ``geotiff.lib``, or other name. A similar variable
     ``GEOTIFF_LIBRARY_DEBUG`` can also be specified to a similar library for
     building Debug releases.
@@ -734,6 +843,17 @@ detect the HDF5 library.
 
     Control whether to use HDF5. Defaults to ON when HDF5 is found.
 
+.. option:: GDAL_ENABLE_HDF5_GLOBAL_LOCK=ON/OFF
+
+    Control whether to add a global lock around calls to HDF5 library. This is
+    needed if the HDF5 library is not built with thread-safety enabled and if
+    the HDF5 driver is used in a multi-threaded way. On Unix, a heuristics
+    try to detect if the HDF5 library has been built with thread-safety enabled
+    when linking against a HDF5 library. In other situations, the setting must
+    be manually set when needed.
+
+
+.. _building_from_source_hdfs:
 
 HDFS
 ****
@@ -994,6 +1114,24 @@ of the original input image is preserved (within user defined error bounds).
     Control whether to use the LERC internal library. Defaults depends on GDAL_USE_INTERNAL_LIBS. When set
     to ON, has precedence over GDAL_USE_LERC=ON
 
+LIBAEC
+******
+
+`libaec <https://gitlab.dkrz.de/k202009/libaec>`_ is a compression library which offers
+the extended Golomb-Rice coding as defined in the CCSDS recommended standard 121.0-B-3.
+It is used by the :ref:`raster.grib` driver.
+
+.. option:: LIBAEC_INCLUDE_DIR
+
+    Path to an include directory with the ``libaec.h`` header file.
+
+.. option:: LIBAEC_LIBRARY
+
+    Path to a shared or static library file.
+
+.. option:: GDAL_USE_LIBAEC=ON/OFF
+
+    Control whether to use LIBAEC. Defaults to ON when LIBAEC is found.
 
 LibKML
 ******
@@ -1017,10 +1155,17 @@ It can be detected with pkg-config.
 
     Path to a shared or static library file for ``kmlengine``
 
+.. option:: LIBKML_MINIZIP_LIBRARY
+
+    Path to a shared or static library file for ``minizip``
+
+.. option:: LIBKML_URIPARSER_LIBRARY
+
+    Path to a shared or static library file for ``uriparser``
+
 .. option:: GDAL_USE_LIBKML=ON/OFF
 
     Control whether to use LibKML. Defaults to ON when LibKML is found.
-
 
 LibLZMA
 *******
@@ -1042,6 +1187,31 @@ It is used by the internal libtiff library or the :ref:`raster.zarr` driver.
     Control whether to use LibLZMA. Defaults to ON when LibLZMA is found.
 
 
+libOpenDRIVE
+************
+
+`libOpenDRIVE <https://github.com/pageldev/libOpenDRIVE>`_ in version >= 0.6.0 is required for the :ref:`vector.xodr` driver.
+
+.. option:: OpenDrive_DIR
+
+    Path to libOpenDRIVE CMake configuration directory ``<installDir>/cmake/``. The :file:`cmake/` path is usually automatically created when installing libOpenDRIVE and contains the necessary configuration files for inclusion into other project builds.
+
+.. option:: GDAL_USE_OPENDRIVE=ON/OFF
+
+    Control whether to use libOpenDRIVE. Defaults to ON when libOpenDRIVE is found.
+
+
+LibQB3
+******
+
+The `QB3 <https://github.com/lucianpls/QB3>`_ compression, used
+by the :ref:`raster.marfa` driver.
+
+.. option:: GDAL_USE_LIBQB3=ON/OFF
+
+    Control whether to use LibQB3. Defaults to ON when LibQB3 is found.
+
+
 LibXml2
 *******
 
@@ -1060,7 +1230,6 @@ capabilities in GMLJP2v2 generation.
 .. option:: GDAL_USE_LIBXML2=ON/OFF
 
     Control whether to use LibXml2. Defaults to ON when LibXml2 is found.
-
 
 
 LURATECH
@@ -1341,8 +1510,11 @@ OpenCL
 The OpenCL library may be used to accelerate warping computations, typically
 with a GPU.
 
-.. note:: It is disabled by default even when detected, since the current OpenCL
+.. note:: (GDAL 3.5 and 3.6) It is disabled by default even when detected, since the current OpenCL
           warping implementation lags behind the generic implementation.
+          Starting with GDAL 3.7, build support is enabled by default when OpenCL is detected,
+          but it is disabled by default at runtime. The warping option USE_OPENCL
+          or the configuration option GDAL_USE_OPENCL must be set to YES to enable it.
 
 .. option:: OpenCL_INCLUDE_DIR
 
@@ -1404,6 +1576,15 @@ JPEG-2000 codec written in C language. It is required for the
 
     Control whether to use OpenJPEG. Defaults to ON when OpenJPEG is found.
 
+.. option:: GDAL_FIND_PACKAGE_OpenJPEG_MODE=MODULE/CONFIG/empty string
+
+    .. versionadded:: 3.9
+
+    Control the mode used for find_package(OpenJPEG). Defaults to MODULE
+    for compatibility with OpenJPEG < 2.5.1. If set to CONFIG, only Config mode
+    search is attempted. If set to empty string, default CMake logic
+    (https://cmake.org/cmake/help/latest/command/find_package.html) applies.
+
 
 OpenSSL
 *******
@@ -1414,7 +1595,8 @@ methods of Google Cloud. It might be required to use the :ref:`raster.eedai`
 images or use the :ref:`/vsigs/ <vsigs>` virtual file system.
 
 See https://cmake.org/cmake/help/latest/module/FindOpenSSL.html for details on
-how to configure the library
+how to configure the library. For static linking, the following options may
+be needed: -DOPENSSL_USE_STATIC_LIBS=TRUE -DOPENSSL_MSVC_STATIC_RT=TRUE
 
 .. option:: GDAL_USE_OPENSSL=ON/OFF
 
@@ -1429,7 +1611,7 @@ The Oracle Instant Client SDK (closed source/proprietary) is required for the
 
 .. option:: Oracle_ROOT
 
-    Path to the root directory of the Oracle Instant Client SDK
+    Path to the root directory of the Oracle Instant Client SDK.
 
 .. option:: GDAL_USE_ORACLE=ON/OFF
 
@@ -1464,7 +1646,7 @@ Regular Expressions support. It is used for the REGEXP operator in drivers using
 
 .. option:: PCRE2_LIBRARY
 
-    Path to a shared or static library file with "pcre2-8" in its name
+    Path to a shared or static library file with "pcre2-8" in its name.
 
 .. option:: GDAL_USE_PCRE2=ON/OFF
 
@@ -1525,6 +1707,9 @@ Poppler
 The `Poppler <https://poppler.freedesktop.org/>`_ library is one
 of the possible backends for the :ref:`raster.pdf` driver.
 
+Note that GDAL requires Poppler private headers, that are only installed
+if configuring Poppler with -DENABLE_UNSTABLE_API_ABI_HEADERS.
+
 .. option:: Poppler_INCLUDE_DIR
 
     Path to an include directory with the ``poppler-config.h`` header file.
@@ -1562,7 +1747,7 @@ the :ref:`vector.pg` and :ref:`raster.postgisraster` drivers.
 PROJ
 ****
 
-`PROJ <https://github.com/OSGeo/PROJ/>`_ >= 6 is a *required* dependency for GDAL.
+`PROJ <https://github.com/OSGeo/PROJ/>`_ >= 6.3 is a *required* dependency for GDAL.
 
 .. option:: PROJ_INCLUDE_DIR
 
@@ -1570,22 +1755,21 @@ PROJ
 
 .. option:: PROJ_LIBRARY_RELEASE
 
-    Path to a shared or static library file, such as ``proj.dll``,
+    Path to a shared or static library file, such as
     ``libproj.so``, ``proj.lib``, or other name. A similar variable
     ``PROJ_LIBRARY_DEBUG`` can also be specified to a similar library for
     building Debug releases.
 
+.. option:: GDAL_FIND_PACKAGE_PROJ_MODE=CUSTOM/MODULE/CONFIG/empty string
 
-QB3
-*******
+    .. versionadded:: 3.9
 
-The `QB3 <https://github.com/lucianpls/QB3>`_ compression, used
-by the :ref:`raster.marfa` driver.
-
-.. option:: GDAL_USE_QB3=ON/OFF
-
-    Control whether to use QB3. Defaults to ON when QB3 is found.
-
+    Control the mode used for find_package(PROJ).
+    Alters how the default CMake search logic
+    (https://cmake.org/cmake/help/latest/command/find_package.html) applies.
+    Defaults to CUSTOM, where the CONFIG mode is applied for PROJ >= 8, and
+    fallbacks to default MODULE mode otherwise.
+    Other values are passed directly to find_package()
 
 QHULL
 *****
@@ -1680,7 +1864,7 @@ and the :ref:`sql_sqlite_dialect`.
 
 .. option:: SQLite3_LIBRARY
 
-    Path to a shared or static library file, such as ``sqlite3.dll``,
+    Path to a shared or static library file, such as
     ``libsqlite3.so``, ``sqlite3.lib`` or other name.
 
 .. option:: GDAL_USE_SQLITE3=ON/OFF
@@ -1768,7 +1952,7 @@ If not found, an internal copy of libtiff can be used.
 
 .. option:: TIFF_LIBRARY_RELEASE
 
-    Path to a shared or static library file, such as ``tiff.dll``,
+    Path to a shared or static library file, such as
     ``libtiff.so``, ``tiff.lib``, or other name. A similar variable
     ``TIFF_LIBRARY_DEBUG`` can also be specified to a similar library for
     building Debug releases.
@@ -1788,6 +1972,8 @@ TileDB
 
 The `TileDB <https://github.com/TileDB-Inc/TileDB>` library is required for the :ref:`raster.tiledb` driver.
 Specify install prefix in the ``CMAKE_PREFIX_PATH`` variable.
+
+TileDB >= 2.15 is required since GDAL 3.9
 
 .. option:: GDAL_USE_TILEDB=ON/OFF
 
@@ -1850,6 +2036,11 @@ the lossless Deflate/Zip compression algorithm.
     Path to a shared or static library file. A similar variable
     ``ZLIB_LIBRARY_DEBUG`` can also be specified to a similar library for
     building Debug releases.
+
+.. option:: ZLIB_IS_STATIC
+
+    Link to static external ZLIB directory.
+    Only used if GDAL_USE_ZLIB_INTERNAL=OFF and MSVC.
 
 .. option:: GDAL_USE_ZLIB=ON/OFF
 
@@ -1994,11 +2185,24 @@ The following options are available to select a subset of drivers:
         The following GDAL drivers cannot be disabled: VRT, DERIVED, GTiff, COG, HFA, MEM.
         The following OGR drivers cannot be disabled: "ESRI Shapefile", "MapInfo File", OGR_VRT, Memory, KML, GeoJSON, GeoJSONSeq, ESRIJSON, TopoJSON.
 
+    .. note::
+
+        Disabling all OGR/vector drivers with -DOGR_BUILD_OPTIONAL_DRIVERS=OFF may affect
+        the ability to enable some GDAL/raster drivers that require some vector
+        drivers to be enabled (and reciprocally with some GDAL/raster drivers depending
+        on vector drivers).
+        When such dependencies are not met, a CMake error will be emitted with a hint
+        for the way to resolve the issue.
+        It is also possible to anticipate such errors by looking at files
+        :source_file:`frmts/CMakeLists.txt` for dependencies of raster drivers
+        and :source_file:`ogr/ogrsf_frmts/CMakeLists.txt` for dependencies of vector drivers.
+
+
 Example of minimal build with the JP2OpenJPEG and SVG drivers enabled::
 
     cmake .. -UGDAL_ENABLE_DRIVER_* -UOGR_ENABLE_DRIVER_* \
              -DGDAL_BUILD_OPTIONAL_DRIVERS:BOOL=OFF -DOGR_BUILD_OPTIONAL_DRIVERS:BOOL=OFF \
-             -DGDAL_ENABLE_DRIVER_JP2OPENPEG:BOOL=ON \
+             -DGDAL_ENABLE_DRIVER_JP2OPENJPEG:BOOL=ON \
              -DOGR_ENABLE_DRIVER_SVG:BOOL=ON
 
 Build drivers as plugins
@@ -2041,12 +2245,11 @@ a driver:
     run of CMake does not change the activation of the plugin status of individual drivers.
     It might be needed to pass ``-UGDAL_ENABLE_DRIVER_* -UOGR_ENABLE_DRIVER_*`` to reset their state.
 
-
 Example of build with all potential drivers as plugins, except the JP2OpenJPEG one::
 
     cmake .. -UGDAL_ENABLE_DRIVER_* -UOGR_ENABLE_DRIVER_* \
              -DGDAL_ENABLE_PLUGINS:BOOL=ON \
-             -DGDAL_ENABLE_DRIVER_JP2OPENPEG_PLUGIN:BOOL=OFF
+             -DGDAL_ENABLE_DRIVER_JP2OPENJPEG_PLUGIN:BOOL=OFF
 
 There is a subtelty regarding ``GDAL_ENABLE_PLUGINS:BOOL=ON``. It only controls
 the plugin status of plugin-capable drivers that have external dependencies,
@@ -2068,6 +2271,101 @@ This can be done with:
     Set to OFF to disable loading of GDAL plugins. Default is ON.
 
 
+Deferred loaded plugins
++++++++++++++++++++++++
+
+Starting with GDAL 3.9, a number of in-tree drivers, that can be built as
+plugins, are loaded in a deferred way. This involves that some part of their
+code, which does not depend on external libraries, is included in core libgdal,
+whereas most of the driver code is in a separated dynamically loaded library.
+For builds where libgdal and its plugins are built in a single operation, this
+is fully transparent to the user.
+
+When a plugin driver is known of core libgdal, but not available as a plugin at
+runtime, GDAL will inform the user that the plugin is not available, but could
+be installed. It is possible to give more hints on how to install a plugin
+by setting the following option:
+
+.. option:: GDAL_DRIVER_<driver_name>_PLUGIN_INSTALLATION_MESSAGE:STRING
+
+.. option:: OGR_DRIVER_<driver_name>_PLUGIN_INSTALLATION_MESSAGE:STRING
+
+    Custom message to give a hint to the user how to install a missing plugin
+
+
+For example, if doing a build with::
+
+    cmake .. -DOGR_DRIVER_PARQUET_PLUGIN_INSTALLATION_MESSAGE="You may install it with with 'conda install -c conda-forge libgdal-arrow-parquet'"
+
+and opening a Parquet file while the plugin is not installed will display the
+following error::
+
+    $ ogrinfo poly.parquet
+    ERROR 4: `poly.parquet' not recognized as a supported file format. It could have been recognized by driver Parquet, but plugin ogr_Parquet.so is not available in your installation. You may install it with with 'conda install -c conda-forge libgdal-arrow-parquet'
+
+
+For more specific builds where libgdal would be first built, and then plugin
+drivers built in later incremental builds, this approach would not work, given
+that the core libgdal built initially would lack code needed to declare the
+plugin(s).
+
+In that situation, the user building GDAL will need to explicitly declare at
+initial libgdal build time that one or several plugin(s) will be later built.
+Note that it is safe to distribute such a libgdal library, even if the plugins
+are not always available at runtime.
+
+This can be done with the following option:
+
+.. option:: GDAL_REGISTER_DRIVER_<driver_name>_FOR_LATER_PLUGIN:BOOL=ON
+
+.. option:: OGR_REGISTER_DRIVER_<driver_name>_FOR_LATER_PLUGIN:BOOL=ON
+
+    Declares that a driver will be later built as a plugin.
+
+Setting this option to drivers not ready for it will lead to an explicit
+CMake error.
+
+
+For some drivers (ECW, HEIF, JP2KAK, JPEG, JPEGXL, KEA, LERC, MrSID,
+MSSQLSpatial, netCDF, OpenJPEG, PDF, TileDB, WEBP), the metadata and/or dataset
+identification code embedded on libgdal, will depend on optional capabilities
+of the dependent library (e.g. libnetcdf for netCDF)
+In that situation, it is desirable that the dependent library is available at
+CMake configuration time for the core libgdal built, but disabled with
+GDAL_USE_<driver_name>=OFF. It must of course be re-enabled later when the plugin is
+built.
+
+For example for netCDF::
+
+    cmake .. -DGDAL_REGISTER_DRIVER_NETCDF_FOR_LATER_PLUGIN=ON -DGDAL_USE_NETCDF=OFF
+    cmake --build .
+
+    cmake .. -DGDAL_USE_NETCDF=ON -DGDAL_ENABLE_DRIVER_NETCDF=ON -DGDAL_ENABLE_DRIVER_NETCDF_PLUGIN=ON
+    cmake --build . --target gdal_netCDF
+
+
+For other drivers, GDAL_REGISTER_DRIVER_<driver_name>_FOR_LATER_PLUGIN /
+OGR_REGISTER_DRIVER_<driver_name>_FOR_LATER_PLUGIN can be declared at
+libgdal build time without requiring the dependent libraries needed to build
+the plugin later to be available.
+
+Out-of-tree deferred loaded plugins
++++++++++++++++++++++++++++++++++++
+
+Out-of-tree drivers can also benefit from the deferred loading capability, provided
+libgdal is built with CMake variable(s) pointing to external code containing the
+code for registering a proxy driver.
+
+This can be done with the following option:
+
+.. option:: ADD_EXTERNAL_DEFERRED_PLUGIN_<driver_name>:FILEPATH=/path/to/some/file.cpp
+
+The pointed file must declare a ``void DeclareDeferred<driver_name>(void)``
+method with C linkage that takes care of creating a GDALPluginDriverProxy
+instance and calling :cpp:func:`GDALDriverManager::DeclareDeferredPluginDriver` on it.
+
+.. _building-python-bindings:
+
 Python bindings options
 +++++++++++++++++++++++
 
@@ -2075,11 +2373,6 @@ Python bindings options
 
     Whether Python bindings should be built. It is ON by default, but only
     effective if a Python installation is found.
-
-.. option:: SWIG_REGENERATE_PYTHON:BOOL=ON/OFF
-
-    Whether to refresh the generated SWIG Python bindings. It is OFF by default.
-    Setting it to ON is needed if modifying the SWIG interface files.
 
 A nominal Python installation should comprise the Python runtime (>= 3.6) and
 the setuptools module.
@@ -2121,20 +2414,28 @@ the ``install`` CMake target.
 
     This option can be specified to a directory name, to override the
     ``CMAKE_INSTALL_PREFIX`` option.
-    It is used to set the value of the ``--prefix`` option of ``python setup.py install``.
+    It is used to set the value of the ``--prefix`` option of ``python3 setup.py install``.
 
 .. option:: GDAL_PYTHON_INSTALL_LAYOUT
 
     This option can be specified to set the value of the ``--install-layout``
-    option of ``python setup.py install``. The install layout is by default set to
+    option of ``python3 setup.py install``. The install layout is by default set to
     ``deb`` when it is detected that the Python installation looks for
     the ``site-packages`` subdirectory. Otherwise it is unspecified.
 
 .. option:: GDAL_PYTHON_INSTALL_LIB
 
     This option can be specified to set the value of the ``--install-lib``
-    option of ``python setup.py install``. It is only taken into account on
+    option of ``python3 setup.py install``. It is only taken into account on
     MacOS systems, when the Python installation is a framework.
+
+.. note::
+
+    The Python bindings are made of several modules (osgeo.gdal, osgeo.ogr, etc.)
+    which link each against libgdal. Consequently, a static build of libgdal is
+    not compatible with the bindings.
+
+.. _building_from_source_java:
 
 Java bindings options
 +++++++++++++++++++++
@@ -2150,8 +2451,32 @@ Java bindings options
 
 .. option:: GDAL_JAVA_INSTALL_DIR
 
-    Subdirectory into which to install the gdalalljni library and the .jar
-    files. It defaults to "${CMAKE_INSTALL_DATADIR}/java"
+    Subdirectory into which to install the :file:`gdal.jar` file.
+    It defaults to "${CMAKE_INSTALL_DATADIR}/java"
+
+    .. note::
+        Prior to GDAL 3.8, the gdalalljni library was also installed in that
+        directory. Starting with GDAL 3.8, this is controlled by the
+        ``GDAL_JAVA_JNI_INSTALL_DIR`` variable.
+
+.. option:: GDAL_JAVA_JNI_INSTALL_DIR
+
+    .. versionadded:: 3.8
+
+    Subdirectory into which to install the :file:`libgdalalljni.so` /
+    :file:`libgdalalljni.dylib` / :file:`gdalalljni.dll` library.
+    It defaults to "${CMAKE_INSTALL_LIBDIR}/jni".
+
+    .. note::
+        Prior to GDAL 3.8, the gdalalljni library was installed in the
+        directory controlled by the ``GDAL_JAVA_INSTALL_DIR`` variable.
+
+
+.. note::
+
+    The Java bindings are made of several modules (org.osgeo.gdal, org.osgeo.ogr, etc.)
+    which link each against libgdal. Consequently, a static build of libgdal is
+    not compatible with the bindings.
 
 Option only to be used by maintainers:
 
@@ -2192,6 +2517,12 @@ For more details on how to build and use the C# bindings read the dedicated sect
 
     Build the C# bindings without building GDAL. This should be used when building the bindings on top of an existing GDAL installation - for instance on top of the CONDA package.
 
+.. note::
+
+    The C# bindings are made of several modules (OSGeo.GDAL, OSGeo.OGR, etc.)
+    which link each against libgdal. Consequently, a static build of libgdal is
+    not compatible with the bindings.
+
 Driver specific options
 +++++++++++++++++++++++
 
@@ -2207,11 +2538,43 @@ Cross-compiling for Android
 +++++++++++++++++++++++++++
 
 First refer to https://cmake.org/cmake/help/latest/manual/cmake-toolchains.7.html#cross-compiling-for-android
-and to https://github.com/OSGeo/gdal/blob/master/.github/workflows/android_cmake/start.sh for
+and to :source_file:`.github/workflows/android_cmake/start.sh` for
 an example of a build script to cross-compile from Ubuntu.
+
+
+Typical build issues
+++++++++++++++++++++
+
+How do I get PROJ ?
+*******************
+
+PROJ is the only required build-time dependency of GDAL that is not vendorized
+in the GDAL source code tree. Consequently, the PROJ header and library must be available
+when configuring GDAL's CMake. Consult `PROJ installation <https://proj.org/install.html>`__.
+
+Conflicting PROJ libraries
+**************************
+
+If using a custom PROJ build (that is a PROJ build that does not come from
+a distribution channel), it can sometimes happen that this custom PROJ build
+conflicts with packaged dependencies, such as spatialite or libgeotiff, that
+themselves link to another copy of PROJ.
+
+The clean way to solve this is to rebuild from sources those other libraries
+against the custom PROJ build.
+For Linux based systems, given that C API/ABI has been preserved in the
+PROJ 6, 7, 8, 9 series, if the custom PROJ build is more recent than the
+PROJ used by those other libraries, doing aliases of the older ``libproj.so.XX``
+name to the newer ``libproj.so.YY`` (with ``ln -s``) should work, although it is
+definitely not recommended to use this solution in a production environment.
+
+In any case, if ``ldd libgdal.so | grep libproj`` reports more than one line,
+crashes will occur at runtime (often at process termination with a
+``malloc_consolidate(): invalid chunk size`` and/or ``Aborted (core dumped)`` error message)
+
 
 Autoconf/nmake (GDAL versions < 3.5.0)
 --------------------------------------------------------------------------------
 
-See https://trac.osgeo.org/gdal/wiki/BuildHints for hints for GDAL < 3.5
+See http://web.archive.org/https://trac.osgeo.org/gdal/wiki/BuildHints for hints for GDAL < 3.5
 autoconf and nmake build systems.

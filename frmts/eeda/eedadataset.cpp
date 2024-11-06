@@ -7,30 +7,14 @@
  ******************************************************************************
  * Copyright (c) 2017-2018, Planet Labs
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "gdal_priv.h"
+#include "ogrsf_frmts.h"
 #include "cpl_http.h"
 #include "cpl_conv.h"
-#include "ogrgeojsonreader.h"
-#include "ogrgeojsonwriter.h"
+#include "ogrlibjsonutils.h"
 #include "ogr_swq.h"
 #include "eeda.h"
 
@@ -96,10 +80,12 @@ class GDALEEDADataset final : public GDALEEDABaseDataset
     {
         return m_poLayer ? 1 : 0;
     }
+
     virtual OGRLayer *GetLayer(int idx) CPL_OVERRIDE;
 
     bool Open(GDALOpenInfo *poOpenInfo);
     json_object *RunRequest(const CPLString &osURL);
+
     const CPLString &GetBaseURL() const
     {
         return m_osBaseURL;
@@ -142,16 +128,19 @@ class GDALEEDALayer final : public OGRLayer
     virtual void ResetReading() CPL_OVERRIDE;
     virtual OGRFeature *GetNextFeature() CPL_OVERRIDE;
     virtual int TestCapability(const char *) CPL_OVERRIDE;
+
     virtual OGRFeatureDefn *GetLayerDefn() CPL_OVERRIDE
     {
         return m_poFeatureDefn;
     }
+
     virtual GIntBig GetFeatureCount(int) CPL_OVERRIDE
     {
         return -1;
     }
 
     virtual void SetSpatialFilter(OGRGeometry *poGeom) CPL_OVERRIDE;
+
     virtual void SetSpatialFilter(int iGeomField,
                                   OGRGeometry *poGeom) CPL_OVERRIDE
     {
@@ -161,6 +150,7 @@ class GDALEEDALayer final : public OGRLayer
     virtual OGRErr SetAttributeFilter(const char *) CPL_OVERRIDE;
 
     virtual OGRErr GetExtent(OGREnvelope *psExtent, int bForce) CPL_OVERRIDE;
+
     virtual OGRErr GetExtent(int iGeomField, OGREnvelope *psExtent,
                              int bForce) CPL_OVERRIDE
     {
@@ -184,7 +174,7 @@ GDALEEDALayer::GDALEEDALayer(GDALEEDADataset *poDS,
     CPLString osLaundered(osCollection);
     for (size_t i = 0; i < osLaundered.size(); i++)
     {
-        if (!isalnum(static_cast<int>(osLaundered[i])))
+        if (!isalnum(static_cast<unsigned char>(osLaundered[i])))
         {
             osLaundered[i] = '_';
         }
@@ -427,8 +417,8 @@ OGRFeature *GDALEEDALayer::GetNextRawFeature()
         }
         if (m_poFilterGeom != nullptr)
         {
-            char *pszGeoJSON = OGR_G_ExportToJson(
-                reinterpret_cast<OGRGeometryH>(m_poFilterGeom));
+            char *pszGeoJSON =
+                OGR_G_ExportToJson(OGRGeometry::ToHandle(m_poFilterGeom));
             query += "&region=";
             query += CPLEscapeURLQueryParameter(pszGeoJSON);
             CPLFree(pszGeoJSON);
@@ -485,7 +475,7 @@ OGRFeature *GDALEEDALayer::GetNextRawFeature()
         const char *pszGeoJSON = json_object_get_string(poJSonGeom);
         if (strstr(pszGeoJSON, "Infinity") == nullptr)
         {
-            OGRGeometry *poGeom = reinterpret_cast<OGRGeometry *>(
+            OGRGeometry *poGeom = OGRGeometry::FromHandle(
                 OGR_G_CreateGeometryFromJson(pszGeoJSON));
             if (poGeom != nullptr)
             {
@@ -793,7 +783,7 @@ CPLString GDALEEDALayer::BuildFilter(swq_expr_node *poNode, bool bIsAndTopLevel)
         else if (poNode->papoSubExpr[1]->field_type == SWQ_FLOAT)
         {
             osFilter +=
-                CPLSPrintf("%.18g", poNode->papoSubExpr[1]->float_value);
+                CPLSPrintf("%.17g", poNode->papoSubExpr[1]->float_value);
         }
         else
         {
@@ -884,7 +874,7 @@ CPLString GDALEEDALayer::BuildFilter(swq_expr_node *poNode, bool bIsAndTopLevel)
             else if (poNode->papoSubExpr[i]->field_type == SWQ_FLOAT)
             {
                 osFilter +=
-                    CPLSPrintf("%.18g", poNode->papoSubExpr[i]->float_value);
+                    CPLSPrintf("%.17g", poNode->papoSubExpr[i]->float_value);
             }
             else
             {
@@ -1239,11 +1229,16 @@ void GDALRegister_EEDA()
     poDriver->SetMetadataItem(GDAL_DMD_LONGNAME, "Earth Engine Data API");
     poDriver->SetMetadataItem(GDAL_DMD_HELPTOPIC, "drivers/vector/eeda.html");
     poDriver->SetMetadataItem(GDAL_DMD_CONNECTION_PREFIX, "EEDA:");
-    poDriver->SetMetadataItem(GDAL_DMD_OPENOPTIONLIST,
-                              "<OpenOptionList>"
-                              "  <Option name='COLLECTION' type='string' "
-                              "description='Collection name'/>"
-                              "</OpenOptionList>");
+    poDriver->SetMetadataItem(
+        GDAL_DMD_OPENOPTIONLIST,
+        "<OpenOptionList>"
+        "  <Option name='COLLECTION' type='string' "
+        "description='Collection name'/>"
+        "  <Option name='VSI_PATH_FOR_AUTH' type='string' "
+        "description='/vsigs/... path onto which a "
+        "GOOGLE_APPLICATION_CREDENTIALS path specific "
+        "option is set'/>"
+        "</OpenOptionList>");
 
     poDriver->pfnOpen = GDALEEDAOpen;
     poDriver->pfnIdentify = GDALEEDAdentify;

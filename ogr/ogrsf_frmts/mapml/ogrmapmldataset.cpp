@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2020, Even Rouault <even dot rouault at spatialys dot com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_minixml.h"
@@ -70,6 +54,7 @@ class OGRMapMLReaderDataset final : public GDALPamDataset
     {
         return static_cast<int>(m_apoLayers.size());
     }
+
     OGRLayer *GetLayer(int idx) override;
 
     static int Identify(GDALOpenInfo *poOpenInfo);
@@ -103,9 +88,15 @@ class OGRMapMLReaderLayer final
     {
         return m_poFeatureDefn;
     }
+
     void ResetReading() override;
     DEFINE_GET_NEXT_FEATURE_THROUGH_RAW(OGRMapMLReaderLayer)
     int TestCapability(const char *pszCap) override;
+
+    GDALDataset *GetDataset() override
+    {
+        return m_poDS;
+    }
 };
 
 /************************************************************************/
@@ -139,11 +130,12 @@ class OGRMapMLWriterDataset final : public GDALPamDataset
     {
         return static_cast<int>(m_apoLayers.size());
     }
+
     OGRLayer *GetLayer(int idx) override;
 
-    OGRLayer *ICreateLayer(const char *, OGRSpatialReference * = nullptr,
-                           OGRwkbGeometryType = wkbUnknown,
-                           char ** = nullptr) override;
+    OGRLayer *ICreateLayer(const char *pszName,
+                           const OGRGeomFieldDefn *poGeomFieldDefn,
+                           CSLConstList papszOptions) override;
 
     int TestCapability(const char *) override;
 
@@ -180,16 +172,24 @@ class OGRMapMLWriterLayer final : public OGRLayer
     {
         return m_poFeatureDefn;
     }
+
     void ResetReading() override
     {
     }
+
     OGRFeature *GetNextFeature() override
     {
         return nullptr;
     }
-    OGRErr CreateField(OGRFieldDefn *poFieldDefn, int) override;
+
+    OGRErr CreateField(const OGRFieldDefn *poFieldDefn, int) override;
     OGRErr ICreateFeature(OGRFeature *poFeature) override;
     int TestCapability(const char *) override;
+
+    GDALDataset *GetDataset() override
+    {
+        return m_poDS;
+    }
 };
 
 /************************************************************************/
@@ -977,12 +977,15 @@ int OGRMapMLWriterDataset::TestCapability(const char *pszCap)
 /*                           ICreateLayer()                             */
 /************************************************************************/
 
-OGRLayer *OGRMapMLWriterDataset::ICreateLayer(const char *pszLayerName,
-                                              OGRSpatialReference *poSRS,
-                                              OGRwkbGeometryType,
-                                              char ** /* papszOptions */)
+OGRLayer *
+OGRMapMLWriterDataset::ICreateLayer(const char *pszLayerName,
+                                    const OGRGeomFieldDefn *poGeomFieldDefn,
+                                    CSLConstList /*papszOptions*/)
 {
     OGRSpatialReference oSRS_WGS84;
+    const auto poSRSIn =
+        poGeomFieldDefn ? poGeomFieldDefn->GetSpatialRef() : nullptr;
+    const OGRSpatialReference *poSRS = poSRSIn;
     if (poSRS == nullptr)
     {
         oSRS_WGS84.SetFromUserInput(SRS_WKT_WGS84_LAT_LONG);
@@ -1076,7 +1079,7 @@ int OGRMapMLWriterLayer::TestCapability(const char *pszCap)
 /*                            CreateField()                             */
 /************************************************************************/
 
-OGRErr OGRMapMLWriterLayer::CreateField(OGRFieldDefn *poFieldDefn, int)
+OGRErr OGRMapMLWriterLayer::CreateField(const OGRFieldDefn *poFieldDefn, int)
 {
     m_poFeatureDefn->AddFieldDefn(poFieldDefn);
     return OGRERR_NONE;

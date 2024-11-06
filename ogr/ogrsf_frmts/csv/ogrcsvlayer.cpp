@@ -8,23 +8,7 @@
  * Copyright (c) 2004, Frank Warmerdam <warmerdam@pobox.com>
  * Copyright (c) 2008-2014, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_port.h"
@@ -49,6 +33,7 @@
 #include "cpl_error.h"
 #include "cpl_string.h"
 #include "cpl_vsi.h"
+#include "cpl_vsi_virtual.h"
 #include "ogr_api.h"
 #include "ogr_core.h"
 #include "ogr_feature.h"
@@ -66,21 +51,23 @@
 /*      file pointer.                                                   */
 /************************************************************************/
 
-OGRCSVLayer::OGRCSVLayer(const char *pszLayerNameIn, VSILFILE *fp,
-                         int nMaxLineSize, const char *pszFilenameIn,
-                         int bNewIn, int bInWriteModeIn, char chDelimiterIn)
-    : poFeatureDefn(nullptr), fpCSV(fp), m_nMaxLineSize(nMaxLineSize),
-      nNextFID(1), bHasFieldNames(false), bNew(CPL_TO_BOOL(bNewIn)),
-      bInWriteMode(CPL_TO_BOOL(bInWriteModeIn)), bUseCRLF(false),
-      bNeedRewindBeforeRead(false), eGeometryFormat(OGR_CSV_GEOM_NONE),
-      pszFilename(CPLStrdup(pszFilenameIn)), bCreateCSVT(false),
-      bWriteBOM(false), nCSVFieldCount(0), panGeomFieldIndex(nullptr),
-      bFirstFeatureAppendedDuringSession(true), bHiddenWKTColumn(false),
-      iNfdcLongitudeS(-1), iNfdcLatitudeS(-1), bHonourStrings(true),
-      iLongitudeField(-1), iLatitudeField(-1), iZField(-1),
-      bIsEurostatTSV(false), nEurostatDims(0), nTotalFeatures(bNewIn ? 0 : -1),
-      bWarningBadTypeOrWidth(false), bKeepSourceColumns(false),
-      bKeepGeomColumns(true), bMergeDelimiter(false), bEmptyStringNull(false)
+OGRCSVLayer::OGRCSVLayer(GDALDataset *poDS, const char *pszLayerNameIn,
+                         VSILFILE *fp, int nMaxLineSize,
+                         const char *pszFilenameIn, int bNewIn,
+                         int bInWriteModeIn, char chDelimiterIn)
+    : m_poDS(poDS), poFeatureDefn(nullptr), fpCSV(fp),
+      m_nMaxLineSize(nMaxLineSize), nNextFID(1), bHasFieldNames(false),
+      bNew(CPL_TO_BOOL(bNewIn)), bInWriteMode(CPL_TO_BOOL(bInWriteModeIn)),
+      bUseCRLF(false), bNeedRewindBeforeRead(false),
+      eGeometryFormat(OGR_CSV_GEOM_NONE), pszFilename(CPLStrdup(pszFilenameIn)),
+      bCreateCSVT(false), bWriteBOM(false), nCSVFieldCount(0),
+      panGeomFieldIndex(nullptr), bFirstFeatureAppendedDuringSession(true),
+      bHiddenWKTColumn(false), iNfdcLongitudeS(-1), iNfdcLatitudeS(-1),
+      bHonourStrings(true), iLongitudeField(-1), iLatitudeField(-1),
+      iZField(-1), bIsEurostatTSV(false), nEurostatDims(0),
+      nTotalFeatures(bNewIn ? 0 : -1), bWarningBadTypeOrWidth(false),
+      bKeepSourceColumns(false), bKeepGeomColumns(true), bMergeDelimiter(false),
+      bEmptyStringNull(false)
 {
     szDelimiter[0] = chDelimiterIn;
     szDelimiter[1] = 0;
@@ -116,7 +103,7 @@ bool OGRCSVLayer::Matches(const char *pszFieldName, char **papszPossibleNames)
                 {
                     // *pattern*
                     CPLString oPattern(pszPattern + 1);
-                    oPattern.resize(oPattern.size() - 1);
+                    oPattern.pop_back();
                     if (CPLString(pszFieldName).ifind(oPattern) !=
                         std::string::npos)
                         return true;
@@ -150,7 +137,7 @@ bool OGRCSVLayer::Matches(const char *pszFieldName, char **papszPossibleNames)
 
 void OGRCSVLayer::BuildFeatureDefn(const char *pszNfdcGeomField,
                                    const char *pszGeonamesGeomFieldPrefix,
-                                   char **papszOpenOptions)
+                                   CSLConstList papszOpenOptions)
 {
     bMergeDelimiter = CPLFetchBool(papszOpenOptions, "MERGE_SEPARATOR", false);
     bEmptyStringNull =
@@ -248,11 +235,15 @@ void OGRCSVLayer::BuildFeatureDefn(const char *pszNfdcGeomField,
             }
 
             // Tokenize without quotes to get the actual values.
+            VSIRewindL(fpCSV);
             CSLDestroy(papszTokens);
-            int l_nFlags = CSLT_HONOURSTRINGS;
-            if (!bMergeDelimiter)
-                l_nFlags |= CSLT_ALLOWEMPTYTOKENS;
-            papszTokens = CSLTokenizeString2(pszLine, szDelimiter, l_nFlags);
+            papszTokens =
+                CSVReadParseLine3L(fpCSV, m_nMaxLineSize, szDelimiter,
+                                   true,   // bHonourStrings
+                                   false,  // bKeepLeadingAndClosingQuotes
+                                   bMergeDelimiter,
+                                   true  // bSkipBOM
+                );
             nFieldCount = CSLCount(papszTokens);
         }
     }
@@ -314,6 +305,7 @@ void OGRCSVLayer::BuildFeatureDefn(const char *pszNfdcGeomField,
                 {"POPULATION", OFTReal},  {"ELEVATION", OFTInteger},
                 {"GTOPO30", OFTInteger},  {"TIMEZONE", OFTString},
                 {"MODDATE", OFTString}};
+
             for (int iField = 0; iField < nFieldCount; iField++)
             {
                 OGRFieldDefn oFieldDefn(asGeonamesFieldDesc[iField].pszName,
@@ -338,14 +330,12 @@ void OGRCSVLayer::BuildFeatureDefn(const char *pszNfdcGeomField,
         const char *pszExt = CPLGetExtension(pszFilename);
         if (pszExt[0])
         {
-            char *dname = CPLStrdup(CPLGetDirname(pszFilename));
-            char *fname = CPLStrdup(CPLGetBasename(pszFilename));
-            VSILFILE *fpCSVT =
-                VSIFOpenL(CPLFormFilename(dname, fname, ".csvt"), "r");
-            CPLFree(dname);
-            CPLFree(fname);
+            const std::string osCSVTFilename =
+                CPLResetExtension(pszFilename, "csvt");
+            VSILFILE *fpCSVT = VSIFOpenL(osCSVTFilename.c_str(), "r");
             if (fpCSVT != nullptr)
             {
+                m_osCSVTFilename = osCSVTFilename;
                 VSIRewindL(fpCSVT);
                 papszFieldTypes =
                     CSVReadParseLine3L(fpCSVT, m_nMaxLineSize, ",",
@@ -861,6 +851,19 @@ void OGRCSVLayer::BuildFeatureDefn(const char *pszNfdcGeomField,
 }
 
 /************************************************************************/
+/*                             GetFileList()                            */
+/************************************************************************/
+
+std::vector<std::string> OGRCSVLayer::GetFileList()
+{
+    std::vector<std::string> ret;
+    ret.emplace_back(pszFilename);
+    if (!m_osCSVTFilename.empty())
+        ret.emplace_back(m_osCSVTFilename);
+    return ret;
+}
+
+/************************************************************************/
 /*                             OGRCSVIsTrue()                           */
 /************************************************************************/
 
@@ -884,7 +887,7 @@ static bool OGRCSVIsFalse(const char *pszStr)
 /*                        AutodetectFieldTypes()                        */
 /************************************************************************/
 
-char **OGRCSVLayer::AutodetectFieldTypes(char **papszOpenOptions,
+char **OGRCSVLayer::AutodetectFieldTypes(CSLConstList papszOpenOptions,
                                          int nFieldCount)
 {
     const bool bStreaming =
@@ -941,7 +944,7 @@ char **OGRCSVLayer::AutodetectFieldTypes(char **papszOpenOptions,
         nRead = VSIFReadL(pszData, 1, nRequested, fpCSV);
         pszData[nRead] = 0;
 
-        osTmpMemFile = CPLSPrintf("/vsimem/tmp%p", this);
+        osTmpMemFile = VSIMemGenerateHiddenFilename("temp.csv");
         fp = VSIFileFromMemBuffer(osTmpMemFile.c_str(),
                                   reinterpret_cast<GByte *>(pszData), nRead,
                                   FALSE);
@@ -955,7 +958,7 @@ char **OGRCSVLayer::AutodetectFieldTypes(char **papszOpenOptions,
     std::vector<int> anFieldPrecision(nFieldCount);
     int nStringFieldCount = 0;
 
-    while (!VSIFEofL(fp))
+    while (!fp->Eof() && !fp->Error())
     {
         char **papszTokens =
             CSVReadParseLine3L(fp, m_nMaxLineSize, szDelimiter,
@@ -970,7 +973,7 @@ char **OGRCSVLayer::AutodetectFieldTypes(char **papszOpenOptions,
         if (bStreaming)
         {
             // Ignore last line if it is truncated.
-            if (VSIFEofL(fp) && nRead == static_cast<size_t>(nRequested) &&
+            if (fp->Eof() && nRead == static_cast<size_t>(nRequested) &&
                 pszData[nRead - 1] != 13 && pszData[nRead - 1] != 10)
             {
                 CSLDestroy(papszTokens);
@@ -1030,7 +1033,10 @@ char **OGRCSVLayer::AutodetectFieldTypes(char **papszOpenOptions,
                 else
                     eOGRFieldType = OFTInteger;
             }
-            else if (eType == CPL_VALUE_REAL)
+            else if (eType == CPL_VALUE_REAL ||
+                     EQUAL(papszTokens[iField], "inf") ||
+                     EQUAL(papszTokens[iField], "-inf") ||
+                     EQUAL(papszTokens[iField], "nan"))
             {
                 eOGRFieldType = OFTReal;
             }
@@ -1371,40 +1377,62 @@ OGRFeature *OGRCSVLayer::GetNextUnfilteredFeature()
         }
         if (iGeom >= 0)
         {
+            const OGRGeomFieldDefn *poGeomFieldDefn =
+                poFeatureDefn->GetGeomFieldDefn(iGeom);
             if (papszTokens[iAttr][0] != '\0' &&
-                !(poFeatureDefn->GetGeomFieldDefn(iGeom)->IsIgnored()))
+                !(poGeomFieldDefn->IsIgnored()))
             {
                 const char *pszStr = papszTokens[iAttr];
                 while (*pszStr == ' ')
                     pszStr++;
                 OGRGeometry *poGeom = nullptr;
 
-                CPLPushErrorHandler(CPLQuietErrorHandler);
-                if (OGRGeometryFactory::createFromWkt(pszStr, nullptr,
-                                                      &poGeom) == OGRERR_NONE)
+                if (EQUAL(poGeomFieldDefn->GetNameRef(), ""))
+                {
+                    if (OGRGeometryFactory::createFromWkt(
+                            pszStr, nullptr, &poGeom) != OGRERR_NONE)
+                    {
+                        CPLError(CE_Warning, CPLE_AppDefined,
+                                 "Ignoring invalid WKT: %s", pszStr);
+                        delete poGeom;
+                        poGeom = nullptr;
+                    }
+                }
+                else
+                {
+                    CPLErrorHandlerPusher oErrorHandler(CPLQuietErrorHandler);
+
+                    if (OGRGeometryFactory::createFromWkt(
+                            pszStr, nullptr, &poGeom) != OGRERR_NONE)
+                    {
+                        delete poGeom;
+                        poGeom = nullptr;
+                    }
+
+                    if (!poGeom && *pszStr == '{')
+                    {
+                        poGeom = OGRGeometry::FromHandle(
+                            OGR_G_CreateGeometryFromJson(pszStr));
+                    }
+                    else if (!poGeom && ((*pszStr >= '0' && *pszStr <= '9') ||
+                                         (*pszStr >= 'a' && *pszStr <= 'z') ||
+                                         (*pszStr >= 'A' && *pszStr <= 'Z')))
+                    {
+                        poGeom = OGRGeometryFromHexEWKB(pszStr, nullptr, FALSE);
+                    }
+                }
+
+                if (poGeom)
                 {
                     poGeom->assignSpatialReference(
-                        poFeatureDefn->GetGeomFieldDefn(iGeom)
-                            ->GetSpatialRef());
+                        poGeomFieldDefn->GetSpatialRef());
                     poFeature->SetGeomFieldDirectly(iGeom, poGeom);
                 }
-                else if (*pszStr == '{' &&
-                         (poGeom = reinterpret_cast<OGRGeometry *>(
-                              OGR_G_CreateGeometryFromJson(pszStr))) != nullptr)
-                {
-                    poFeature->SetGeomFieldDirectly(iGeom, poGeom);
-                }
-                else if (((*pszStr >= '0' && *pszStr <= '9') ||
-                          (*pszStr >= 'a' && *pszStr <= 'z') ||
-                          (*pszStr >= 'A' && *pszStr <= 'Z')) &&
-                         (poGeom = OGRGeometryFromHexEWKB(pszStr, nullptr,
-                                                          FALSE)) != nullptr)
-                {
-                    poFeature->SetGeomFieldDirectly(iGeom, poGeom);
-                }
-                CPLPopErrorHandler();
             }
-            if (!bKeepGeomColumns || (iAttr == 0 && bHiddenWKTColumn))
+
+            const bool bHasAttributeField =
+                bKeepGeomColumns && !(iAttr == 0 && bHiddenWKTColumn);
+            if (!bHasAttributeField)
                 continue;
         }
 
@@ -1447,14 +1475,16 @@ OGRFeature *OGRCSVLayer::GetNextUnfilteredFeature()
                     if (chComma)
                         *chComma = '.';
                 }
-                CPLValueType eType = CPLGetValueType(papszTokens[iAttr]);
-                if (eType == CPL_VALUE_INTEGER || eType == CPL_VALUE_REAL)
+                char *endptr = nullptr;
+                const double dfVal =
+                    CPLStrtodDelim(papszTokens[iAttr], &endptr, '.');
+                if (endptr == papszTokens[iAttr] + strlen(papszTokens[iAttr]))
                 {
-                    poFeature->SetField(iOGRField, papszTokens[iAttr]);
+                    poFeature->SetField(iOGRField, dfVal);
                     if (!bWarningBadTypeOrWidth &&
                         (eFieldType == OFTInteger ||
                          eFieldType == OFTInteger64) &&
-                        eType == CPL_VALUE_REAL)
+                        CPLGetValueType(papszTokens[iAttr]) == CPL_VALUE_REAL)
                     {
                         bWarningBadTypeOrWidth = true;
                         CPLError(CE_Warning, CPLE_AppDefined,
@@ -1476,8 +1506,9 @@ OGRFeature *OGRCSVLayer::GetNextUnfilteredFeature()
                                  nNextFID, poFieldDefn->GetNameRef());
                     }
                     else if (!bWarningBadTypeOrWidth &&
-                             eType == CPL_VALUE_REAL &&
-                             poFieldDefn->GetWidth() > 0)
+                             poFieldDefn->GetWidth() > 0 &&
+                             CPLGetValueType(papszTokens[iAttr]) ==
+                                 CPL_VALUE_REAL)
                     {
                         const char *pszDot = strchr(papszTokens[iAttr], '.');
                         const int nPrecision =
@@ -1740,7 +1771,7 @@ int OGRCSVLayer::TestCapability(const char *pszCap)
 OGRCSVCreateFieldAction
 OGRCSVLayer::PreCreateField(OGRFeatureDefn *poFeatureDefn,
                             const std::set<CPLString> &oSetFields,
-                            OGRFieldDefn *poNewField, int bApproxOK)
+                            const OGRFieldDefn *poNewField, int bApproxOK)
 {
     // Does this duplicate an existing field?
     if (oSetFields.find(CPLString(poNewField->GetNameRef()).toupper()) !=
@@ -1803,7 +1834,7 @@ OGRCSVLayer::PreCreateField(OGRFeatureDefn *poFeatureDefn,
 /*                            CreateField()                             */
 /************************************************************************/
 
-OGRErr OGRCSVLayer::CreateField(OGRFieldDefn *poNewField, int bApproxOK)
+OGRErr OGRCSVLayer::CreateField(const OGRFieldDefn *poNewField, int bApproxOK)
 
 {
     // If we have already written our field names, then we are not
@@ -1854,7 +1885,7 @@ OGRErr OGRCSVLayer::CreateField(OGRFieldDefn *poNewField, int bApproxOK)
 /*                          CreateGeomField()                           */
 /************************************************************************/
 
-OGRErr OGRCSVLayer::CreateGeomField(OGRGeomFieldDefn *poGeomField,
+OGRErr OGRCSVLayer::CreateGeomField(const OGRGeomFieldDefn *poGeomField,
                                     int /* bApproxOK */)
 {
     if (!TestCapability(OLCCreateGeomField))
@@ -1875,10 +1906,13 @@ OGRErr OGRCSVLayer::CreateGeomField(OGRGeomFieldDefn *poGeomField,
         return OGRERR_FAILURE;
     }
     OGRGeomFieldDefn oGeomField(poGeomField);
-    if (oGeomField.GetSpatialRef())
+    auto poSRSOri = poGeomField->GetSpatialRef();
+    if (poSRSOri)
     {
-        oGeomField.GetSpatialRef()->SetAxisMappingStrategy(
-            OAMS_TRADITIONAL_GIS_ORDER);
+        auto poSRS = poSRSOri->Clone();
+        poSRS->SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+        oGeomField.SetSpatialRef(poSRS);
+        poSRS->Release();
     }
     poFeatureDefn->AddGeomFieldDefn(&oGeomField);
 
@@ -1962,6 +1996,7 @@ OGRErr OGRCSVLayer::WriteHeader()
             bOK &= VSIFWriteL("\xEF\xBB\xBF", 1, 3, fpCSV) > 0;
         }
 
+        bool bNeedDelimiter = false;
         if (eGeometryFormat == OGR_CSV_GEOM_AS_XYZ)
         {
             if (fpCSV)
@@ -1969,13 +2004,7 @@ OGRErr OGRCSVLayer::WriteHeader()
                     VSIFPrintfL(fpCSV, "X%sY%sZ", szDelimiter, szDelimiter) > 0;
             if (fpCSVT)
                 bOK &= VSIFPrintfL(fpCSVT, "%s", "CoordX,CoordY,Real") > 0;
-            if (poFeatureDefn->GetFieldCount() > 0)
-            {
-                if (fpCSV)
-                    bOK &= VSIFPrintfL(fpCSV, "%s", szDelimiter) > 0;
-                if (fpCSVT)
-                    bOK &= VSIFPrintfL(fpCSVT, "%s", ",") > 0;
-            }
+            bNeedDelimiter = true;
         }
         else if (eGeometryFormat == OGR_CSV_GEOM_AS_XY)
         {
@@ -1983,13 +2012,7 @@ OGRErr OGRCSVLayer::WriteHeader()
                 bOK &= VSIFPrintfL(fpCSV, "X%sY", szDelimiter) > 0;
             if (fpCSVT)
                 bOK &= VSIFPrintfL(fpCSVT, "%s", "CoordX,CoordY") > 0;
-            if (poFeatureDefn->GetFieldCount() > 0)
-            {
-                if (fpCSV)
-                    bOK &= VSIFPrintfL(fpCSV, "%s", szDelimiter) > 0;
-                if (fpCSVT)
-                    bOK &= VSIFPrintfL(fpCSVT, "%s", ",") > 0;
-            }
+            bNeedDelimiter = true;
         }
         else if (eGeometryFormat == OGR_CSV_GEOM_AS_YX)
         {
@@ -1997,38 +2020,31 @@ OGRErr OGRCSVLayer::WriteHeader()
                 bOK &= VSIFPrintfL(fpCSV, "Y%sX", szDelimiter) > 0;
             if (fpCSVT)
                 bOK &= VSIFPrintfL(fpCSVT, "%s", "CoordY,CoordX") > 0;
-            if (poFeatureDefn->GetFieldCount() > 0)
-            {
-                if (fpCSV)
-                    bOK &= VSIFPrintfL(fpCSV, "%s", szDelimiter) > 0;
-                if (fpCSVT)
-                    bOK &= VSIFPrintfL(fpCSVT, "%s", ",") > 0;
-            }
+            bNeedDelimiter = true;
         }
-
-        if (bHiddenWKTColumn)
+        else if (bHiddenWKTColumn)
         {
             if (fpCSV)
             {
                 const char *pszColName =
-                    bCreateCSVT
-                        ? poFeatureDefn->GetGeomFieldDefn(0)->GetNameRef()
-                        : "WKT";
+                    poFeatureDefn->GetGeomFieldDefn(0)->GetNameRef();
                 bOK &= VSIFPrintfL(fpCSV, "%s", pszColName) >= 0;
             }
             if (fpCSVT)
                 bOK &= VSIFPrintfL(fpCSVT, "%s", "WKT") > 0;
+            bNeedDelimiter = true;
         }
 
         for (int iField = 0; iField < poFeatureDefn->GetFieldCount(); iField++)
         {
-            if (iField > 0 || bHiddenWKTColumn)
+            if (bNeedDelimiter)
             {
                 if (fpCSV)
                     bOK &= VSIFPrintfL(fpCSV, "%s", szDelimiter) > 0;
                 if (fpCSVT)
                     bOK &= VSIFPrintfL(fpCSVT, "%s", ",") > 0;
             }
+            bNeedDelimiter = true;
 
             char *pszEscaped = CPLEscapeString(
                 poFeatureDefn->GetFieldDefn(iField)->GetNameRef(), -1,
@@ -2138,15 +2154,6 @@ OGRErr OGRCSVLayer::WriteHeader()
             }
         }
 
-        // The CSV driver will not recognize single column tables, so add
-        // a fake second blank field.
-        if ((poFeatureDefn->GetFieldCount() == 1 && !bHiddenWKTColumn) ||
-            (poFeatureDefn->GetFieldCount() == 0 && bHiddenWKTColumn))
-        {
-            if (fpCSV)
-                bOK &= VSIFPrintfL(fpCSV, "%s", szDelimiter) > 0;
-        }
-
         if (bUseCRLF)
         {
             if (fpCSV)
@@ -2227,33 +2234,70 @@ OGRErr OGRCSVLayer::ICreateFeature(OGRFeature *poNewFeature)
         }
     }
 
+    bool bNeedDelimiter = false;
+    bool bEmptyLine = true;
+
+    const auto GetWktOptions = [](const OGRGeomFieldDefn *poGeomFieldDefn)
+    {
+        const auto &sCoordPrec = poGeomFieldDefn->GetCoordinatePrecision();
+
+        OGRWktOptions wktOptions;
+        wktOptions.variant = wkbVariantIso;
+        if (sCoordPrec.dfXYResolution != OGRGeomCoordinatePrecision::UNKNOWN)
+        {
+            wktOptions.format = OGRWktFormat::F;
+            wktOptions.xyPrecision =
+                OGRGeomCoordinatePrecision::ResolutionToPrecision(
+                    sCoordPrec.dfXYResolution);
+        }
+        if (sCoordPrec.dfZResolution != OGRGeomCoordinatePrecision::UNKNOWN)
+        {
+            wktOptions.format = OGRWktFormat::F;
+            wktOptions.zPrecision =
+                OGRGeomCoordinatePrecision::ResolutionToPrecision(
+                    sCoordPrec.dfZResolution);
+        }
+        if (sCoordPrec.dfMResolution != OGRGeomCoordinatePrecision::UNKNOWN)
+        {
+            wktOptions.format = OGRWktFormat::F;
+            wktOptions.mPrecision =
+                OGRGeomCoordinatePrecision::ResolutionToPrecision(
+                    sCoordPrec.dfMResolution);
+        }
+
+        return wktOptions;
+    };
+
     // Write out the geometry.
     if (eGeometryFormat == OGR_CSV_GEOM_AS_XYZ ||
         eGeometryFormat == OGR_CSV_GEOM_AS_XY ||
         eGeometryFormat == OGR_CSV_GEOM_AS_YX)
     {
-        OGRGeometry *poGeom = poNewFeature->GetGeometryRef();
+        const OGRGeometry *poGeom = poNewFeature->GetGeometryRef();
         if (poGeom && wkbFlatten(poGeom->getGeometryType()) == wkbPoint)
         {
-            OGRPoint *poPoint = poGeom->toPoint();
-            char szBuffer[75] = {};
+            const auto poGeomFieldDefn = poFeatureDefn->GetGeomFieldDefn(0);
+            const OGRPoint *poPoint = poGeom->toPoint();
+            std::string osCoord;
             if (eGeometryFormat == OGR_CSV_GEOM_AS_XYZ)
-                OGRMakeWktCoordinate(szBuffer, poPoint->getX(), poPoint->getY(),
-                                     poPoint->getZ(), 3);
+                osCoord = OGRMakeWktCoordinate(poPoint->getX(), poPoint->getY(),
+                                               poPoint->getZ(), 3,
+                                               GetWktOptions(poGeomFieldDefn));
             else if (eGeometryFormat == OGR_CSV_GEOM_AS_XY)
-                OGRMakeWktCoordinate(szBuffer, poPoint->getX(), poPoint->getY(),
-                                     0, 2);
+                osCoord =
+                    OGRMakeWktCoordinate(poPoint->getX(), poPoint->getY(), 0, 2,
+                                         GetWktOptions(poGeomFieldDefn));
             else
-                OGRMakeWktCoordinate(szBuffer, poPoint->getY(), poPoint->getX(),
-                                     0, 2);
-            char *pc = szBuffer;
-            while (*pc != '\0')
+                osCoord =
+                    OGRMakeWktCoordinate(poPoint->getY(), poPoint->getX(), 0, 2,
+                                         GetWktOptions(poGeomFieldDefn));
+
+            for (char &ch : osCoord)
             {
-                if (*pc == ' ')
-                    *pc = szDelimiter[0];
-                pc++;
+                if (ch == ' ')
+                    ch = szDelimiter[0];
             }
-            bRet &= VSIFPrintfL(fpCSV, "%s", szBuffer) > 0;
+            bRet &= VSIFPrintfL(fpCSV, "%s", osCoord.c_str()) > 0;
         }
         else
         {
@@ -2261,26 +2305,26 @@ OGRErr OGRCSVLayer::ICreateFeature(OGRFeature *poNewFeature)
             if (eGeometryFormat == OGR_CSV_GEOM_AS_XYZ)
                 bRet &= VSIFPrintfL(fpCSV, "%s", szDelimiter) > 0;
         }
-        if (poFeatureDefn->GetFieldCount() > 0)
-            bRet &= VSIFPrintfL(fpCSV, "%s", szDelimiter) > 0;
+        bEmptyLine = false;
+        bNeedDelimiter = true;
     }
-
-    // Special case to deal with hidden "WKT" geometry column.
-    bool bNonEmptyLine = false;
-
-    if (bHiddenWKTColumn)
+    else if (bHiddenWKTColumn)
     {
-        char *pszWKT = nullptr;
-        OGRGeometry *poGeom = poNewFeature->GetGeomFieldRef(0);
-        if (poGeom &&
-            poGeom->exportToWkt(&pszWKT, wkbVariantIso) == OGRERR_NONE)
+        const OGRGeometry *poGeom = poNewFeature->GetGeomFieldRef(0);
+        if (poGeom)
         {
-            bNonEmptyLine = true;
-            bRet &= VSIFWriteL("\"", 1, 1, fpCSV) > 0;
-            bRet &= VSIFWriteL(pszWKT, strlen(pszWKT), 1, fpCSV) > 0;
-            bRet &= VSIFWriteL("\"", 1, 1, fpCSV) > 0;
+            const auto poGeomFieldDefn = poFeatureDefn->GetGeomFieldDefn(0);
+            const std::string wkt =
+                poGeom->exportToWkt(GetWktOptions(poGeomFieldDefn));
+            if (!wkt.empty())
+            {
+                bRet &= VSIFWriteL("\"", 1, 1, fpCSV) > 0;
+                bRet &= VSIFWriteL(wkt.c_str(), wkt.size(), 1, fpCSV) > 0;
+                bRet &= VSIFWriteL("\"", 1, 1, fpCSV) > 0;
+                bEmptyLine = false;
+            }
         }
-        CPLFree(pszWKT);
+        bNeedDelimiter = true;
     }
 
     // Write out all the field values.
@@ -2288,26 +2332,40 @@ OGRErr OGRCSVLayer::ICreateFeature(OGRFeature *poNewFeature)
     {
         char *pszEscaped = nullptr;
 
-        if (iField > 0 || bHiddenWKTColumn)
+        if (bNeedDelimiter)
+        {
             bRet &= VSIFPrintfL(fpCSV, "%s", szDelimiter) > 0;
+            bEmptyLine = false;
+        }
+        bNeedDelimiter = true;
 
         if (eGeometryFormat == OGR_CSV_GEOM_AS_WKT &&
             panGeomFieldIndex[iField] >= 0)
         {
             const int iGeom = panGeomFieldIndex[iField];
-            OGRGeometry *poGeom = poNewFeature->GetGeomFieldRef(iGeom);
-            if (poGeom &&
-                poGeom->exportToWkt(&pszEscaped, wkbVariantIso) == OGRERR_NONE)
+            const OGRGeometry *poGeom = poNewFeature->GetGeomFieldRef(iGeom);
+            if (poGeom)
             {
-                const int nLenWKT = static_cast<int>(strlen(pszEscaped));
-                char *pszNew =
-                    static_cast<char *>(CPLMalloc(1 + nLenWKT + 1 + 1));
-                pszNew[0] = '"';
-                memcpy(pszNew + 1, pszEscaped, nLenWKT);
-                pszNew[1 + nLenWKT] = '"';
-                pszNew[1 + nLenWKT + 1] = '\0';
-                CPLFree(pszEscaped);
-                pszEscaped = pszNew;
+                const auto poGeomFieldDefn =
+                    poFeatureDefn->GetGeomFieldDefn(iGeom);
+                const std::string wkt =
+                    poGeom->exportToWkt(GetWktOptions(poGeomFieldDefn));
+                if (!wkt.empty())
+                {
+                    char *pszNew =
+                        static_cast<char *>(CPLMalloc(1 + wkt.size() + 1 + 1));
+                    pszNew[0] = '"';
+                    memcpy(pszNew + 1, wkt.c_str(), wkt.size());
+                    pszNew[1 + wkt.size()] = '"';
+                    pszNew[1 + wkt.size() + 1] = '\0';
+                    CPLFree(pszEscaped);
+                    pszEscaped = pszNew;
+                }
+                else
+                {
+                    CPLFree(pszEscaped);
+                    pszEscaped = CPLStrdup("");
+                }
             }
             else
             {
@@ -2319,7 +2377,8 @@ OGRErr OGRCSVLayer::ICreateFeature(OGRFeature *poNewFeature)
         {
             const OGRFieldType eType(
                 poFeatureDefn->GetFieldDefn(iField)->GetType());
-            if (eType == OFTReal)
+            if (eType == OFTReal || eType == OFTInteger ||
+                eType == OFTInteger64)
             {
                 if (poFeatureDefn->GetFieldDefn(iField)->GetSubType() ==
                         OFSTFloat32 &&
@@ -2359,7 +2418,9 @@ OGRErr OGRCSVLayer::ICreateFeature(OGRFeature *poNewFeature)
                     pszContent, -1,
                     (m_eStringQuoting == StringQuoting::ALWAYS ||
                      (m_eStringQuoting == StringQuoting::IF_AMBIGUOUS &&
-                      CPLGetValueType(pszContent) != CPL_VALUE_STRING))
+                      (CPLGetValueType(pszContent) != CPL_VALUE_STRING ||
+                       (pszContent[0] == DIGIT_ZERO && pszContent[1] != '\0' &&
+                        pszContent[1] != '.'))))
                         ? CPLES_CSV_FORCE_QUOTING
                         : CPLES_CSV);
             }
@@ -2369,7 +2430,6 @@ OGRErr OGRCSVLayer::ICreateFeature(OGRFeature *poNewFeature)
             return OGRERR_FAILURE;
         }
         const size_t nLen = strlen(pszEscaped);
-        bNonEmptyLine |= nLen != 0;
         bool bAddDoubleQuote = false;
         if (szDelimiter[0] == ' ' && pszEscaped[0] != '"' &&
             strchr(pszEscaped, ' ') != nullptr)
@@ -2377,16 +2437,17 @@ OGRErr OGRCSVLayer::ICreateFeature(OGRFeature *poNewFeature)
         if (bAddDoubleQuote)
             bRet &= VSIFWriteL("\"", 1, 1, fpCSV) > 0;
         if (nLen)
+        {
             bRet &= VSIFWriteL(pszEscaped, nLen, 1, fpCSV) > 0;
+            bEmptyLine = false;
+        }
         if (bAddDoubleQuote)
             bRet &= VSIFWriteL("\"", 1, 1, fpCSV) > 0;
         CPLFree(pszEscaped);
     }
 
-    if ((poFeatureDefn->GetFieldCount() == 1 ||
-         (poFeatureDefn->GetFieldCount() == 0 && bHiddenWKTColumn)) &&
-        !bNonEmptyLine)
-        bRet &= VSIFPrintfL(fpCSV, "%s", szDelimiter) > 0;
+    if (bEmptyLine)
+        bRet &= VSIFPrintfL(fpCSV, "\"\"") > 0;
 
     if (bUseCRLF)
         bRet &= VSIFPutcL(13, fpCSV) != EOF;

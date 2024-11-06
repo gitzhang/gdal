@@ -7,8 +7,15 @@ add_gdal_driver(
           pcrastermisc.cpp
           pcrasterrasterband.cpp
           pcrasterutil.cpp
-          PLUGIN_CAPABLE)
+  CORE_SOURCES
+          pcrasterdrivercore.cpp
+  PLUGIN_CAPABLE
+  NO_SHARED_SYMBOL_WITH_CORE)
 gdal_standard_includes(gdal_PCRaster)
+
+if(NOT TARGET gdal_PCRaster)
+    return()
+endif()
 
 if (GDAL_USE_LIBCSF_INTERNAL)
   add_subdirectory(libcsf)

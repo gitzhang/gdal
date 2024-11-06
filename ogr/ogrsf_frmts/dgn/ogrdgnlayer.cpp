@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2000, Frank Warmerdam (warmerdam@pobox.com)
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "ogr_dgn.h"
@@ -39,9 +23,10 @@
 /*                           OGRDGNLayer()                              */
 /************************************************************************/
 
-OGRDGNLayer::OGRDGNLayer(const char *pszName, DGNHandle hDGNIn, int bUpdateIn)
-    : poFeatureDefn(new OGRFeatureDefn(pszName)), iNextShapeId(0), hDGN(hDGNIn),
-      bUpdate(bUpdateIn)
+OGRDGNLayer::OGRDGNLayer(OGRDGNDataSource *poDS, const char *pszName,
+                         DGNHandle hDGNIn, int bUpdateIn)
+    : m_poDS(poDS), poFeatureDefn(new OGRFeatureDefn(pszName)), iNextShapeId(0),
+      hDGN(hDGNIn), bUpdate(bUpdateIn)
 {
 
     /* -------------------------------------------------------------------- */
@@ -627,11 +612,23 @@ OGRFeature *OGRDGNLayer::ElementToFeature(DGNElemCore *psElement, int nRecLevel)
 
             poFeature->SetGeometryDirectly(poPoint);
 
-            const size_t nOgrFSLen = strlen(psText->string) + 150;
+            const auto &osEncoding = m_poDS->GetEncoding();
+            std::string osText;
+            if (!osEncoding.empty() && osEncoding != CPL_ENC_UTF8)
+            {
+                osText = CPLString(psText->string)
+                             .Recode(osEncoding.c_str(), CPL_ENC_UTF8);
+            }
+            else
+            {
+                osText = psText->string;
+            }
+
+            const size_t nOgrFSLen = osText.size() + 150;
             char *pszOgrFS = static_cast<char *>(CPLMalloc(nOgrFSLen));
 
             // setup the basic label.
-            snprintf(pszOgrFS, nOgrFSLen, "LABEL(t:\"%s\"", psText->string);
+            snprintf(pszOgrFS, nOgrFSLen, "LABEL(t:\"%s\"", osText.c_str());
 
             // set the color if we have it.
             if (strlen(szFSColor) > 0)
@@ -792,7 +789,7 @@ OGRFeature *OGRDGNLayer::ElementToFeature(DGNElemCore *psElement, int nRecLevel)
             poFeature->SetStyleString(pszOgrFS);
             CPLFree(pszOgrFS);
 
-            poFeature->SetField("Text", psText->string);
+            poFeature->SetField("Text", osText.c_str());
         }
         break;
 
@@ -833,10 +830,9 @@ OGRFeature *OGRDGNLayer::ElementToFeature(DGNElemCore *psElement, int nRecLevel)
             OGRGeometry *poGeom = nullptr;
 
             if (psElement->type == DGNT_COMPLEX_SHAPE_HEADER)
-                poGeom =
-                    reinterpret_cast<OGRGeometry *>(OGRBuildPolygonFromEdges(
-                        reinterpret_cast<OGRGeometryH>(&oChildren), TRUE, TRUE,
-                        100000, nullptr));
+                poGeom = OGRGeometry::FromHandle(
+                    OGRBuildPolygonFromEdges(OGRGeometry::ToHandle(&oChildren),
+                                             TRUE, TRUE, 100000, nullptr));
             else
                 poGeom = oChildren.clone();
 
@@ -928,6 +924,9 @@ int OGRDGNLayer::TestCapability(const char *pszCap)
     else if (EQUAL(pszCap, OLCZGeometries))
         return TRUE;
 
+    else if (EQUAL(pszCap, OLCStringsAsUTF8))
+        return !m_poDS->GetEncoding().empty();
+
     return FALSE;
 }
 
@@ -1018,7 +1017,7 @@ OGRErr OGRDGNLayer::GetExtent(OGREnvelope *psExtent, int /* bForce */)
 
 constexpr int MAX_ELEM_POINTS = 38;
 
-DGNElemCore **OGRDGNLayer::LineStringToElementGroup(OGRLineString *poLS,
+DGNElemCore **OGRDGNLayer::LineStringToElementGroup(const OGRLineString *poLS,
                                                     int nGroupType)
 
 {
@@ -1183,11 +1182,23 @@ DGNElemCore **OGRDGNLayer::TranslateLabel(OGRFeature *poFeature)
         }
     }
 
+    std::string osText;
+    const auto &osEncoding = m_poDS->GetEncoding();
+    if (!osEncoding.empty() && osEncoding != CPL_ENC_UTF8)
+    {
+        osText = CPLString(pszText).Recode(CPL_ENC_UTF8, osEncoding.c_str());
+    }
+    else
+    {
+        osText = pszText;
+    }
+
     DGNElemCore **papsGroup =
         static_cast<DGNElemCore **>(CPLCalloc(sizeof(void *), 2));
-    papsGroup[0] = DGNCreateTextElem(
-        hDGN, pszText, nFontID, DGNJ_LEFT_BOTTOM, dfCharHeight, dfCharHeight,
-        dfRotation, nullptr, poPoint->getX(), poPoint->getY(), poPoint->getZ());
+    papsGroup[0] =
+        DGNCreateTextElem(hDGN, osText.c_str(), nFontID, DGNJ_LEFT_BOTTOM,
+                          dfCharHeight, dfCharHeight, dfRotation, nullptr,
+                          poPoint->getX(), poPoint->getY(), poPoint->getZ());
 
     if (poLabel)
         delete poLabel;
@@ -1211,14 +1222,6 @@ OGRErr OGRDGNLayer::ICreateFeature(OGRFeature *poFeature)
         return OGRERR_FAILURE;
     }
 
-    if (poFeature->GetGeometryRef() == nullptr)
-    {
-        CPLError(CE_Failure, CPLE_AppDefined,
-                 "Features with empty, geometry collection geometries not\n"
-                 "supported in DGN format.");
-        return OGRERR_FAILURE;
-    }
-
     return CreateFeatureWithGeom(poFeature, poFeature->GetGeometryRef());
 }
 
@@ -1231,9 +1234,18 @@ OGRErr OGRDGNLayer::ICreateFeature(OGRFeature *poFeature)
 /************************************************************************/
 
 OGRErr OGRDGNLayer::CreateFeatureWithGeom(OGRFeature *poFeature,
-                                          OGRGeometry *poGeom)
+                                          const OGRGeometry *poGeom)
 
 {
+
+    if (poGeom == nullptr || poGeom->IsEmpty())
+    {
+        CPLError(CE_Failure, CPLE_AppDefined,
+                 "Features with empty, geometry collection geometries not\n"
+                 "supported in DGN format.");
+        return OGRERR_FAILURE;
+    }
+
     /* -------------------------------------------------------------------- */
     /*      Translate the geometry.                                         */
     /* -------------------------------------------------------------------- */
@@ -1242,7 +1254,7 @@ OGRErr OGRDGNLayer::CreateFeatureWithGeom(OGRFeature *poFeature,
 
     if (wkbFlatten(poGeom->getGeometryType()) == wkbPoint)
     {
-        OGRPoint *poPoint = poGeom->toPoint();
+        const OGRPoint *poPoint = poGeom->toPoint();
         const char *pszText = poFeature->GetFieldAsString("Text");
 
         if ((pszText == nullptr || strlen(pszText) == 0) &&
@@ -1272,7 +1284,7 @@ OGRErr OGRDGNLayer::CreateFeatureWithGeom(OGRFeature *poFeature,
     }
     else if (wkbFlatten(poGeom->getGeometryType()) == wkbPolygon)
     {
-        OGRPolygon *poPoly = poGeom->toPolygon();
+        const OGRPolygon *poPoly = poGeom->toPolygon();
 
         DGNElemCore **papsGroupExt =
             LineStringToElementGroup(poPoly->getExteriorRing(), DGNT_SHAPE);
@@ -1385,4 +1397,13 @@ OGRErr OGRDGNLayer::CreateFeatureWithGeom(OGRFeature *poFeature,
     CPLFree(papsGroup);
 
     return OGRERR_NONE;
+}
+
+/************************************************************************/
+/*                             GetDataset()                             */
+/************************************************************************/
+
+GDALDataset *OGRDGNLayer::GetDataset()
+{
+    return m_poDS;
 }

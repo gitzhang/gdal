@@ -8,23 +8,7 @@
  ******************************************************************************
  * Copyright (c) 1999, Frank Warmerdam
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #ifndef NTF_H_INCLUDED
@@ -109,6 +93,8 @@
 #define NPC_MERIDIAN2 19
 #define NTF_MERIDIAN2 "Meridian_02.01"
 
+constexpr int MAX_LINK = 5000;
+
 /************************************************************************/
 /*                              NTFRecord                               */
 /************************************************************************/
@@ -129,10 +115,12 @@ class NTFRecord
     {
         return nType;
     }
+
     int GetLength()
     {
         return nLength;
     }
+
     const char *GetData()
     {
         return pszData;
@@ -296,10 +284,12 @@ class NTFFileReader
 
     int Open(const char *pszFilename = nullptr);
     void Close();
+
     VSILFILE *GetFP()
     {
         return fp;
     }
+
     void GetFPPos(vsi_l_offset *pnPos, long *pnFeatureId);
     int SetFPPos(vsi_l_offset nPos, long nFeatureId);
     void Reset();
@@ -333,50 +323,62 @@ class NTFFileReader
     {
         return nCoordWidth;
     }
+
     double GetXYMult()
     {
         return dfXYMult;
     }
+
     double GetXOrigin()
     {
         return dfXOrigin;
     }
+
     double GetYOrigin()
     {
         return dfYOrigin;
     }
+
     double GetZMult()
     {
         return dfZMult;
     }
+
     const char *GetTileName()
     {
         return pszTileName;
     }
+
     const char *GetFilename()
     {
         return pszFilename;
     }
+
     int GetNTFLevel()
     {
         return nNTFLevel;
     }
+
     const char *GetProduct()
     {
         return pszProduct;
     }
+
     const char *GetPVName()
     {
         return pszPVName;
     }
+
     int GetProductId()
     {
         return nProduct;
     }
+
     double GetScale()
     {
         return dfScale;
     }
+
     double GetPaperToGround()
     {
         return dfPaperToGround;
@@ -386,6 +388,7 @@ class NTFFileReader
     {
         return nFCCount;
     }
+
     int GetFeatureClass(int, char **, char **);
 
     void OverrideTileName(const char *);
@@ -411,22 +414,27 @@ class NTFFileReader
 
     // Raster related
     int IsRasterProduct();
+
     int GetRasterXSize()
     {
         return nRasterXSize;
     }
+
     int GetRasterYSize()
     {
         return nRasterYSize;
     }
+
     int GetRasterDataType()
     {
         return nRasterDataType;
     }
+
     double *GetGeoTransform()
     {
         return adfGeoTransform;
     }
+
     CPLErr ReadRasterColumn(int, float *);
 };
 
@@ -496,7 +504,9 @@ class OGRNTFFeatureClassLayer final : public OGRLayer
     {
         return poFilterGeom;
     }
+
     void SetSpatialFilter(OGRGeometry *) override;
+
     virtual void SetSpatialFilter(int iGeomField, OGRGeometry *poGeom) override
     {
         OGRLayer::SetSpatialFilter(iGeomField, poGeom);
@@ -544,7 +554,9 @@ class OGRNTFRasterLayer final : public OGRLayer
     {
         return poFilterGeom;
     }
+
     void SetSpatialFilter(OGRGeometry *) override;
+
     virtual void SetSpatialFilter(int iGeomField, OGRGeometry *poGeom) override
     {
         OGRLayer::SetSpatialFilter(iGeomField, poGeom);
@@ -569,10 +581,8 @@ class OGRNTFRasterLayer final : public OGRLayer
 /*                           OGRNTFDataSource                           */
 /************************************************************************/
 
-class OGRNTFDataSource final : public OGRDataSource
+class OGRNTFDataSource final : public GDALDataset
 {
-    char *pszName;
-
     int nLayers;
     OGRLayer **papoLayers;
 
@@ -610,10 +620,6 @@ class OGRNTFDataSource final : public OGRDataSource
     int Open(const char *pszName, int bTestOpen = FALSE,
              char **papszFileList = nullptr);
 
-    const char *GetName() override
-    {
-        return pszName;
-    }
     int GetLayerCount() override;
     OGRLayer *GetLayer(int) override;
     int TestCapability(const char *) override;
@@ -636,6 +642,7 @@ class OGRNTFDataSource final : public OGRDataSource
     {
         return nNTFFileCount;
     }
+
     NTFFileReader *GetFileReader(int i)
     {
         return papoNTFFileReader[i];
@@ -645,6 +652,7 @@ class OGRNTFDataSource final : public OGRDataSource
     {
         return nFCCount;
     }
+
     int GetFeatureClass(int, char **, char **);
 
     OGRSpatialReference *DSGetSpatialRef()
@@ -656,6 +664,7 @@ class OGRNTFDataSource final : public OGRDataSource
     {
         return aoGenericClass + i;
     }
+
     void WorkupGeneric(NTFFileReader *);
     void EstablishGenericLayers();
 };

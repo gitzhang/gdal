@@ -9,23 +9,7 @@
 ###############################################################################
 # Copyright (c) 2020, Even Rouault <even.rouault@spatialys.com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 import gdaltest
@@ -38,67 +22,67 @@ pytestmark = pytest.mark.require_driver("EXR")
 
 def test_exr_byte_createcopy():
     tst = gdaltest.GDALTest("EXR", "byte.tif", 1, 4672)
-    return tst.testCreateCopy(vsimem=1)
+    tst.testCreateCopy(vsimem=1)
 
 
 def test_exr_byte_createcopy_pixel_type_half():
     tst = gdaltest.GDALTest("EXR", "byte.tif", 1, 4672, options=["PIXEL_TYPE=HALF"])
-    return tst.testCreateCopy(vsimem=1)
+    tst.testCreateCopy(vsimem=1)
 
 
 def test_exr_byte_createcopy_pixel_type_float():
     tst = gdaltest.GDALTest("EXR", "byte.tif", 1, 4672, options=["PIXEL_TYPE=FLOAT"])
-    return tst.testCreateCopy(vsimem=1)
+    tst.testCreateCopy(vsimem=1)
 
 
 def test_exr_byte_createcopy_pixel_type_uint():
     tst = gdaltest.GDALTest("EXR", "byte.tif", 1, 4672, options=["PIXEL_TYPE=UINT"])
-    return tst.testCreateCopy(vsimem=1)
+    tst.testCreateCopy(vsimem=1)
 
 
 def test_exr_byte_create():
     tst = gdaltest.GDALTest("EXR", "byte.tif", 1, 4672)
-    return tst.testCreate(vsimem=1)
+    tst.testCreate(vsimem=1)
 
 
 def test_exr_uint16_createcopy():
     tst = gdaltest.GDALTest("EXR", "../../gcore/data/uint16.tif", 1, 4672)
-    return tst.testCreateCopy(vsimem=1)
+    tst.testCreateCopy(vsimem=1)
 
 
 def test_exr_uint16_create():
     tst = gdaltest.GDALTest("EXR", "../../gcore/data/uint16.tif", 1, 4672)
-    return tst.testCreate(vsimem=1)
+    tst.testCreate(vsimem=1)
 
 
 def test_exr_uint32_createcopy():
     tst = gdaltest.GDALTest("EXR", "../../gcore/data/uint32.tif", 1, 4672)
-    return tst.testCreateCopy(vsimem=1)
+    tst.testCreateCopy(vsimem=1)
 
 
 def test_exr_uint32_create():
     tst = gdaltest.GDALTest("EXR", "../../gcore/data/uint32.tif", 1, 4672)
-    return tst.testCreate(vsimem=1)
+    tst.testCreate(vsimem=1)
 
 
 def test_exr_float32_createcopy():
     tst = gdaltest.GDALTest("EXR", "../../gcore/data/float32.tif", 1, 4672)
-    return tst.testCreateCopy(vsimem=1)
+    tst.testCreateCopy(vsimem=1)
 
 
 def test_exr_float32_create():
     tst = gdaltest.GDALTest("EXR", "../../gcore/data/float32.tif", 1, 4672)
-    return tst.testCreate(vsimem=1)
+    tst.testCreate(vsimem=1)
 
 
 def test_exr_float64_createcopy():
     tst = gdaltest.GDALTest("EXR", "../../gcore/data/float64.tif", 1, 4672)
-    return tst.testCreateCopy(vsimem=1)
+    tst.testCreateCopy(vsimem=1)
 
 
 def test_exr_float64_create():
     tst = gdaltest.GDALTest("EXR", "../../gcore/data/float64.tif", 1, 4672)
-    return tst.testCreate(vsimem=1)
+    tst.testCreate(vsimem=1)
 
 
 def test_exr_compression_createcopy():
@@ -138,7 +122,11 @@ def test_exr_compression_dwa_compression_level():
     )
     assert ds.GetMetadataItem("COMPRESSION", "IMAGE_STRUCTURE") == "DWAB"
     band = ds.GetRasterBand(1)
-    assert band.Checksum() in (12863, 12864)  # 12864 on s390x
+    assert band.Checksum() in (
+        12863,
+        12864,
+        44373,
+    )  # 12864 on s390x bionic, 44373 on s390x jammy
     ds = None
     gdal.Unlink(tmpfilename)
 

@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #ifndef DOXYGEN_SKIP
@@ -137,6 +121,19 @@ OGRErr OGRMutexedLayer::IUpsertFeature(OGRFeature *poFeature)
     return OGRLayerDecorator::IUpsertFeature(poFeature);
 }
 
+OGRErr OGRMutexedLayer::IUpdateFeature(OGRFeature *poFeature,
+                                       int nUpdatedFieldsCount,
+                                       const int *panUpdatedFieldsIdx,
+                                       int nUpdatedGeomFieldsCount,
+                                       const int *panUpdatedGeomFieldsIdx,
+                                       bool bUpdateStyleString)
+{
+    CPLMutexHolderOptionalLockD(m_hMutex);
+    return OGRLayerDecorator::IUpdateFeature(
+        poFeature, nUpdatedFieldsCount, panUpdatedFieldsIdx,
+        nUpdatedGeomFieldsCount, panUpdatedGeomFieldsIdx, bUpdateStyleString);
+}
+
 OGRErr OGRMutexedLayer::DeleteFeature(GIntBig nFID)
 {
     CPLMutexHolderOptionalLockD(m_hMutex);
@@ -192,7 +189,7 @@ int OGRMutexedLayer::TestCapability(const char *pszCapability)
     return OGRLayerDecorator::TestCapability(pszCapability);
 }
 
-OGRErr OGRMutexedLayer::CreateField(OGRFieldDefn *poField, int bApproxOK)
+OGRErr OGRMutexedLayer::CreateField(const OGRFieldDefn *poField, int bApproxOK)
 {
     CPLMutexHolderOptionalLockD(m_hMutex);
     return OGRLayerDecorator::CreateField(poField, bApproxOK);
@@ -279,7 +276,7 @@ const char *OGRMutexedLayer::GetGeometryColumn()
     return OGRLayerDecorator::GetGeometryColumn();
 }
 
-OGRErr OGRMutexedLayer::SetIgnoredFields(const char **papszFields)
+OGRErr OGRMutexedLayer::SetIgnoredFields(CSLConstList papszFields)
 {
     CPLMutexHolderOptionalLockD(m_hMutex);
     return OGRLayerDecorator::SetIgnoredFields(papszFields);
@@ -317,16 +314,5 @@ OGRErr OGRMutexedLayer::Rename(const char *pszNewName)
     CPLMutexHolderOptionalLockD(m_hMutex);
     return OGRLayerDecorator::Rename(pszNewName);
 }
-
-#if defined(WIN32) && defined(_MSC_VER)
-// Horrible hack: for some reason MSVC doesn't export the class
-// if it is not referenced from the DLL itself
-void OGRRegisterMutexedLayer();
-void OGRRegisterMutexedLayer()
-{
-    CPLAssert(false);  // Never call this function: it will segfault
-    delete new OGRMutexedLayer(NULL, FALSE, NULL);
-}
-#endif
 
 #endif /* #ifndef DOXYGEN_SKIP */

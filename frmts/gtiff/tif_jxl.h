@@ -30,6 +30,10 @@
     50002 /* JPEGXL: WARNING not registered in Adobe-maintained registry */
 #endif
 
+#ifndef COMPRESSION_JXL_DNG_1_7
+#define COMPRESSION_JXL_DNG_1_7 52546 /* JPEGXL from DNG 1.7 specification */
+#endif
+
 #ifndef TIFFTAG_JXL_LOSSYNESS
 
 /* Pseudo tags */
@@ -44,6 +48,9 @@
 #define TIFFTAG_JXL_DISTANCE                                                   \
     65537 /* Sets the distance level for lossy compression: target max         \
              butteraugli distance, lower = higher quality. Range: 0 .. 15. */
+#define TIFFTAG_JXL_ALPHA_DISTANCE                                             \
+    65538 /* Sets the distance level for compression of alpha channel: target  \
+             max butteraugli distance, lower = higher quality. Range: 0 .. 15.*/
 #endif
 
 #if defined(__cplusplus)

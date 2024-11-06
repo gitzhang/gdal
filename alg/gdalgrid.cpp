@@ -8,23 +8,7 @@
  * Copyright (c) 2007, Andrey Kiselev <dron@ak4719.spb.edu>
  * Copyright (c) 2009-2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_port.h"
@@ -52,8 +36,6 @@
 #include "cpl_vsi.h"
 #include "cpl_worker_thread_pool.h"
 #include "gdal.h"
-
-CPL_CVSID("$Id$")
 
 constexpr double TO_RADIANS = M_PI / 180.0;
 
@@ -2529,6 +2511,7 @@ CPLErr GDALGridLinear(const void *poOptionsIn, GUInt32 nPoints,
         else
         {
             GDALGridNearestNeighborOptions sNeighbourOptions;
+            sNeighbourOptions.nSizeOfStructure = sizeof(sNeighbourOptions);
             sNeighbourOptions.dfRadius1 = dfRadius < 0.0 ? 0.0 : dfRadius;
             sNeighbourOptions.dfRadius2 = dfRadius < 0.0 ? 0.0 : dfRadius;
             sNeighbourOptions.dfAngle = 0.0;
@@ -2602,6 +2585,7 @@ static int GDALGridProgressMultiThread(GDALGridJob *psJob)
 // Return TRUE if the computation must be interrupted.
 static int GDALGridProgressMonoThread(GDALGridJob *psJob)
 {
+    // coverity[missing_lock]
     const int nCounter = ++(*psJob->pnCounter);
     if (!psJob->pfnRealProgress(nCounter / static_cast<double>(psJob->nYSize),
                                 "", psJob->pRealProgressArg))
@@ -3675,15 +3659,15 @@ CPLErr GDALGridCreate(GDALGridAlgorithm eAlgorithm, const void *poOptions,
 }
 
 /************************************************************************/
-/*                      ParseAlgorithmAndOptions()                      */
+/*                   GDALGridParseAlgorithmAndOptions()                 */
 /************************************************************************/
 
 /** Translates mnemonic gridding algorithm names into GDALGridAlgorithm code,
  * parse control parameters and assign defaults.
  */
-CPLErr ParseAlgorithmAndOptions(const char *pszAlgorithm,
-                                GDALGridAlgorithm *peAlgorithm,
-                                void **ppOptions)
+CPLErr GDALGridParseAlgorithmAndOptions(const char *pszAlgorithm,
+                                        GDALGridAlgorithm *peAlgorithm,
+                                        void **ppOptions)
 {
     CPLAssert(pszAlgorithm);
     CPLAssert(peAlgorithm);

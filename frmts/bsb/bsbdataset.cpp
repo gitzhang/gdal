@@ -8,23 +8,7 @@
  * Copyright (c) 2001, Frank Warmerdam <warmerdam@pobox.com>
  * Copyright (c) 2008-2012, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "bsb_read.h"
@@ -432,7 +416,7 @@ void BSBDataset::ScanForGCPs(bool isNos, const char *pszFilename)
                 "1924\",6378388,297,AUTHORITY[\"EPSG\",\"7022\"]],TOWGS84[-87,-"
                 "98,-121,0,0,0,0],AUTHORITY[\"EPSG\",\"6230\"]],PRIMEM["
                 "\"Greenwich\",0,AUTHORITY[\"EPSG\",\"8901\"]],UNIT[\"degree\","
-                "0.01745329251994328,AUTHORITY[\"EPSG\",\"9122\"]],AUTHORITY["
+                "0.0174532925199433,AUTHORITY[\"EPSG\",\"9122\"]],AUTHORITY["
                 "\"EPSG\",\"4230\"]]";
         }
 
@@ -794,11 +778,17 @@ int BSBDataset::IdentifyInternal(GDALOpenInfo *poOpenInfo, bool &isNosOut)
         return FALSE;
 
     /* Additional test to avoid false positive. See #2881 */
-    const char *pszRA = strstr((const char *)poOpenInfo->pabyHeader + i, "RA=");
+    const char *pszHeader =
+        reinterpret_cast<const char *>(poOpenInfo->pabyHeader);
+    const char *pszShiftedHeader = pszHeader + i;
+    const char *pszRA = strstr(pszShiftedHeader, "RA=");
     if (pszRA == nullptr) /* This may be a NO1 file */
-        pszRA = strstr((const char *)poOpenInfo->pabyHeader + i, "[JF");
-    if (pszRA == nullptr ||
-        pszRA - ((const char *)poOpenInfo->pabyHeader + i) > 100)
+        pszRA = strstr(pszShiftedHeader, "[JF");
+    if (pszRA == nullptr)
+        return FALSE;
+    if (pszRA - pszShiftedHeader > 100 && !strstr(pszHeader, "VER/") &&
+        !strstr(pszHeader, "KNP/") && !strstr(pszHeader, "KNQ/") &&
+        !strstr(pszHeader, "RGB/"))
         return FALSE;
 
     return TRUE;

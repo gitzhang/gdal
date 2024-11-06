@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2017, Even Rouault <even.rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #ifndef CPL_JSON_STREAMIN_PARSER_H
@@ -55,6 +39,7 @@ class CPL_DLL CPLJSonStreamingParser
 
     bool m_bExceptionOccurred = false;
     bool m_bElementFound = false;
+    bool m_bStopParsing = false;
     int m_nLastChar = 0;
     int m_nLineCounter = 1;
     int m_nCharCounter = 1;
@@ -80,12 +65,14 @@ class CPL_DLL CPLJSonStreamingParser
         KEY_FINISHED,
         IN_VALUE
     };
+
     std::vector<MemberState> m_aeObjectState{};
 
     enum State currentState()
     {
         return m_aState.back();
     }
+
     void SkipSpace(const char *&pStr, size_t &nLength);
     void AdvanceChar(const char *&pStr, size_t &nLength);
     bool EmitUnexpectedChar(char ch, const char *pszExpecting = nullptr);
@@ -96,6 +83,7 @@ class CPL_DLL CPLJSonStreamingParser
 
   protected:
     bool EmitException(const char *pszMessage);
+    void StopParsing();
 
   public:
     CPLJSonStreamingParser();
@@ -103,6 +91,7 @@ class CPL_DLL CPLJSonStreamingParser
 
     void SetMaxDepth(size_t nVal);
     void SetMaxStringSize(size_t nVal);
+
     bool ExceptionOccurred() const
     {
         return m_bExceptionOccurred;
@@ -116,12 +105,15 @@ class CPL_DLL CPLJSonStreamingParser
     virtual void String(const char * /*pszValue*/, size_t /*nLength*/)
     {
     }
+
     virtual void Number(const char * /*pszValue*/, size_t /*nLength*/)
     {
     }
+
     virtual void Boolean(bool /*b*/)
     {
     }
+
     virtual void Null()
     {
     }
@@ -129,9 +121,11 @@ class CPL_DLL CPLJSonStreamingParser
     virtual void StartObject()
     {
     }
+
     virtual void EndObject()
     {
     }
+
     virtual void StartObjectMember(const char * /*pszKey*/, size_t /*nLength*/)
     {
     }
@@ -139,9 +133,11 @@ class CPL_DLL CPLJSonStreamingParser
     virtual void StartArray()
     {
     }
+
     virtual void EndArray()
     {
     }
+
     virtual void StartArrayMember()
     {
     }

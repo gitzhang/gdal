@@ -12,23 +12,7 @@
  * Copyright (c) 2017, Dmitry Baryshnikov, <polimax@mail.ru>
  * Copyright (c) 2017, NextGIS, <info@nextgis.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #ifndef WMSDRIVER_H_INCLUDED
@@ -92,6 +76,7 @@ class GDALWMSDataWindow
     double m_x1, m_y1;
     int m_sx, m_sy;
     int m_tx, m_ty, m_tlevel;
+
     enum
     {
         BOTTOM = -1,
@@ -124,6 +109,7 @@ class GDALWMSRasterIOHint
         : m_x0(0), m_y0(0), m_sx(0), m_sy(0), m_overview(0), m_valid(false)
     {
     }
+
     int m_x0;
     int m_y0;
     int m_sx;
@@ -171,6 +157,7 @@ class WMSMiniDriver
     {
         m_oSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
     }
+
     virtual ~WMSMiniDriver()
     {
     }
@@ -230,6 +217,7 @@ class WMSMiniDriverFactory
     WMSMiniDriverFactory()
     {
     }
+
     virtual ~WMSMiniDriverFactory()
     {
     }
@@ -264,9 +252,11 @@ class GDALWMSCacheImpl
         : m_soPath(soPath)
     {
     }
+
     virtual ~GDALWMSCacheImpl()
     {
     }
+
     virtual CPLErr Insert(const char *pszKey, const CPLString &osFileName) = 0;
     virtual enum GDALWMSCacheItemStatus
     GetItemStatus(const char *pszKey) const = 0;
@@ -301,13 +291,13 @@ class GDALWMSCache
     }
 
   protected:
-    CPLString m_osCachePath;
-    bool m_bIsCleanThreadRunning;
-    time_t m_nCleanThreadLastRunTime;
+    CPLString m_osCachePath{};
+    bool m_bIsCleanThreadRunning = false;
+    time_t m_nCleanThreadLastRunTime = 0;
 
   private:
-    GDALWMSCacheImpl *m_poCache;
-    CPLJoinableThread *m_hThread;
+    GDALWMSCacheImpl *m_poCache = nullptr;
+    CPLJoinableThread *m_hThread = nullptr;
 };
 
 /************************************************************************/
@@ -344,6 +334,7 @@ class GDALWMSDataset final : public GDALPamDataset
     {
         SetBand(i, band);
     }
+
     GDALWMSRasterBand *mGetBand(int i)
     {
         return reinterpret_cast<GDALWMSRasterBand *>(GetRasterBand(i));
@@ -381,7 +372,7 @@ class GDALWMSDataset final : public GDALPamDataset
         m_data_type = type;
     }
 
-    void WMSSetDataWindow(GDALWMSDataWindow &window)
+    void WMSSetDataWindow(const GDALWMSDataWindow &window)
     {
         m_data_window = window;
     }
@@ -462,7 +453,6 @@ class GDALWMSDataset final : public GDALPamDataset
     }
 
     static GDALDataset *Open(GDALOpenInfo *poOpenInfo);
-    static int Identify(GDALOpenInfo *poOpenInfo);
     static GDALDataset *CreateCopy(const char *pszFilename,
                                    GDALDataset *poSrcDS, int bStrict,
                                    char **papszOptions,
@@ -479,7 +469,7 @@ class GDALWMSDataset final : public GDALPamDataset
   protected:
     virtual CPLErr IRasterIO(GDALRWFlag rw, int x0, int y0, int sx, int sy,
                              void *buffer, int bsx, int bsy, GDALDataType bdt,
-                             int band_count, int *band_map,
+                             int band_count, BANDMAP_TYPE band_map,
                              GSpacing nPixelSpace, GSpacing nLineSpace,
                              GSpacing nBandSpace,
                              GDALRasterIOExtraArg *psExtraArg) override;

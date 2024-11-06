@@ -8,23 +8,7 @@
  ******************************************************************************
  * Copyright (c) 2015, Even Rouault <even.rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #ifndef GDALPANSHARPEN_H_INCLUDED
@@ -104,15 +88,6 @@ typedef struct
      * threaded mode is enabled unless the GDAL_NUM_THREADS configuration option
      * is set to an integer or ALL_CPUS. */
     int nThreads;
-
-    /** Shift in pixels of multispectral bands w.r.t panchromatic band, in X
-     * direction */
-    double dfMSShiftX;
-
-    /** Shift in pixels of multispectral bands w.r.t panchromatic band, in Y
-     * direction */
-    double dfMSShiftY;
-
 } GDALPansharpenOptions;
 
 GDALPansharpenOptions CPL_DLL *GDALCreatePansharpenOptions(void);
@@ -135,9 +110,9 @@ CPL_C_END
 
 #ifdef __cplusplus
 
+#include <array>
 #include <vector>
 #include "gdal_priv.h"
-#include "cpl_worker_thread_pool.h"
 
 #ifdef DEBUG_TIMING
 #include <sys/time.h>
@@ -188,6 +163,9 @@ typedef struct
     struct timeval *ptv;
 #endif
 } GDALPansharpenResampleJob;
+
+class CPLWorkerThreadPool;
+
 //! @endcond
 
 /** Pansharpening operation class.
@@ -204,6 +182,7 @@ class GDALPansharpenOperation
     int bPositiveWeights = TRUE;
     CPLWorkerThreadPool *poThreadPool = nullptr;
     int nKernelRadius = 0;
+    std::array<double, 6> m_adfPanToMSGT = {{0.0, 1.0, 0, 0.0, 0.0, 1.0}};
 
     static void PansharpenJobThreadFunc(void *pUserData);
     static void PansharpenResampleJobThreadFunc(void *pUserData);

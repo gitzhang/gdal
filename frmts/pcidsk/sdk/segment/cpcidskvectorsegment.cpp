@@ -6,23 +6,7 @@
  * Copyright (c) 2009
  * PCI Geomatics, 90 Allstate Parkway, Markham, Ontario, Canada.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "pcidsk_file.h"
@@ -36,13 +20,6 @@
 #include <limits>
 
 using namespace PCIDSK;
-
-/* -------------------------------------------------------------------- */
-/*      Size of a block in the record/vertex block tables.  This is    */
-/*      determined by the PCIDSK format and may not be changed.         */
-/* -------------------------------------------------------------------- */
-static const int block_page_size = 8192;
-
 
 /* -------------------------------------------------------------------- */
 /*      Size of one page of loaded shapeids.  This is not related to    */
@@ -713,8 +690,8 @@ std::vector<double> CPCIDSKVectorSegment::GetProjection( std::string &geosys )
 /*                           SetProjection()                            */
 /************************************************************************/
 
-void CPCIDSKVectorSegment::SetProjection( std::string geosys,
-                                          std::vector<double> params )
+void CPCIDSKVectorSegment::SetProjection( const std::string& geosys,
+                                          const std::vector<double>& params )
 
 {
     LoadHeader();
@@ -1182,9 +1159,9 @@ void CPCIDSKVectorSegment::GetFields( ShapeId id,
 /*                              AddField()                              */
 /************************************************************************/
 
-void CPCIDSKVectorSegment::AddField( std::string name, ShapeFieldType type,
-                                     std::string description,
-                                     std::string format,
+void CPCIDSKVectorSegment::AddField( const std::string& name, ShapeFieldType type,
+                                     const std::string& description,
+                                     const std::string& format,
                                      ShapeField *default_value )
 
 {

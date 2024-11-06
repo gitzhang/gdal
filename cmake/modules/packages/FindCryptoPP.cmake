@@ -22,12 +22,6 @@
 #     target_link_libararies.
 #
 
-if(CMAKE_VERSION VERSION_LESS 3.12)
-    if(CRYPTOPP_ROOT)
-        set(CRYPTOPP_HINTPATH ${CRYPTOPP_ROOT})
-    endif()
-endif()
-
 find_path(CRYPTOPP_INCLUDE_DIR NAMES cryptopp/aes.h HINTS ${CRYPTOPP_HINTPATH}/include)
 
 if(CRYPTOPP_INCLUDE_DIR)
@@ -78,7 +72,20 @@ if(CRYPTOPP_FOUND)
         add_library(CRYPTOPP::CRYPTOPP UNKNOWN IMPORTED)
         set_target_properties(CRYPTOPP::CRYPTOPP PROPERTIES
                               INTERFACE_INCLUDE_DIRECTORIES "${CRYPTOPP_INCLUDE_DIR}"
-                              IMPORTED_LINK_INTERFACE_LANGUAGES "CXX"
-                              IMPORTED_LOCATION "${CRYPTOPP_LIBRARY}")
+                              IMPORTED_LINK_INTERFACE_LANGUAGES "CXX")
+
+        if(CRYPTOPP_LIBRARY_RELEASE)
+            set_property(TARGET CRYPTOPP::CRYPTOPP APPEND PROPERTY
+                    IMPORTED_CONFIGURATIONS RELEASE)
+            set_target_properties(CRYPTOPP::CRYPTOPP PROPERTIES
+                    IMPORTED_LOCATION_RELEASE "${CRYPTOPP_LIBRARY_RELEASE}")
+        endif()
+
+        if(CRYPTOPP_LIBRARY_DEBUG)
+            set_property(TARGET CRYPTOPP::CRYPTOPP APPEND PROPERTY
+                    IMPORTED_CONFIGURATIONS DEBUG)
+            set_target_properties(CRYPTOPP::CRYPTOPP PROPERTIES
+                    IMPORTED_LOCATION_DEBUG "${CRYPTOPP_LIBRARY_DEBUG}")
+        endif()
    endif()
 endif()

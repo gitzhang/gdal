@@ -8,23 +8,7 @@
  * Copyright (c) 2007, Frank Warmerdam <warmerdam@pobox.com>
  * Copyright (c) 2008-2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_string.h"
@@ -881,15 +865,17 @@ int ERSProxyRasterBand::GetOverviewCount()
 GDALDataset *ERSDataset::Open(GDALOpenInfo *poOpenInfo)
 
 {
-    if (GetRecLevel())
+    if (!Identify(poOpenInfo) || poOpenInfo->fpL == nullptr)
+        return nullptr;
+
+    int &nRecLevel = GetRecLevel();
+    // cppcheck-suppress knownConditionTrueFalse
+    if (nRecLevel)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "Attempt at recursively opening ERS dataset");
         return nullptr;
     }
-
-    if (!Identify(poOpenInfo) || poOpenInfo->fpL == nullptr)
-        return nullptr;
 
     /* -------------------------------------------------------------------- */
     /*      Ingest the file as a tree of header nodes.                      */
@@ -928,7 +914,7 @@ GDALDataset *ERSDataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     /*      Create a corresponding GDALDataset.                             */
     /* -------------------------------------------------------------------- */
-    ERSDataset *poDS = new ERSDataset();
+    auto poDS = std::make_unique<ERSDataset>();
     poDS->poHeader = poHeader;
     poDS->eAccess = poOpenInfo->eAccess;
 
@@ -942,7 +928,6 @@ GDALDataset *ERSDataset::Open(GDALOpenInfo *poOpenInfo)
     if (!GDALCheckDatasetDimensions(poDS->nRasterXSize, poDS->nRasterYSize) ||
         !GDALCheckBandCount(nBands, FALSE))
     {
-        delete poDS;
         return nullptr;
     }
 
@@ -950,9 +935,16 @@ GDALDataset *ERSDataset::Open(GDALOpenInfo *poOpenInfo)
     /*     Get the HeaderOffset if it exists in the header                  */
     /* -------------------------------------------------------------------- */
     GIntBig nHeaderOffset = 0;
-    if (poHeader->Find("HeaderOffset") != nullptr)
+    const char *pszHeaderOffset = poHeader->Find("HeaderOffset");
+    if (pszHeaderOffset != nullptr)
     {
-        nHeaderOffset = atoi(poHeader->Find("HeaderOffset"));
+        nHeaderOffset = CPLAtoGIntBig(pszHeaderOffset);
+        if (nHeaderOffset < 0)
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "Illegal value for HeaderOffset: %s", pszHeaderOffset);
+            return nullptr;
+        }
     }
 
     /* -------------------------------------------------------------------- */
@@ -1013,7 +1005,6 @@ GDALDataset *ERSDataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     if (EQUAL(poHeader->Find("DataSetType", ""), "Translated"))
     {
-        int &nRecLevel = GetRecLevel();
         nRecLevel++;
         poDS->poDepFile = GDALDataset::FromHandle(
             GDALOpen(osDataFilePath, poOpenInfo->eAccess));
@@ -1050,7 +1041,7 @@ GDALDataset *ERSDataset::Open(GDALOpenInfo *poOpenInfo)
         else
             poDS->fpImage = VSIFOpenL(osDataFilePath, "r");
 
-        poDS->osRawFilename = osDataFilePath;
+        poDS->osRawFilename = std::move(osDataFilePath);
 
         if (poDS->fpImage != nullptr && nBands > 0)
         {
@@ -1060,31 +1051,41 @@ GDALDataset *ERSDataset::Open(GDALOpenInfo *poOpenInfo)
             if (nBands > knIntMax / iWordSize ||
                 poDS->nRasterXSize > knIntMax / (nBands * iWordSize))
             {
-                CPLError(CE_Failure, CPLE_AppDefined, "int overflow");
-                delete poDS;
+                CPLError(CE_Failure, CPLE_AppDefined,
+                         "int overflow: too large nBands and/or nRasterXSize");
                 return nullptr;
             }
 
             if (!RAWDatasetCheckMemoryUsage(
                     poDS->nRasterXSize, poDS->nRasterYSize, nBands, iWordSize,
                     iWordSize, iWordSize * nBands * poDS->nRasterXSize,
-                    nHeaderOffset, iWordSize * poDS->nRasterXSize,
+                    nHeaderOffset,
+                    static_cast<vsi_l_offset>(iWordSize) * poDS->nRasterXSize,
                     poDS->fpImage))
             {
-                delete poDS;
+                return nullptr;
+            }
+            if (nHeaderOffset > std::numeric_limits<GIntBig>::max() -
+                                    static_cast<GIntBig>(nBands - 1) *
+                                        iWordSize * poDS->nRasterXSize)
+            {
+                CPLError(CE_Failure, CPLE_AppDefined,
+                         "int overflow: too large nHeaderOffset");
                 return nullptr;
             }
 
             for (int iBand = 0; iBand < nBands; iBand++)
             {
                 // Assume pixel interleaved.
-                poDS->SetBand(
-                    iBand + 1,
-                    new ERSRasterBand(
-                        poDS, iBand + 1, poDS->fpImage,
-                        nHeaderOffset + iWordSize * iBand * poDS->nRasterXSize,
-                        iWordSize, iWordSize * nBands * poDS->nRasterXSize,
-                        eType, bNative));
+                auto poBand = std::make_unique<ERSRasterBand>(
+                    poDS.get(), iBand + 1, poDS->fpImage,
+                    nHeaderOffset + static_cast<vsi_l_offset>(iWordSize) *
+                                        iBand * poDS->nRasterXSize,
+                    iWordSize, iWordSize * nBands * poDS->nRasterXSize, eType,
+                    bNative);
+                if (!poBand->IsValid())
+                    return nullptr;
+                poDS->SetBand(iBand + 1, std::move(poBand));
             }
         }
     }
@@ -1094,7 +1095,6 @@ GDALDataset *ERSDataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     if (poDS->nBands == 0)
     {
-        delete poDS;
         return nullptr;
     }
 
@@ -1295,8 +1295,8 @@ GDALDataset *ERSDataset::Open(GDALOpenInfo *poOpenInfo)
     if (poSRS == nullptr)
     {
         // try aux
-        GDALDataset *poAuxDS = GDALFindAssociatedAuxFile(
-            poOpenInfo->pszFilename, GA_ReadOnly, poDS);
+        auto poAuxDS = std::unique_ptr<GDALDataset>(GDALFindAssociatedAuxFile(
+            poOpenInfo->pszFilename, GA_ReadOnly, poDS.get()));
         if (poAuxDS)
         {
             poSRS = poAuxDS->GetSpatialRef();
@@ -1304,16 +1304,14 @@ GDALDataset *ERSDataset::Open(GDALOpenInfo *poOpenInfo)
             {
                 poDS->m_oSRS = *poSRS;
             }
-
-            GDALClose(poAuxDS);
         }
     }
     /* -------------------------------------------------------------------- */
     /*      Check for overviews.                                            */
     /* -------------------------------------------------------------------- */
-    poDS->oOvManager.Initialize(poDS, poOpenInfo->pszFilename);
+    poDS->oOvManager.Initialize(poDS.get(), poOpenInfo->pszFilename);
 
-    return poDS;
+    return poDS.release();
 }
 
 /************************************************************************/

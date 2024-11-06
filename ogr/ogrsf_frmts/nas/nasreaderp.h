@@ -9,23 +9,7 @@
  * Copyright (c) 2008, Frank Warmerdam
  * Copyright (c) 2010-2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #ifndef CPL_NASREADERP_H_INCLUDED
@@ -44,7 +28,6 @@
 IGMLReader *CreateNASReader();
 
 class NASReader;
-class OGRNASRelationLayer;
 
 CPL_C_START
 OGRGeometryH OGR_G_CreateFromGML3(const char *pszGML);
@@ -70,25 +53,22 @@ class NASHandler final : public DefaultHandler
     int m_nDepth;
     int m_nDepthFeature;
     bool m_bIgnoreFeature;
-    bool m_bInUpdate;
-    bool m_bInUpdateProperty;
-    int m_nUpdateOrDeleteDepth;
-    int m_nUpdatePropertyDepth;
-    int m_nNameOrValueDepth;
 
-    CPLString m_osLastTypeName;
-    CPLString m_osLastReplacingFID;
-    CPLString m_osLastSafeToIgnore;
-    CPLString m_osLastPropertyName;
-    CPLString m_osLastPropertyValue;
-    CPLString m_osLastEnded;
-
-    std::list<CPLString> m_LastOccasions;
+    CPLString m_osDeleteContext;
+    CPLString m_osTypeName;
+    CPLString m_osReplacingFID;
+    CPLString m_osSafeToIgnore;
+    CPLString m_osUpdatePropertyName;
+    CPLString m_osUpdateEnds;
+    CPLString m_osFeatureId;
+    std::list<CPLString> m_UpdateOccasions;
 
     CPLString m_osElementName;
-    CPLString m_osAttrName;
-    CPLString m_osAttrValue;
     CPLString m_osCharacters;
+
+    const Locator *m_Locator;
+
+    int m_nEntityCounter = 0;
 
   public:
     explicit NASHandler(NASReader *poReader);
@@ -106,6 +86,10 @@ class NASHandler final : public DefaultHandler
 #endif
 
     void fatalError(const SAXParseException &) override;
+
+    void startEntity(const XMLCh *const name) override;
+
+    void setDocumentLocator(const Locator *locator) override;
 
     CPLString GetAttributes(const Attributes *attr);
 };
@@ -128,10 +112,12 @@ class GMLReadState
     void PopPath();
 
     int MatchPath(const char *pszPathInput);
+
     const char *GetPath() const
     {
         return m_pszPath;
     }
+
     const char *GetLastComponent() const;
 
     GMLFeature *m_poFeature;
@@ -184,6 +170,7 @@ class NASReader final : public IGMLReader
     {
         return m_bClassListLocked;
     }
+
     void SetClassListLocked(bool bFlag) override
     {
         m_bClassListLocked = bFlag;
@@ -196,6 +183,7 @@ class NASReader final : public IGMLReader
     {
         return m_nClassCount;
     }
+
     GMLFeatureClass *GetClass(int i) const override;
     GMLFeatureClass *GetClass(const char *pszName) const override;
 
@@ -230,11 +218,12 @@ class NASReader final : public IGMLReader
     {
         return m_poState;
     }
+
     void PopState();
     void PushState(GMLReadState *);
 
     bool IsFeatureElement(const char *pszElement);
-    bool IsAttributeElement(const char *pszElement);
+    bool IsAttributeElement(const char *pszElement, const Attributes &attrs);
 
     void PushFeature(const char *pszElement, const Attributes &attrs);
 
@@ -244,15 +233,16 @@ class NASReader final : public IGMLReader
     {
         m_bStopParsing = true;
     }
+
     bool HasStoppedParsing() override
     {
         return m_bStopParsing;
     }
 
-    void CheckForFID(const Attributes &attrs, char **ppszCurField);
-    void CheckForRID(const Attributes &attrs, char **ppszCurField);
-    void CheckForRelations(const char *pszElement, const Attributes &attrs,
-                           char **ppszCurField);
+    int GetAttributeElementIndex(const char *pszElement, int nLen,
+                                 const char *pszAttrKey);
+    void DealWithAttributes(const char *pszElement, int nLenName,
+                            const Attributes &attrs);
 
     virtual const char *GetGlobalSRSName() override
     {
@@ -265,6 +255,7 @@ class NASReader final : public IGMLReader
     }
 
     bool SetFilteredClassName(const char *pszClassName) override;
+
     const char *GetFilteredClassName() override
     {
         return m_pszFilteredClassName;

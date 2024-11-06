@@ -8,23 +8,7 @@
  ******************************************************************************
  * Copyright (c) 2008, Ivan Lucena
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "oci_wrapper.h"
@@ -1433,7 +1417,8 @@ void OWUpperIfNoQuotes(char *pszText)
 
     for (size_t i = 0; i < nSize; i++)
     {
-        pszText[i] = static_cast<char>(toupper(pszText[i]));
+        pszText[i] =
+            static_cast<char>(toupper(static_cast<unsigned char>(pszText[i])));
     }
 }
 
@@ -1488,7 +1473,7 @@ CPLString OWParseSDO_GEOR_INIT(const char *pszInsert, int nField)
 
     for (pszIn = szUpcase; *pszIn != '\0'; pszIn++)
     {
-        *pszIn = (char)toupper(*pszIn);
+        *pszIn = (char)toupper(static_cast<unsigned char>(*pszIn));
     }
 
     char *pszStart = strstr(szUpcase, "SDO_GEOR.INIT");
@@ -1596,7 +1581,6 @@ const char *OWSetDataType(const GDALDataType eType)
 /*****************************************************************************/
 /*                            Check for Failure                              */
 /*****************************************************************************/
-
 bool CheckError(sword nStatus, OCIError *hError)
 {
     text szMsg[OWTEXT];
@@ -1637,6 +1621,28 @@ bool CheckError(sword nStatus, OCIError *hError)
 
             if (nCode == 1405)  // Null field
             {
+                return false;
+            }
+            else if (
+                nCode == 28002 ||
+                nCode ==
+                    28098)  // password expires codes (ORA-28002, ORA-28098)
+            {
+                static bool bPasswordExpiredLogged = false;
+                if (!bPasswordExpiredLogged)
+                {
+                    bPasswordExpiredLogged = true;
+                    // Workaround, when this is called with gdal_translate,
+                    // the error message is not printed because it has
+                    // an error handler that suppresses the message.
+                    // It pushes a default error handler that prints the message,
+                    // and then pops it to restore the previous error handler.
+
+                    CPLPushErrorHandler(CPLDefaultErrorHandler);
+                    CPLError(CE_Warning, CPLE_AppDefined, "%s", szMsg);
+                    CPLPopErrorHandler();
+                }
+
                 return false;
             }
 

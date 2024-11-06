@@ -8,23 +8,7 @@
  ******************************************************************************
  * Copyright (c) 2011, Adam Estrada
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #ifndef OGR_ELASTIC_H_INCLUDED
@@ -176,7 +160,8 @@ class OGRElasticLayer final : public OGRLayer
   public:
     OGRElasticLayer(const char *pszLayerName, const char *pszIndexName,
                     const char *pszMappingName, OGRElasticDataSource *poDS,
-                    char **papszOptions, const char *pszESSearch = nullptr);
+                    CSLConstList papszOptions,
+                    const char *pszESSearch = nullptr);
     OGRElasticLayer(const char *pszLayerName,
                     OGRElasticLayer *poReferenceLayer);
     virtual ~OGRElasticLayer();
@@ -187,14 +172,16 @@ class OGRElasticLayer final : public OGRLayer
     virtual OGRErr ICreateFeature(OGRFeature *poFeature) override;
     virtual OGRErr ISetFeature(OGRFeature *poFeature) override;
     OGRErr IUpsertFeature(OGRFeature *poFeature) override;
-    virtual OGRErr CreateField(OGRFieldDefn *poField, int bApproxOK) override;
-    virtual OGRErr CreateGeomField(OGRGeomFieldDefn *poField,
+    virtual OGRErr CreateField(const OGRFieldDefn *poField,
+                               int bApproxOK) override;
+    virtual OGRErr CreateGeomField(const OGRGeomFieldDefn *poField,
                                    int bApproxOK) override;
 
     virtual const char *GetName() override
     {
         return m_poFeatureDefn->GetName();
     }
+
     virtual OGRFeatureDefn *GetLayerDefn() override;
     virtual const char *GetFIDColumn() override;
 
@@ -206,6 +193,7 @@ class OGRElasticLayer final : public OGRLayer
     {
         SetSpatialFilter(0, poGeom);
     }
+
     virtual void SetSpatialFilter(int iGeomField, OGRGeometry *poGeom) override;
     virtual OGRErr SetAttributeFilter(const char *pszFilter) override;
 
@@ -213,10 +201,13 @@ class OGRElasticLayer final : public OGRLayer
     {
         return GetExtent(0, psExtent, bForce);
     }
+
     virtual OGRErr GetExtent(int iGeomField, OGREnvelope *psExtent,
                              int bForce = TRUE) override;
 
     virtual OGRErr SyncToDisk() override;
+
+    GDALDataset *GetDataset() override;
 
     void FinalizeFeatureDefn(bool bReadFeatures = true);
     void InitFeatureDefnFromMapping(json_object *poSchema,
@@ -227,6 +218,7 @@ class OGRElasticLayer final : public OGRLayer
     {
         return m_osIndexName;
     }
+
     const CPLString &GetMappingName() const
     {
         return m_osMappingName;
@@ -236,24 +228,29 @@ class OGRElasticLayer final : public OGRLayer
     {
         m_bIgnoreSourceID = bFlag;
     }
+
     void SetManualMapping()
     {
         m_bManualMapping = true;
     }
+
     void SetDotAsNestedField(bool bFlag)
     {
         m_bDotAsNestedField = bFlag;
     }
+
     void SetFID(const CPLString &m_osFIDIn)
     {
         m_osFID = m_osFIDIn;
     }
+
     void SetNextFID(GIntBig nNextFID)
     {
         m_nNextFID = nNextFID;
     }
 
     OGRElasticLayer *Clone();
+
     void SetOrderBy(const std::vector<OGRESSortDesc> &v)
     {
         m_aoSortColumns = v;
@@ -263,6 +260,7 @@ class OGRElasticLayer final : public OGRLayer
     {
         m_bFeatureDefnFinalized = true;
     }
+
     void GetGeomFieldProperties(int iGeomField, std::vector<CPLString> &aosPath,
                                 bool &bIsGeoPoint);
 
@@ -303,6 +301,7 @@ class OGRElasticAggregationLayer final
     {
         return m_poFeatureDefn;
     }
+
     void ResetReading() override;
     DEFINE_GET_NEXT_FEATURE_THROUGH_RAW(OGRElasticAggregationLayer)
     GIntBig GetFeatureCount(int bForce) override;
@@ -310,6 +309,8 @@ class OGRElasticAggregationLayer final
 
     using OGRLayer::SetSpatialFilter;
     void SetSpatialFilter(OGRGeometry *poGeom) override;
+
+    GDALDataset *GetDataset() override;
 
     static std::unique_ptr<OGRElasticAggregationLayer>
     Build(OGRElasticDataSource *poDS, const char *pszAggregation);
@@ -375,10 +376,9 @@ class OGRElasticDataSource final : public GDALDataset
     virtual OGRLayer *GetLayer(int) override;
     virtual OGRLayer *GetLayerByName(const char *pszName) override;
 
-    virtual OGRLayer *ICreateLayer(const char *pszLayerName,
-                                   OGRSpatialReference *poSRS,
-                                   OGRwkbGeometryType eType,
-                                   char **papszOptions) override;
+    OGRLayer *ICreateLayer(const char *pszName,
+                           const OGRGeomFieldDefn *poGeomFieldDefn,
+                           CSLConstList papszOptions) override;
     virtual OGRErr DeleteLayer(int iLayer) override;
 
     virtual OGRLayer *ExecuteSQL(const char *pszSQLCommand,
@@ -395,6 +395,7 @@ class OGRElasticDataSource final : public GDALDataset
     json_object *RunRequest(
         const char *pszURL, const char *pszPostContent = nullptr,
         const std::vector<int> &anSilentedHTTPErrors = std::vector<int>());
+
     const CPLString &GetFID() const
     {
         return m_osFID;

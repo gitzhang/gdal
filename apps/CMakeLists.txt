@@ -5,6 +5,7 @@ add_library(
   appslib OBJECT
   commonutils.h
   gdal_utils.h
+  gdalargumentparser.cpp
   gdalinfo_lib.cpp
   gdalbuildvrt_lib.cpp
   gdal_grid_lib.cpp
@@ -16,23 +17,26 @@ add_library(
   ogr2ogr_lib.cpp
   gdaldem_lib.cpp
   nearblack_lib.cpp
+  nearblack_lib_floodfill.cpp
+  gdal_footprint_lib.cpp
   gdalmdiminfo_lib.cpp
-  gdalmdimtranslate_lib.cpp)
+  gdalmdimtranslate_lib.cpp
+  gdaltindex_lib.cpp)
 add_dependencies(appslib generate_gdal_version_h)
 target_sources(${GDAL_LIB_TARGET_NAME} PRIVATE $<TARGET_OBJECTS:appslib>)
 gdal_standard_includes(appslib)
-target_compile_options(appslib PRIVATE ${GDAL_CXX_WARNING_FLAGS} ${WFLAG_OLD_STYLE_CAST})
+target_compile_options(appslib PRIVATE ${GDAL_CXX_WARNING_FLAGS} ${WFLAG_OLD_STYLE_CAST} ${WFLAG_EFFCXX})
 target_include_directories(
   appslib PRIVATE $<TARGET_PROPERTY:gdal_vrt,SOURCE_DIR> $<TARGET_PROPERTY:ogrsf_generic,SOURCE_DIR>
-                  $<TARGET_PROPERTY:ogr_geojson,SOURCE_DIR> $<TARGET_PROPERTY:ogr_MEM,SOURCE_DIR>)
+                  $<TARGET_PROPERTY:ogr_MEM,SOURCE_DIR>)
 
 gdal_target_link_libraries(appslib PRIVATE PROJ::proj)
 
 set_property(TARGET appslib PROPERTY POSITION_INDEPENDENT_CODE ${GDAL_OBJECT_LIBRARIES_POSITION_INDEPENDENT_CODE})
-if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.16)
-  set_property(SOURCE ogr2ogr_bin.cpp gdal_grid_lib.cpp gdal_translate_lib.cpp gdalbuildvrt_lib.cpp gdaldem_lib.cpp
-                      gdal_rasterize_lib.cpp PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
-endif ()
+
+if (GDAL_ENABLE_DRIVER_GTIFF)
+  target_compile_definitions(appslib PRIVATE -DHAVE_TIFF)
+endif()
 
 if (GDAL_USE_JSONC_INTERNAL)
   gdal_add_vendored_lib(appslib libjson)
@@ -57,12 +61,13 @@ if (BUILD_APPS)
   add_executable(gdalmanage gdalmanage.cpp)
   add_executable(gdalsrsinfo gdalsrsinfo.cpp)
   target_link_libraries(gdalsrsinfo PRIVATE PROJ::proj)
-  add_executable(gdaltindex gdaltindex.cpp)
+  add_executable(gdaltindex gdal_utils_priv.h gdaltindex_bin.cpp)
   add_executable(gdal_rasterize gdal_rasterize_bin.cpp)
   add_executable(gdaldem gdaldem_bin.cpp)
   add_executable(gdaltransform gdaltransform.cpp)
   add_executable(gdal_create gdal_create.cpp)
   add_executable(gdal_viewshed gdal_viewshed.cpp)
+  add_executable(gdal_footprint commonutils.h gdal_footprint_bin.cpp)
   add_executable(ogrinfo commonutils.h ogrinfo_bin.cpp)
   add_executable(ogr2ogr ogr2ogr_bin.cpp)
 
@@ -77,6 +82,11 @@ if (BUILD_APPS)
   add_executable(gdalmdimtranslate gdalmdimtranslate_bin.cpp)
 
   add_executable(sozip sozip.cpp)
+
+  add_library(utils_common OBJECT gdalargumentparser.cpp)
+  gdal_standard_includes(utils_common)
+  target_compile_options(utils_common PRIVATE ${GDAL_CXX_WARNING_FLAGS} ${WFLAG_OLD_STYLE_CAST})
+  add_dependencies(utils_common generate_gdal_version_h)
 
   set(APPS_TARGETS
       gdalinfo
@@ -99,6 +109,7 @@ if (BUILD_APPS)
       gdalwarp
       gdal_contour
       gdallocationinfo
+      gdal_footprint
       ogrinfo
       ogr2ogr
       gdalmdiminfo
@@ -125,7 +136,7 @@ if (BUILD_APPS)
     add_dependencies(${UTILCMD} generate_gdal_version_h)
     target_include_directories(
       ${UTILCMD} PRIVATE $<TARGET_PROPERTY:gdal_vrt,SOURCE_DIR> $<TARGET_PROPERTY:ogrsf_generic,SOURCE_DIR>
-                         $<TARGET_PROPERTY:ogr_geojson,SOURCE_DIR> $<TARGET_PROPERTY:ogr_MEM,SOURCE_DIR>)
+                         $<TARGET_PROPERTY:ogr_MEM,SOURCE_DIR>)
     if (MSVC)
       set_target_properties(${UTILCMD} PROPERTIES LINK_FLAGS "wsetargv.obj")
     endif ()
@@ -139,7 +150,12 @@ if (BUILD_APPS)
     if (MSVC OR MINGW)
       target_compile_definitions(${UTILCMD} PRIVATE -DSUPPORTS_WMAIN)
     endif ()
-    target_link_libraries(${UTILCMD} PRIVATE $<TARGET_NAME:${GDAL_LIB_TARGET_NAME}>)
+    target_link_libraries(${UTILCMD} PRIVATE $<TARGET_NAME:${GDAL_LIB_TARGET_NAME}> utils_common)
+
+    if (NOT GDAL_ENABLE_DRIVER_GTI OR GDAL_ENABLE_DRIVER_GTI_PLUGIN)
+        target_compile_definitions(${UTILCMD} PRIVATE -DGTI_DRIVER_DISABLED_OR_PLUGIN)
+    endif()
+
   endforeach ()
   install(TARGETS ${APPS_TARGETS} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
@@ -149,8 +165,10 @@ if (BUILD_APPS)
   add_executable(gdaltorture EXCLUDE_FROM_ALL gdaltorture.cpp)
   add_executable(gdal2ogr EXCLUDE_FROM_ALL gdal2ogr.c)
   add_executable(gdalasyncread EXCLUDE_FROM_ALL gdalasyncread.cpp)
-  add_executable(gdalwarpsimple EXCLUDE_FROM_ALL gdalwarpsimple.c)
   add_executable(multireadtest EXCLUDE_FROM_ALL multireadtest.cpp)
+  if(NOT MSVC AND CMAKE_THREAD_LIBS_INIT)
+    target_link_libraries(multireadtest PRIVATE ${CMAKE_THREAD_LIBS_INIT})
+  endif()
   add_executable(test_ogrsf test_ogrsf.cpp)
   add_executable(testreprojmulti EXCLUDE_FROM_ALL testreprojmulti.cpp)
 
@@ -161,7 +179,6 @@ if (BUILD_APPS)
           gdalasyncread
           gdaltorture
           gdalflattenmask
-          gdalwarpsimple
           multireadtest
           test_ogrsf
           testreprojmulti)
@@ -190,7 +207,17 @@ if (BUILD_APPS)
     endif ()
     target_include_directories(
       ${UTILCMD} PRIVATE $<TARGET_PROPERTY:gdal_vrt,SOURCE_DIR> $<TARGET_PROPERTY:ogrsf_generic,SOURCE_DIR>
-                         $<TARGET_PROPERTY:ogr_geojson,SOURCE_DIR> $<TARGET_PROPERTY:ogr_MEM,SOURCE_DIR>)
+                         $<TARGET_PROPERTY:ogr_MEM,SOURCE_DIR>)
     target_link_libraries(${UTILCMD} PRIVATE $<TARGET_NAME:${GDAL_LIB_TARGET_NAME}>)
   endforeach ()
 endif ()
+
+set(GDAL_DATA_FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/data/gdalinfo_output.schema.json
+    ${CMAKE_CURRENT_SOURCE_DIR}/data/gdalmdiminfo_output.schema.json
+    ${CMAKE_CURRENT_SOURCE_DIR}/data/ogrinfo_output.schema.json
+)
+set_property(
+  TARGET ${GDAL_LIB_TARGET_NAME}
+  APPEND
+  PROPERTY RESOURCE "${GDAL_DATA_FILES}")

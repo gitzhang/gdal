@@ -9,23 +9,7 @@
 ###############################################################################
 # Copyright (c) 2009-2010, Even Rouault <even dot rouault at spatialys.com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 import os
@@ -33,7 +17,7 @@ import os
 import gdaltest
 import pytest
 
-from osgeo import gdal
+pytestmark = pytest.mark.require_driver("RIK")
 
 ###############################################################################
 # Test a RIK map
@@ -42,14 +26,10 @@ from osgeo import gdal
 
 def test_rik_online_1():
 
-    if gdal.GetDriverByName("RIK") is None:
-        pytest.skip()
-
-    if not gdaltest.download_file(
+    gdaltest.download_or_skip(
         "http://www.lantmateriet.se/upload/filer/kartor/programvaror/sverige500_swe99.zip",
         "sverige500_swe99.zip",
-    ):
-        pytest.skip()
+    )
 
     try:
         os.stat("tmp/cache/sverige500_swe99.rik")
@@ -68,7 +48,7 @@ def test_rik_online_1():
             pytest.skip()
 
     tst = gdaltest.GDALTest("RIK", file_to_test, 1, 17162, filename_absolute=1)
-    return tst.testOpen()
+    tst.testOpen()
 
 
 ###############################################################################
@@ -77,15 +57,11 @@ def test_rik_online_1():
 
 def test_rik_online_2():
 
-    if gdal.GetDriverByName("RIK") is None:
-        pytest.skip()
-
-    if not gdaltest.download_file(
+    gdaltest.download_or_skip(
         "http://trac.osgeo.org/gdal/raw-attachment/ticket/3674/ab-del.rik", "ab-del.rik"
-    ):
-        pytest.skip()
+    )
 
     tst = gdaltest.GDALTest(
         "RIK", "tmp/cache/ab-del.rik", 1, 44974, filename_absolute=1
     )
-    return tst.testOpen()
+    tst.testOpen()

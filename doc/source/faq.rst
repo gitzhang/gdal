@@ -4,7 +4,7 @@
 FAQ
 ================================================================================
 
-.. TODO maybe migrate the chapters 2 and following of https://trac.osgeo.org/gdal/wiki/FAQ
+.. TODO maybe migrate the chapters 2 and following of http://web.archive.org/web/https://trac.osgeo.org/gdal/wiki/FAQ
 
 .. only:: not latex
 
@@ -71,7 +71,9 @@ See :ref:`software_using_gdal`:
 What compiler can I use to build GDAL/OGR?
 ++++++++++++++++++++++++++++++++++++++++++++++++
 
-GDAL/OGR can be compiled with a C++11 capable compiler.
+GDAL/OGR must be compiled with a C++17 capable compiler since GDAL 3.9 (C++11 in previous versions)
+
+Build requirements are described in :ref:`build_requirements`.
 
 I have a question that's not answered here. Where can I get more information?
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -89,6 +91,11 @@ Is GDAL thread-safe ?
 +++++++++++++++++++++
 
 See :ref:`multithreading`
+
+Does GDAL provide a Section 508 information?
+++++++++++++++++++++++++++++++++++++++++++++
+
+No, GDAL itself is an open-source software and project, not a Vendor. If your organization considers they need a `VPAT or Section 508 <https://www.section508.gov/sell/acr/>`_ form to be able to use GDAL, it is their responsibility to complete the needed steps themselves.
 
 How do I cite GDAL ?
 ++++++++++++++++++++

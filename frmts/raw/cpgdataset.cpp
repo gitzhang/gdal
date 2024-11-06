@@ -8,23 +8,7 @@
  * Copyright (c) 2004, Frank Warmerdam <warmerdam@pobox.com>
  * Copyright (c) 2009, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_string.h"
@@ -91,16 +75,19 @@ class CPGDataset final : public RawDataset
     ~CPGDataset() override;
 
     int GetGCPCount() override;
+
     const OGRSpatialReference *GetGCPSpatialRef() const override
     {
         return m_oGCPSRS.IsEmpty() ? nullptr : &m_oGCPSRS;
     }
+
     const GDAL_GCP *GetGCPs() override;
 
     const OGRSpatialReference *GetSpatialRef() const override
     {
         return m_oSRS.IsEmpty() ? nullptr : &m_oSRS;
     }
+
     CPLErr GetGeoTransform(double *) override;
 
     char **GetFileList() override;
@@ -193,6 +180,7 @@ class SIRC_QSLCRasterBand final : public GDALRasterBand
 
   public:
     SIRC_QSLCRasterBand(CPGDataset *, int, GDALDataType);
+
     ~SIRC_QSLCRasterBand() override
     {
     }
@@ -232,6 +220,7 @@ class CPG_STOKESRasterBand final : public GDALRasterBand
   public:
     CPG_STOKESRasterBand(GDALDataset *poDS, GDALDataType eType,
                          int bNativeOrder);
+
     ~CPG_STOKESRasterBand() override
     {
     }
@@ -498,9 +487,15 @@ GDALDataset *CPGDataset::InitializeType1Or2Dataset(const char *pszFilename)
     double dfnorth = 0.0;
     double dfeast = 0.0;
 
-    char *pszWorkname = CPLStrdup(pszFilename);
-    AdjustFilename(&pszWorkname, "hh", "hdr");
-    char **papszHdrLines = CSLLoad(pszWorkname);
+    std::string osWorkName;
+    {
+        char *pszWorkname = CPLStrdup(pszFilename);
+        AdjustFilename(&pszWorkname, "hh", "hdr");
+        osWorkName = pszWorkname;
+        CPLFree(pszWorkname);
+    }
+
+    char **papszHdrLines = CSLLoad(osWorkName.c_str());
 
     for (int iLine = 0; papszHdrLines && papszHdrLines[iLine] != nullptr;
          iLine++)
@@ -606,7 +601,6 @@ GDALDataset *CPGDataset::InitializeType1Or2Dataset(const char *pszFilename)
     /* -------------------------------------------------------------------- */
     if (nError)
     {
-        CPLFree(pszWorkname);
         return nullptr;
     }
 
@@ -615,15 +609,14 @@ GDALDataset *CPGDataset::InitializeType1Or2Dataset(const char *pszFilename)
         CPLError(
             CE_Failure, CPLE_AppDefined,
             "Did not find valid number_lines or number_samples keywords in %s.",
-            pszWorkname);
-        CPLFree(pszWorkname);
+            osWorkName.c_str());
         return nullptr;
     }
 
     /* -------------------------------------------------------------------- */
     /*      Initialize dataset.                                             */
     /* -------------------------------------------------------------------- */
-    CPGDataset *poDS = new CPGDataset();
+    auto poDS = std::make_unique<CPGDataset>();
 
     poDS->nRasterXSize = nSamples;
     poDS->nRasterYSize = nLines;
@@ -634,27 +627,30 @@ GDALDataset *CPGDataset::InitializeType1Or2Dataset(const char *pszFilename)
     static const char *const apszPolarizations[NUMBER_OF_BANDS] = {"hh", "hv",
                                                                    "vv", "vh"};
 
-    const int nNameLen = static_cast<int>(strlen(pszWorkname));
+    const int nNameLen = static_cast<int>(osWorkName.size());
 
-    if (EQUAL(pszWorkname + nNameLen - 7, "IRC.hdr") ||
-        EQUAL(pszWorkname + nNameLen - 7, "IRC.img"))
+    if (EQUAL(osWorkName.c_str() + nNameLen - 7, "IRC.hdr") ||
+        EQUAL(osWorkName.c_str() + nNameLen - 7, "IRC.img"))
     {
+        {
+            char *pszWorkname = CPLStrdup(osWorkName.c_str());
+            AdjustFilename(&pszWorkname, "", "img");
+            osWorkName = pszWorkname;
+            CPLFree(pszWorkname);
+        }
 
-        AdjustFilename(&pszWorkname, "", "img");
-        poDS->afpImage[0] = VSIFOpenL(pszWorkname, "rb");
+        poDS->afpImage[0] = VSIFOpenL(osWorkName.c_str(), "rb");
         if (poDS->afpImage[0] == nullptr)
         {
             CPLError(CE_Failure, CPLE_OpenFailed,
-                     "Failed to open .img file: %s", pszWorkname);
-            CPLFree(pszWorkname);
-            delete poDS;
+                     "Failed to open .img file: %s", osWorkName.c_str());
             return nullptr;
         }
-        poDS->aosImageFilenames.push_back(pszWorkname);
+        poDS->aosImageFilenames.push_back(osWorkName.c_str());
         for (int iBand = 0; iBand < NUMBER_OF_BANDS; iBand++)
         {
             SIRC_QSLCRasterBand *poBand =
-                new SIRC_QSLCRasterBand(poDS, iBand + 1, GDT_CFloat32);
+                new SIRC_QSLCRasterBand(poDS.get(), iBand + 1, GDT_CFloat32);
             poDS->SetBand(iBand + 1, poBand);
             poBand->SetMetadataItem("POLARIMETRIC_INTERP",
                                     apszPolarizations[iBand]);
@@ -665,26 +661,32 @@ GDALDataset *CPGDataset::InitializeType1Or2Dataset(const char *pszFilename)
         CPLAssert(poDS->afpImage.size() == NUMBER_OF_BANDS);
         for (int iBand = 0; iBand < NUMBER_OF_BANDS; iBand++)
         {
-            AdjustFilename(&pszWorkname, apszPolarizations[iBand], "img");
+            {
+                char *pszWorkname = CPLStrdup(osWorkName.c_str());
+                AdjustFilename(&pszWorkname, apszPolarizations[iBand], "img");
+                osWorkName = pszWorkname;
+                CPLFree(pszWorkname);
+            }
 
-            poDS->afpImage[iBand] = VSIFOpenL(pszWorkname, "rb");
+            poDS->afpImage[iBand] = VSIFOpenL(osWorkName.c_str(), "rb");
             if (poDS->afpImage[iBand] == nullptr)
             {
                 CPLError(CE_Failure, CPLE_OpenFailed,
-                         "Failed to open .img file: %s", pszWorkname);
-                CPLFree(pszWorkname);
-                delete poDS;
+                         "Failed to open .img file: %s", osWorkName.c_str());
                 return nullptr;
             }
-            poDS->aosImageFilenames.push_back(pszWorkname);
+            poDS->aosImageFilenames.push_back(osWorkName.c_str());
 
-            RawRasterBand *poBand = new RawRasterBand(
-                poDS, iBand + 1, poDS->afpImage[iBand], 0, 8, 8 * nSamples,
-                GDT_CFloat32, !CPL_IS_LSB, RawRasterBand::OwnFP::NO);
-            poDS->SetBand(iBand + 1, poBand);
-
+            auto poBand = RawRasterBand::Create(
+                poDS.get(), iBand + 1, poDS->afpImage[iBand], 0, 8,
+                8 * nSamples, GDT_CFloat32,
+                RawRasterBand::ByteOrder::ORDER_BIG_ENDIAN,
+                RawRasterBand::OwnFP::NO);
+            if (!poBand)
+                return nullptr;
             poBand->SetMetadataItem("POLARIMETRIC_INTERP",
                                     apszPolarizations[iBand]);
+            poDS->SetBand(iBand + 1, std::move(poBand));
         }
     }
 
@@ -798,9 +800,7 @@ GDALDataset *CPGDataset::InitializeType1Or2Dataset(const char *pszFilename)
             "UNIT[\"Meter\",1.0]]");
     }
 
-    CPLFree(pszWorkname);
-
-    return poDS;
+    return poDS.release();
 }
 
 #ifdef notdef

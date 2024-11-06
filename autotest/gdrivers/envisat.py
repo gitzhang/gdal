@@ -11,23 +11,7 @@
 # Copyright (c) 2011, Antonio Valentino <antonio dot valentino at tiscali dot it>
 # Copyright (c) 2011, Even Rouault <even dot rouault at spatialys.com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 import gzip
@@ -38,7 +22,7 @@ import pytest
 
 from osgeo import gdal
 
-pytestmark = pytest.mark.require_driver("ENVISAT")
+pytestmark = pytest.mark.require_driver("ESAT")
 
 
 def _get_mds_num(filename):
@@ -81,10 +65,7 @@ class EnvisatTestBase(object):
 
     def download_file(self):
         # download and decompress
-        if not gdaltest.download_file(
-            self.downloadURL, os.path.basename(self.downloadURL), -1
-        ):
-            return False
+        gdaltest.download_or_skip(self.downloadURL)
 
         filename = os.path.join("tmp", "cache", self.fileName)
         if os.path.exists(filename):
@@ -102,8 +83,7 @@ class EnvisatTestBase(object):
         return True
 
     def test_envisat_1(self):
-        if not self.download_file():
-            pytest.skip()
+        self.download_file()
 
         ds = gdal.Open(os.path.join("tmp", "cache", self.fileName))
         assert ds is not None
@@ -117,8 +97,7 @@ class EnvisatTestBase(object):
         )
 
     def test_envisat_2(self):
-        if not self.download_file():
-            pytest.skip()
+        self.download_file()
 
         ds = gdal.Open(os.path.join("tmp", "cache", self.fileName))
         assert ds is not None
@@ -132,9 +111,7 @@ class EnvisatTestBase(object):
 
     def test_envisat_3(self):
         # Regression test for #3160 and #3709.
-
-        if not self.download_file():
-            pytest.skip()
+        self.download_file()
 
         ds = gdal.Open(os.path.join("tmp", "cache", self.fileName))
         assert ds is not None
@@ -149,9 +126,7 @@ class EnvisatTestBase(object):
 
     def test_envisat_4(self):
         # test number of bands
-
-        if not self.download_file():
-            pytest.skip()
+        self.download_file()
 
         filename = os.path.join("tmp", "cache", self.fileName)
         mds_num = _get_mds_num(filename)
@@ -163,9 +138,7 @@ class EnvisatTestBase(object):
 
     def test_envisat_5(self):
         # test metadata in RECORDS domain
-
-        if not self.download_file():
-            pytest.skip()
+        self.download_file()
 
         ds = gdal.Open(os.path.join("tmp", "cache", self.fileName))
         assert ds is not None
@@ -190,9 +163,7 @@ class TestEnvisatASAR(EnvisatTestBase):
 
     def test_envisat_asar_1(self):
         # test sensor ID
-
-        if not self.download_file():
-            pytest.skip()
+        self.download_file()
 
         ds = gdal.Open(os.path.join("tmp", "cache", self.fileName))
         assert ds is not None
@@ -203,9 +174,7 @@ class TestEnvisatASAR(EnvisatTestBase):
 
     def test_envisat_asar_2(self):
         # test metadata in RECORDS domain
-
-        if not self.download_file():
-            pytest.skip()
+        self.download_file()
 
         ds = gdal.Open(os.path.join("tmp", "cache", self.fileName))
         assert ds is not None
@@ -250,9 +219,7 @@ class TestEnvisatMERIS(EnvisatTestBase):
 
     def test_envisat_meris_1(self):
         # test sensor ID
-
-        if not self.download_file():
-            pytest.skip()
+        self.download_file()
 
         ds = gdal.Open(os.path.join("tmp", "cache", self.fileName))
         assert ds is not None
@@ -263,9 +230,7 @@ class TestEnvisatMERIS(EnvisatTestBase):
 
     def test_envisat_meris_2(self):
         # test metadata in RECORDS domain
-
-        if not self.download_file():
-            pytest.skip()
+        self.download_file()
 
         ds = gdal.Open(os.path.join("tmp", "cache", self.fileName))
         assert ds is not None
@@ -285,9 +250,7 @@ class TestEnvisatMERIS(EnvisatTestBase):
 
     def test_envisat_meris_3(self):
         # test Flag bands
-
-        if not self.download_file():
-            pytest.skip()
+        self.download_file()
 
         ds = gdal.Open(os.path.join("tmp", "cache", self.fileName))
         assert ds is not None
@@ -334,9 +297,7 @@ class TestEnvisatMERIS(EnvisatTestBase):
 
     def test_envisat_meris_4(self):
         # test DEM corrections (see #5423)
-
-        if not self.download_file():
-            pytest.skip()
+        self.download_file()
 
         ds = gdal.Open(os.path.join("tmp", "cache", self.fileName))
         assert ds is not None

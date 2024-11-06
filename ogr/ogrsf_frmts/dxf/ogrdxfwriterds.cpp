@@ -9,33 +9,22 @@
  * Copyright (c) 2009, Frank Warmerdam <warmerdam@pobox.com>
  * Copyright (c) 2010-2012, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_port.h"
 
+#include <cmath>
 #include <cstdlib>
 
 #include "ogr_dxf.h"
 #include "cpl_conv.h"
 #include "cpl_string.h"
 #include "cpl_vsi_error.h"
+
+#ifdef EMBED_RESOURCE_FILES
+#include "embedded_resources.h"
+#endif
 
 /************************************************************************/
 /*                          OGRDXFWriterDS()                          */
@@ -64,7 +53,7 @@ OGRDXFWriterDS::~OGRDXFWriterDS()
          */
         CPLDebug("DXF", "Compose final DXF file from components.");
 
-        if (bSuppressOnClose && fpTemp != nullptr)
+        if (IsMarkedSuppressOnClose() && fpTemp != nullptr)
         {
             CPLDebug("DXF", "Do not copy final DXF when 'suppress on close'.");
             VSIFCloseL(fpTemp);
@@ -133,6 +122,11 @@ OGRDXFWriterDS::~OGRDXFWriterDS()
     delete poBlocksLayer;
 
     CSLDestroy(papszLayersToCreate);
+
+    if (m_bHeaderFileIsTemp)
+        VSIUnlink(osHeaderFile.c_str());
+    if (m_bTrailerFileIsTemp)
+        VSIUnlink(osTrailerFile.c_str());
 }
 
 /************************************************************************/
@@ -190,13 +184,36 @@ int OGRDXFWriterDS::Open(const char *pszFilename, char **papszOptions)
         osHeaderFile = CSLFetchNameValue(papszOptions, "HEADER");
     else
     {
+#ifdef EMBED_RESOURCE_FILES
+        CPLErrorStateBackuper oErrorStateBackuper(CPLQuietErrorHandler);
+#endif
+#ifdef USE_ONLY_EMBEDDED_RESOURCE_FILES
+        const char *pszValue = nullptr;
+#else
         const char *pszValue = CPLFindFile("gdal", "header.dxf");
         if (pszValue == nullptr)
+#endif
         {
+#ifdef EMBED_RESOURCE_FILES
+            static const bool bOnce [[maybe_unused]] = []()
+            {
+                CPLDebug("DXF", "Using embedded header.dxf");
+                return true;
+            }();
+            pszValue = VSIMemGenerateHiddenFilename("header.dxf");
+            VSIFCloseL(VSIFileFromMemBuffer(
+                pszValue,
+                const_cast<GByte *>(
+                    reinterpret_cast<const GByte *>(OGRDXFGetHEADER())),
+                static_cast<int>(strlen(OGRDXFGetHEADER())),
+                /* bTakeOwnership = */ false));
+            m_bHeaderFileIsTemp = true;
+#else
             CPLError(CE_Failure, CPLE_OpenFailed,
                      "Failed to find template header file header.dxf for "
                      "reading,\nis GDAL_DATA set properly?");
             return FALSE;
+#endif
         }
         osHeaderFile = pszValue;
     }
@@ -208,9 +225,34 @@ int OGRDXFWriterDS::Open(const char *pszFilename, char **papszOptions)
         osTrailerFile = CSLFetchNameValue(papszOptions, "TRAILER");
     else
     {
+#ifdef EMBED_RESOURCE_FILES
+        CPLErrorStateBackuper oErrorStateBackuper(CPLQuietErrorHandler);
+#endif
+#ifdef USE_ONLY_EMBEDDED_RESOURCE_FILES
+        const char *pszValue = nullptr;
+#else
         const char *pszValue = CPLFindFile("gdal", "trailer.dxf");
         if (pszValue != nullptr)
             osTrailerFile = pszValue;
+#endif
+#ifdef EMBED_RESOURCE_FILES
+        if (!pszValue)
+        {
+            static const bool bOnce [[maybe_unused]] = []()
+            {
+                CPLDebug("DXF", "Using embedded trailer.dxf");
+                return true;
+            }();
+            osTrailerFile = VSIMemGenerateHiddenFilename("trailer.dxf");
+            m_bTrailerFileIsTemp = false;
+            VSIFCloseL(VSIFileFromMemBuffer(
+                osTrailerFile.c_str(),
+                const_cast<GByte *>(
+                    reinterpret_cast<const GByte *>(OGRDXFGetTRAILER())),
+                static_cast<int>(strlen(OGRDXFGetTRAILER())),
+                /* bTakeOwnership = */ false));
+        }
+#endif
     }
 
 /* -------------------------------------------------------------------- */
@@ -237,7 +279,7 @@ int OGRDXFWriterDS::Open(const char *pszFilename, char **papszOptions)
     /*      Attempt to read the template header file so we have a list      */
     /*      of layers, linestyles and blocks.                               */
     /* -------------------------------------------------------------------- */
-    if (!oHeaderDS.Open(osHeaderFile, TRUE))
+    if (!oHeaderDS.Open(osHeaderFile, true, nullptr))
         return FALSE;
 
     /* -------------------------------------------------------------------- */
@@ -274,9 +316,10 @@ int OGRDXFWriterDS::Open(const char *pszFilename, char **papszOptions)
 /*                           ICreateLayer()                             */
 /************************************************************************/
 
-OGRLayer *OGRDXFWriterDS::ICreateLayer(const char *pszName,
-                                       OGRSpatialReference *,
-                                       OGRwkbGeometryType, char **)
+OGRLayer *
+OGRDXFWriterDS::ICreateLayer(const char *pszName,
+                             const OGRGeomFieldDefn * /*poGeomFieldDefn*/,
+                             CSLConstList /*papszOptions*/)
 
 {
     if (EQUAL(pszName, "blocks") && poBlocksLayer == nullptr)
@@ -339,6 +382,7 @@ static bool WriteValue(VSILFILE *fp, int nCode, double dfValue)
 
     return true;
 }
+
 /************************************************************************/
 /*                        TransferUpdateHeader()                        */
 /************************************************************************/
@@ -350,10 +394,10 @@ bool OGRDXFWriterDS::TransferUpdateHeader(VSILFILE *fpOut)
 
     // We don't like non-finite extents. In this case, just write a generic
     // bounding box. Most CAD programs probably ignore this anyway.
-    if (!CPLIsFinite(oGlobalEnvelope.MinX) ||
-        !CPLIsFinite(oGlobalEnvelope.MinY) ||
-        !CPLIsFinite(oGlobalEnvelope.MaxX) ||
-        !CPLIsFinite(oGlobalEnvelope.MaxY))
+    if (!std::isfinite(oGlobalEnvelope.MinX) ||
+        !std::isfinite(oGlobalEnvelope.MinY) ||
+        !std::isfinite(oGlobalEnvelope.MaxX) ||
+        !std::isfinite(oGlobalEnvelope.MaxY))
     {
         oGlobalEnvelope.MinX = 0.0;
         oGlobalEnvelope.MinY = 0.0;
@@ -693,7 +737,9 @@ bool OGRDXFWriterDS::WriteNewLayerDefinitions(VSILFILE *fpOut)
             }
             else if (anDefaultLayerCode[i] == 5)
             {
-                WriteEntityID(fpOut);
+                long nIgnored;
+                if (!WriteEntityID(fpOut, nIgnored))
+                    return false;
             }
             else
             {
@@ -727,34 +773,36 @@ bool OGRDXFWriterDS::WriteNewLineTypeRecords(VSILFILE *fpIn)
     if (poLayer == nullptr)
         return true;
 
-    std::map<CPLString, std::vector<double>> &oNewLineTypes =
+    const std::map<CPLString, std::vector<double>> &oNewLineTypes =
         poLayer->GetNewLineTypeMap();
 
+    bool bRet = true;
     for (const auto &oPair : oNewLineTypes)
     {
-        WriteValue(fpIn, 0, "LTYPE");
-        WriteEntityID(fpIn);
-        WriteValue(fpIn, 100, "AcDbSymbolTableRecord");
-        WriteValue(fpIn, 100, "AcDbLinetypeTableRecord");
-        WriteValue(fpIn, 2, oPair.first);
-        WriteValue(fpIn, 70, "0");
-        WriteValue(fpIn, 3, "");
-        WriteValue(fpIn, 72, "65");
-        WriteValue(fpIn, 73, static_cast<int>(oPair.second.size()));
+        bRet &= WriteValue(fpIn, 0, "LTYPE");
+        long nIgnored;
+        bRet &= WriteEntityID(fpIn, nIgnored);
+        bRet &= WriteValue(fpIn, 100, "AcDbSymbolTableRecord");
+        bRet &= WriteValue(fpIn, 100, "AcDbLinetypeTableRecord");
+        bRet &= WriteValue(fpIn, 2, oPair.first);
+        bRet &= WriteValue(fpIn, 70, "0");
+        bRet &= WriteValue(fpIn, 3, "");
+        bRet &= WriteValue(fpIn, 72, "65");
+        bRet &= WriteValue(fpIn, 73, static_cast<int>(oPair.second.size()));
 
         double dfTotalLength = 0.0;
         for (const double &dfSegment : oPair.second)
             dfTotalLength += fabs(dfSegment);
-        WriteValue(fpIn, 40, dfTotalLength);
+        bRet &= WriteValue(fpIn, 40, dfTotalLength);
 
         for (const double &dfSegment : oPair.second)
         {
-            WriteValue(fpIn, 49, dfSegment);
-            WriteValue(fpIn, 74, "0");
+            bRet &= WriteValue(fpIn, 49, dfSegment);
+            bRet &= WriteValue(fpIn, 74, "0");
         }
     }
 
-    return true;
+    return bRet;
 }
 
 /************************************************************************/
@@ -769,37 +817,40 @@ bool OGRDXFWriterDS::WriteNewTextStyleRecords(VSILFILE *fpIn)
 
     auto &oNewTextStyles = poLayer->GetNewTextStyleMap();
 
+    bool bRet = true;
     for (auto &oPair : oNewTextStyles)
     {
-        WriteValue(fpIn, 0, "STYLE");
-        WriteEntityID(fpIn);
-        WriteValue(fpIn, 100, "AcDbSymbolTableRecord");
-        WriteValue(fpIn, 100, "AcDbTextStyleTableRecord");
-        WriteValue(fpIn, 2, oPair.first);
-        WriteValue(fpIn, 70, "0");
-        WriteValue(fpIn, 40, "0.0");
+        bRet &= WriteValue(fpIn, 0, "STYLE");
+        long nIgnored;
+        bRet &= WriteEntityID(fpIn, nIgnored);
+        bRet &= WriteValue(fpIn, 100, "AcDbSymbolTableRecord");
+        bRet &= WriteValue(fpIn, 100, "AcDbTextStyleTableRecord");
+        bRet &= WriteValue(fpIn, 2, oPair.first);
+        bRet &= WriteValue(fpIn, 70, "0");
+        bRet &= WriteValue(fpIn, 40, "0.0");
 
         if (oPair.second.count("Width"))
-            WriteValue(fpIn, 41, oPair.second["Width"]);
+            bRet &= WriteValue(fpIn, 41, oPair.second["Width"]);
         else
-            WriteValue(fpIn, 41, "1.0");
+            bRet &= WriteValue(fpIn, 41, "1.0");
 
-        WriteValue(fpIn, 50, "0.0");
-        WriteValue(fpIn, 71, "0");
-        WriteValue(fpIn, 1001, "ACAD");
+        bRet &= WriteValue(fpIn, 50, "0.0");
+        bRet &= WriteValue(fpIn, 71, "0");
+        bRet &= WriteValue(fpIn, 1001, "ACAD");
 
         if (oPair.second.count("Font"))
-            WriteValue(fpIn, 1000, oPair.second["Font"]);
+            bRet &= WriteValue(fpIn, 1000, oPair.second["Font"]);
 
         int nStyleValue = 0;
         if (oPair.second.count("Italic") && oPair.second["Italic"] == "1")
             nStyleValue |= 0x1000000;
         if (oPair.second.count("Bold") && oPair.second["Bold"] == "1")
             nStyleValue |= 0x2000000;
-        WriteValue(fpIn, 1071, CPLString().Printf("%d", nStyleValue).c_str());
+        bRet &= WriteValue(fpIn, 1071,
+                           CPLString().Printf("%d", nStyleValue).c_str());
     }
 
-    return true;
+    return bRet;
 }
 
 /************************************************************************/
@@ -814,6 +865,7 @@ bool OGRDXFWriterDS::WriteNewBlockRecords(VSILFILE *fpIn)
     /* ==================================================================== */
     /*      Loop over all block objects written via the blocks layer.       */
     /* ==================================================================== */
+    bool bRet = true;
     for (size_t iBlock = 0; iBlock < poBlocksLayer->apoBlocks.size(); iBlock++)
     {
         OGRFeature *poThisBlockFeat = poBlocksLayer->apoBlocks[iBlock];
@@ -843,16 +895,16 @@ bool OGRDXFWriterDS::WriteNewBlockRecords(VSILFILE *fpIn)
         /*      Write the block record. */
         /* --------------------------------------------------------------------
          */
-        WriteValue(fpIn, 0, "BLOCK_RECORD");
-        WriteEntityID(fpIn);
-        WriteValue(fpIn, 100, "AcDbSymbolTableRecord");
-        WriteValue(fpIn, 100, "AcDbBlockTableRecord");
-        WriteValue(fpIn, 2, poThisBlockFeat->GetFieldAsString("Block"));
-        if (!WriteValue(fpIn, 340, "0"))
-            return false;
+        bRet &= WriteValue(fpIn, 0, "BLOCK_RECORD");
+        long nIgnored;
+        bRet &= WriteEntityID(fpIn, nIgnored);
+        bRet &= WriteValue(fpIn, 100, "AcDbSymbolTableRecord");
+        bRet &= WriteValue(fpIn, 100, "AcDbBlockTableRecord");
+        bRet &= WriteValue(fpIn, 2, poThisBlockFeat->GetFieldAsString("Block"));
+        bRet &= WriteValue(fpIn, 340, "0");
     }
 
-    return true;
+    return bRet;
 }
 
 /************************************************************************/
@@ -869,6 +921,7 @@ bool OGRDXFWriterDS::WriteNewBlockDefinitions(VSILFILE *fpIn)
     /* ==================================================================== */
     /*      Loop over all block objects written via the blocks layer.       */
     /* ==================================================================== */
+    bool bRet = true;
     for (size_t iBlock = 0; iBlock < poBlocksLayer->apoBlocks.size(); iBlock++)
     {
         OGRFeature *poThisBlockFeat = poBlocksLayer->apoBlocks[iBlock];
@@ -891,24 +944,26 @@ bool OGRDXFWriterDS::WriteNewBlockDefinitions(VSILFILE *fpIn)
         CPLDebug("DXF", "Writing BLOCK definition for '%s'.",
                  poThisBlockFeat->GetFieldAsString("Block"));
 
-        WriteValue(fpIn, 0, "BLOCK");
-        WriteEntityID(fpIn);
-        WriteValue(fpIn, 100, "AcDbEntity");
+        bRet &= WriteValue(fpIn, 0, "BLOCK");
+        long nIgnored;
+        bRet &= WriteEntityID(fpIn, nIgnored);
+        bRet &= WriteValue(fpIn, 100, "AcDbEntity");
         if (strlen(poThisBlockFeat->GetFieldAsString("Layer")) > 0)
-            WriteValue(fpIn, 8, poThisBlockFeat->GetFieldAsString("Layer"));
+            bRet &=
+                WriteValue(fpIn, 8, poThisBlockFeat->GetFieldAsString("Layer"));
         else
-            WriteValue(fpIn, 8, "0");
-        WriteValue(fpIn, 100, "AcDbBlockBegin");
-        WriteValue(fpIn, 2, poThisBlockFeat->GetFieldAsString("Block"));
-        WriteValue(fpIn, 70, "0");
+            bRet &= WriteValue(fpIn, 8, "0");
+        bRet &= WriteValue(fpIn, 100, "AcDbBlockBegin");
+        bRet &= WriteValue(fpIn, 2, poThisBlockFeat->GetFieldAsString("Block"));
+        bRet &= WriteValue(fpIn, 70, "0");
 
         // Origin
-        WriteValue(fpIn, 10, "0.0");
-        WriteValue(fpIn, 20, "0.0");
-        WriteValue(fpIn, 30, "0.0");
+        bRet &= WriteValue(fpIn, 10, "0.0");
+        bRet &= WriteValue(fpIn, 20, "0.0");
+        bRet &= WriteValue(fpIn, 30, "0.0");
 
-        WriteValue(fpIn, 3, poThisBlockFeat->GetFieldAsString("Block"));
-        WriteValue(fpIn, 1, "");
+        bRet &= WriteValue(fpIn, 3, poThisBlockFeat->GetFieldAsString("Block"));
+        bRet &= WriteValue(fpIn, 1, "");
 
         /* --------------------------------------------------------------------
          */
@@ -940,17 +995,18 @@ bool OGRDXFWriterDS::WriteNewBlockDefinitions(VSILFILE *fpIn)
         /*      Write out the block definition postamble. */
         /* --------------------------------------------------------------------
          */
-        WriteValue(fpIn, 0, "ENDBLK");
-        WriteEntityID(fpIn);
-        WriteValue(fpIn, 100, "AcDbEntity");
+        bRet &= WriteValue(fpIn, 0, "ENDBLK");
+        bRet &= WriteEntityID(fpIn, nIgnored);
+        bRet &= WriteValue(fpIn, 100, "AcDbEntity");
         if (strlen(poThisBlockFeat->GetFieldAsString("Layer")) > 0)
-            WriteValue(fpIn, 8, poThisBlockFeat->GetFieldAsString("Layer"));
+            bRet &=
+                WriteValue(fpIn, 8, poThisBlockFeat->GetFieldAsString("Layer"));
         else
-            WriteValue(fpIn, 8, "0");
-        WriteValue(fpIn, 100, "AcDbBlockEnd");
+            bRet &= WriteValue(fpIn, 8, "0");
+        bRet &= WriteValue(fpIn, 100, "AcDbBlockEnd");
     }
 
-    return true;
+    return bRet;
 }
 
 /************************************************************************/
@@ -1028,7 +1084,8 @@ bool OGRDXFWriterDS::CheckEntityID(const char *pszEntityID)
 /*                           WriteEntityID()                            */
 /************************************************************************/
 
-long OGRDXFWriterDS::WriteEntityID(VSILFILE *fpIn, long nPreferredFID)
+bool OGRDXFWriterDS::WriteEntityID(VSILFILE *fpIn, long &nAssignedFID,
+                                   long nPreferredFID)
 
 {
     CPLString osEntityID;
@@ -1040,8 +1097,10 @@ long OGRDXFWriterDS::WriteEntityID(VSILFILE *fpIn, long nPreferredFID)
         if (!CheckEntityID(osEntityID))
         {
             aosUsedEntities.insert(osEntityID);
-            WriteValue(fpIn, 5, osEntityID);
-            return nPreferredFID;
+            if (!WriteValue(fpIn, 5, osEntityID))
+                return false;
+            nAssignedFID = nPreferredFID;
+            return true;
         }
     }
 
@@ -1051,9 +1110,11 @@ long OGRDXFWriterDS::WriteEntityID(VSILFILE *fpIn, long nPreferredFID)
     } while (CheckEntityID(osEntityID));
 
     aosUsedEntities.insert(osEntityID);
-    WriteValue(fpIn, 5, osEntityID);
+    if (!WriteValue(fpIn, 5, osEntityID))
+        return false;
 
-    return nNextFID - 1;
+    nAssignedFID = nNextFID - 1;
+    return true;
 }
 
 /************************************************************************/

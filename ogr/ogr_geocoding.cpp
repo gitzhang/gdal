@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2012-2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_port.h"
@@ -46,7 +30,7 @@
 #include "ogrsf_frmts.h"
 
 // Emulation of gettimeofday() for Windows.
-#ifdef WIN32
+#ifdef _WIN32
 
 #include <time.h>
 #include <windows.h>
@@ -100,10 +84,10 @@ struct _OGRGeocodingSessionHS
     bool bReadCache;
     bool bWriteCache;
     double dfDelayBetweenQueries;
-    OGRDataSource *poDS;
+    GDALDataset *poDS;
 };
 
-static CPLMutex *hMutex = nullptr;
+static CPLMutex *hOGRGeocodingMutex = nullptr;
 static double dfLastQueryTimeStampOSMNominatim = 0.0;
 static double dfLastQueryTimeStampMapQuestNominatim = 0.0;
 
@@ -397,7 +381,7 @@ void OGRGeocodeDestroySession(OGRGeocodingSessionH hSession)
     CPLFree(hSession->pszQueryTemplate);
     CPLFree(hSession->pszReverseQueryTemplate);
     if (hSession->poDS)
-        OGRReleaseDataSource(reinterpret_cast<OGRDataSourceH>(hSession->poDS));
+        delete hSession->poDS;
     CPLFree(hSession);
 }
 
@@ -409,13 +393,13 @@ static OGRLayer *OGRGeocodeGetCacheLayer(OGRGeocodingSessionH hSession,
                                          bool bCreateIfNecessary,
                                          int *pnIdxBlob)
 {
-    OGRDataSource *poDS = hSession->poDS;
+    GDALDataset *poDS = hSession->poDS;
     CPLString osExt = CPLGetExtension(hSession->pszCacheFilename);
 
     if (poDS == nullptr)
     {
-        if (OGRGetDriverCount() == 0)
-            OGRRegisterAll();
+        if (GDALGetDriverCount() == 0)
+            GDALAllRegister();
 
         const bool bHadValue =
             CPLGetConfigOption("OGR_SQLITE_SYNCHRONOUS", nullptr) != nullptr;
@@ -423,13 +407,15 @@ static OGRLayer *OGRGeocodeGetCacheLayer(OGRGeocodingSessionH hSession,
 
         CPLSetThreadLocalConfigOption("OGR_SQLITE_SYNCHRONOUS", "OFF");
 
-        poDS = reinterpret_cast<OGRDataSource *>(
-            OGROpen(hSession->pszCacheFilename, TRUE, nullptr));
+        poDS = GDALDataset::Open(hSession->pszCacheFilename,
+                                 GDAL_OF_VECTOR | GDAL_OF_UPDATE, nullptr,
+                                 nullptr, nullptr);
         if (poDS == nullptr &&
             EQUAL(hSession->pszCacheFilename, DEFAULT_CACHE_SQLITE))
         {
-            poDS = reinterpret_cast<OGRDataSource *>(
-                OGROpen(DEFAULT_CACHE_CSV, TRUE, nullptr));
+            poDS = GDALDataset::Open(DEFAULT_CACHE_CSV,
+                                     GDAL_OF_VECTOR | GDAL_OF_UPDATE, nullptr,
+                                     nullptr, nullptr);
             if (poDS != nullptr)
             {
                 CPLFree(hSession->pszCacheFilename);
@@ -443,8 +429,8 @@ static OGRLayer *OGRGeocodeGetCacheLayer(OGRGeocodingSessionH hSession,
         if (bCreateIfNecessary && poDS == nullptr &&
             !STARTS_WITH_CI(hSession->pszCacheFilename, "PG:"))
         {
-            OGRSFDriverH hDriver = OGRGetDriverByName(osExt);
-            if (hDriver == nullptr &&
+            auto poDriver = GetGDALDriverManager()->GetDriverByName(osExt);
+            if (poDriver == nullptr &&
                 EQUAL(hSession->pszCacheFilename, DEFAULT_CACHE_SQLITE))
             {
                 CPLFree(hSession->pszCacheFilename);
@@ -452,9 +438,9 @@ static OGRLayer *OGRGeocodeGetCacheLayer(OGRGeocodingSessionH hSession,
                 CPLDebug("OGR", "Switch geocode cache file to %s",
                          hSession->pszCacheFilename);
                 osExt = "csv";
-                hDriver = OGRGetDriverByName(osExt);
+                poDriver = GetGDALDriverManager()->GetDriverByName(osExt);
             }
-            if (hDriver != nullptr)
+            if (poDriver != nullptr)
             {
                 char **papszOptions = nullptr;
                 if (EQUAL(osExt, "SQLITE"))
@@ -463,21 +449,20 @@ static OGRLayer *OGRGeocodeGetCacheLayer(OGRGeocodingSessionH hSession,
                         CSLAddNameValue(papszOptions, "METADATA", "FALSE");
                 }
 
-                poDS =
-                    reinterpret_cast<OGRDataSource *>(OGR_Dr_CreateDataSource(
-                        hDriver, hSession->pszCacheFilename, papszOptions));
+                poDS = poDriver->Create(hSession->pszCacheFilename, 0, 0, 0,
+                                        GDT_Unknown, papszOptions);
 
                 if (poDS == nullptr &&
                     (EQUAL(osExt, "SQLITE") || EQUAL(osExt, "CSV")))
                 {
                     CPLFree(hSession->pszCacheFilename);
-                    hSession->pszCacheFilename = CPLStrdup(CPLSPrintf(
-                        "/vsimem/%s.%s", CACHE_LAYER_NAME, osExt.c_str()));
+                    hSession->pszCacheFilename =
+                        CPLStrdup(VSIMemGenerateHiddenFilename(CPLSPrintf(
+                            "%s.%s", CACHE_LAYER_NAME, osExt.c_str())));
                     CPLDebug("OGR", "Switch geocode cache file to %s",
                              hSession->pszCacheFilename);
-                    poDS = reinterpret_cast<OGRDataSource *>(
-                        OGR_Dr_CreateDataSource(
-                            hDriver, hSession->pszCacheFilename, papszOptions));
+                    poDS = poDriver->Create(hSession->pszCacheFilename, 0, 0, 0,
+                                            GDT_Unknown, papszOptions);
                 }
 
                 CSLDestroy(papszOptions);
@@ -547,7 +532,7 @@ static OGRLayer *OGRGeocodeGetCacheLayer(OGRGeocodingSessionH hSession,
 static char *OGRGeocodeGetFromCache(OGRGeocodingSessionH hSession,
                                     const char *pszURL)
 {
-    CPLMutexHolderD(&hMutex);
+    CPLMutexHolderD(&hOGRGeocodingMutex);
 
     int nIdxBlob = -1;
     OGRLayer *poLayer = OGRGeocodeGetCacheLayer(hSession, FALSE, &nIdxBlob);
@@ -578,7 +563,7 @@ static char *OGRGeocodeGetFromCache(OGRGeocodingSessionH hSession,
 static bool OGRGeocodePutIntoCache(OGRGeocodingSessionH hSession,
                                    const char *pszURL, const char *pszContent)
 {
-    CPLMutexHolderD(&hMutex);
+    CPLMutexHolderD(&hOGRGeocodingMutex);
 
     int nIdxBlob = -1;
     OGRLayer *poLayer = OGRGeocodeGetCacheLayer(hSession, TRUE, &nIdxBlob);
@@ -608,7 +593,7 @@ static OGRLayerH OGRGeocodeMakeRawLayer(const char *pszContent)
     poFeature->SetField("raw", pszContent);
     CPL_IGNORE_RET_VAL(poLayer->CreateFeature(poFeature));
     delete poFeature;
-    return reinterpret_cast<OGRLayerH>(poLayer);
+    return OGRLayer::ToHandle(poLayer);
 }
 
 /************************************************************************/
@@ -747,7 +732,7 @@ static OGRLayerH OGRGeocodeBuildLayerNominatim(CPLXMLNode *psSearchResults,
         }
         psPlace = psPlace->psNext;
     }
-    return reinterpret_cast<OGRLayerH>(poLayer);
+    return OGRLayer::ToHandle(poLayer);
 }
 
 /************************************************************************/
@@ -883,7 +868,7 @@ static OGRLayerH OGRGeocodeReverseBuildLayerNominatim(
     CPL_IGNORE_RET_VAL(poLayer->CreateFeature(poFeature));
     delete poFeature;
 
-    return reinterpret_cast<OGRLayerH>(poLayer);
+    return OGRLayer::ToHandle(poLayer);
 }
 
 /************************************************************************/
@@ -1019,7 +1004,7 @@ static OGRLayerH OGRGeocodeBuildLayerYahoo(CPLXMLNode *psResultSet,
         }
         psPlace = psPlace->psNext;
     }
-    return reinterpret_cast<OGRLayerH>(poLayer);
+    return OGRLayer::ToHandle(poLayer);
 }
 
 /************************************************************************/
@@ -1185,7 +1170,7 @@ static OGRLayerH OGRGeocodeBuildLayerBing(CPLXMLNode *psResponse,
         psPlace = psPlace->psNext;
     }
 
-    return reinterpret_cast<OGRLayerH>(poLayer);
+    return OGRLayer::ToHandle(poLayer);
 }
 
 /************************************************************************/
@@ -1236,8 +1221,11 @@ static OGRLayerH OGRGeocodeBuildLayer(const char *pszContent,
 /************************************************************************/
 
 static OGRLayerH OGRGeocodeCommon(OGRGeocodingSessionH hSession,
-                                  CPLString osURL, char **papszOptions)
+                                  const std::string &osURLIn,
+                                  char **papszOptions)
 {
+    std::string osURL(osURLIn);
+
     // Only documented to work with OSM Nominatim.
     if (hSession->pszLanguage != nullptr)
     {
@@ -1286,7 +1274,7 @@ static OGRLayerH OGRGeocodeCommon(OGRGeocodingSessionH hSession,
 
     char *pszCachedResult = nullptr;
     if (hSession->bReadCache)
-        pszCachedResult = OGRGeocodeGetFromCache(hSession, osURL);
+        pszCachedResult = OGRGeocodeGetFromCache(hSession, osURL.c_str());
     if (pszCachedResult == nullptr)
     {
         double *pdfLastQueryTime = nullptr;
@@ -1308,7 +1296,7 @@ static OGRLayerH OGRGeocodeCommon(OGRGeocodingSessionH hSession,
         CPLHTTPResult *psResult = nullptr;
         if (pdfLastQueryTime != nullptr)
         {
-            CPLMutexHolderD(&hMutex);
+            CPLMutexHolderD(&hOGRGeocodingMutex);
             struct timeval tv;
 
             gettimeofday(&tv, nullptr);
@@ -1347,7 +1335,7 @@ static OGRLayerH OGRGeocodeCommon(OGRGeocodingSessionH hSession,
                 if (hSession->bWriteCache)
                 {
                     // coverity[tainted_data]
-                    OGRGeocodePutIntoCache(hSession, osURL, pszResult);
+                    OGRGeocodePutIntoCache(hSession, osURL.c_str(), pszResult);
                 }
                 hLayer = OGRGeocodeBuildLayer(pszResult, bAddRawFeature);
             }
@@ -1443,8 +1431,21 @@ OGRLayerH OGRGeocode(OGRGeocodingSessionH hSession, const char *pszQuery,
         return nullptr;
     }
 
+    constexpr const char *PCT_S = "%s";
+    const char *pszPctS = strstr(hSession->pszQueryTemplate, PCT_S);
+    if (!pszPctS)
+    {
+        // should not happen given OGRGeocodeHasStringValidFormat()
+        return nullptr;
+    }
+
     char *pszEscapedQuery = CPLEscapeString(pszQuery, -1, CPLES_URL);
-    CPLString osURL = CPLSPrintf(hSession->pszQueryTemplate, pszEscapedQuery);
+
+    std::string osURL;
+    osURL.assign(hSession->pszQueryTemplate,
+                 pszPctS - hSession->pszQueryTemplate);
+    osURL += pszEscapedQuery;
+    osURL += (pszPctS + strlen(PCT_S));
     CPLFree(pszEscapedQuery);
 
     if (EQUAL(hSession->pszGeocodingService, "OSM_NOMINATIM") ||
@@ -1594,5 +1595,5 @@ OGRLayerH OGRGeocodeReverse(OGRGeocodingSessionH hSession, double dfLon,
  */
 void OGRGeocodeFreeResult(OGRLayerH hLayer)
 {
-    delete reinterpret_cast<OGRLayer *>(hLayer);
+    delete OGRLayer::FromHandle(hLayer);
 }

@@ -1,5 +1,66 @@
 %extend OGRGeometryShadow {
 // File: ogrgeometry_8cpp.xml
+
+%feature("docstring")  Area "
+Compute geometry area.
+
+The returned area is a 2D Cartesian (planar) area in square units of the
+spatial reference system in use, so potentially 'square degrees' for a
+geometry expressed in a geographic SRS.
+
+For more details: :cpp:func:`OGR_G_Area`
+
+Returns
+--------
+float:
+    the area of the geometry in square units of the spatial reference
+    system in use, or 0.0 for unsupported geometry types.
+
+";
+
+%feature("docstring")  GeodesicArea "
+Compute geometry area, considered as a surface on the underlying
+ellipsoid of the SRS attached to the geometry.
+
+For more details: :cpp:func:`OGR_G_GeodesicArea`
+
+Returns
+--------
+float:
+    the area in square meters, or a negative value for unsupported geometry types.
+
+";
+
+%feature("docstring")  Length "
+Compute geometry length.
+
+The returned length is a 2D Cartesian (planar) area in units of the
+spatial reference system in use, so potentially 'degrees' for a
+geometry expressed in a geographic SRS.
+
+For more details: :cpp:func:`OGR_G_Length`
+
+Returns
+--------
+float:
+    the length of the geometry in units of the spatial reference
+    system in use, or 0.0 for unsupported geometry types.
+
+";
+
+%feature("docstring")  GeodesicLength "
+Compute geometry length, considered as a curve on the underlying
+ellipsoid of the SRS attached to the geometry.
+
+For more details: :cpp:func:`OGR_G_GeodesicLength`
+
+Returns
+--------
+float:
+    the area in meters, or a negative value for unsupported geometry types.
+
+";
+
 %feature("docstring")  DumpReadable "
 Dump geometry in well known text format to indicated output file.
 
@@ -528,6 +589,9 @@ distance: float
 quadsecs: int, default=30
     The number of segments used to approximate a 90 degree
     (quadrant) of curvature.
+options: list/dict
+    An optional list of options to control the buffer output.
+    See :cpp:func:`OGR_G_BufferEx`.
 
 Returns
 --------

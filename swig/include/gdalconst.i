@@ -9,23 +9,7 @@
  ******************************************************************************
  * Copyright (c) 2005, Kevin Ruland
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  *****************************************************************************/
 
 #ifdef SWIGPYTHON
@@ -101,9 +85,34 @@
 %constant GCI_MagentaBand   = GCI_MagentaBand;
 %constant GCI_YellowBand    = GCI_YellowBand;
 %constant GCI_BlackBand     = GCI_BlackBand;
-%constant GCI_YCbCr_YBand     = GCI_YCbCr_YBand;
-%constant GCI_YCbCr_CrBand     = GCI_YCbCr_CrBand;
-%constant GCI_YCbCr_CbBand     = GCI_YCbCr_CbBand;
+%constant GCI_YCbCr_YBand   = GCI_YCbCr_YBand;
+%constant GCI_YCbCr_CrBand  = GCI_YCbCr_CrBand;
+%constant GCI_YCbCr_CbBand  = GCI_YCbCr_CbBand;
+%constant GCI_PanBand       = GCI_PanBand;
+%constant GCI_CoastalBand   = GCI_CoastalBand;
+%constant GCI_RedEdgeBand   = GCI_RedEdgeBand;
+
+%constant GCI_IR_Start      = GCI_IR_Start;  // just a marker, not an enumeration value
+%constant GCI_NIRBand       = GCI_NIRBand;
+%constant GCI_SWIRBand      = GCI_SWIRBand;
+%constant GCI_MWIRBand      = GCI_MWIRBand;
+%constant GCI_LWIRBand      = GCI_LWIRBand;
+%constant GCI_TIRBand       = GCI_TIRBand;
+%constant GCI_OtherIRBand   = GCI_OtherIRBand;
+%constant GCI_IR_End        = GCI_IR_End;  // just a marker, not an enumeration value
+
+%constant GCI_SAR_Start     = GCI_SAR_Start;  // just a marker, not an enumeration value
+%constant GCI_SAR_Ka_Band   = GCI_SAR_Ka_Band;
+%constant GCI_SAR_K_Band    = GCI_SAR_K_Band;
+%constant GCI_SAR_Ku_Band   = GCI_SAR_Ku_Band;
+%constant GCI_SAR_X_Band    = GCI_SAR_X_Band;
+%constant GCI_SAR_C_Band    = GCI_SAR_C_Band;
+%constant GCI_SAR_S_Band    = GCI_SAR_S_Band;
+%constant GCI_SAR_L_Band    = GCI_SAR_L_Band;
+%constant GCI_SAR_P_Band    = GCI_SAR_P_Band;
+%constant GCI_SAR_End       = GCI_SAR_End;  // just a marker, not an enumeration value
+
+%constant GCI_Max           = GCI_Max;
 
 // GDALResampleAlg
 
@@ -172,6 +181,7 @@
 %constant OF_UPDATE = GDAL_OF_UPDATE;
 %constant OF_SHARED = GDAL_OF_SHARED;
 %constant OF_VERBOSE_ERROR = GDAL_OF_VERBOSE_ERROR;
+%constant OF_THREAD_SAFE = GDAL_OF_THREAD_SAFE;
 
 #if !defined(SWIGCSHARP) && !defined(SWIGJAVA)
 
@@ -192,10 +202,13 @@
 %constant char *DMD_CREATIONDATATYPES  = GDAL_DMD_CREATIONDATATYPES;
 %constant char *DMD_CREATIONFIELDDATATYPES  = GDAL_DMD_CREATIONFIELDDATATYPES;
 %constant char *DMD_CREATIONFIELDDATASUBTYPES  = GDAL_DMD_CREATIONFIELDDATASUBTYPES;
+%constant char *DMD_CREATION_FIELD_DEFN_FLAGS  = GDAL_DMD_CREATION_FIELD_DEFN_FLAGS;
 %constant char *DMD_SUBDATASETS        = GDAL_DMD_SUBDATASETS;
 %constant char *DMD_CREATION_FIELD_DOMAIN_TYPES    = GDAL_DMD_CREATION_FIELD_DOMAIN_TYPES;
 %constant char *DMD_ALTER_GEOM_FIELD_DEFN_FLAGS    = GDAL_DMD_ALTER_GEOM_FIELD_DEFN_FLAGS;
 %constant char *DMD_SUPPORTED_SQL_DIALECTS    = GDAL_DMD_SUPPORTED_SQL_DIALECTS;
+%constant char *DMD_NUMERIC_FIELD_WIDTH_INCLUDES_DECIMAL_SEPARATOR = GDAL_DMD_NUMERIC_FIELD_WIDTH_INCLUDES_DECIMAL_SEPARATOR;
+%constant char *DMD_NUMERIC_FIELD_WIDTH_INCLUDES_SIGN = GDAL_DMD_NUMERIC_FIELD_WIDTH_INCLUDES_SIGN;
 
 %constant char *DCAP_OPEN       = GDAL_DCAP_OPEN;
 %constant char *DCAP_CREATE     = GDAL_DCAP_CREATE;
@@ -237,6 +250,7 @@
 %constant char *GDAL_DMD_RELATIONSHIP_FLAGS    = GDAL_DMD_RELATIONSHIP_FLAGS;
 %constant char *GDAL_DMD_RELATIONSHIP_RELATED_TABLE_TYPES    = GDAL_DMD_RELATIONSHIP_RELATED_TABLE_TYPES;
 %constant char *DCAP_RENAME_LAYERS    = GDAL_DCAP_RENAME_LAYERS;
+%constant char *DCAP_FLUSHCACHE_CONSISTENT_STATE    = GDAL_DCAP_FLUSHCACHE_CONSISTENT_STATE;
 
 %constant char *DIM_TYPE_HORIZONTAL_X       = GDAL_DIM_TYPE_HORIZONTAL_X;
 %constant char *DIM_TYPE_HORIZONTAL_Y       = GDAL_DIM_TYPE_HORIZONTAL_Y;
@@ -290,6 +304,8 @@
 #define GDAL_DMD_CREATIONFIELDDATATYPES "DMD_CREATIONFIELDDATATYPES"
 #define DMD_CREATIONFIELDDATASUBTYPES "DMD_CREATIONFIELDDATASUBTYPES"
 #define GDAL_DMD_CREATIONFIELDDATASUBTYPES "DMD_CREATIONFIELDDATASUBTYPES"
+#define GDAL_DMD_CREATION_FIELD_DEFN_FLAGS "DMD_CREATION_FIELD_DEFN_FLAGS"
+#define DMD_CREATION_FIELD_DEFN_FLAGS "DMD_CREATIONFIELDDATASUBTYPES"
 #define DMD_SUBDATASETS "DMD_SUBDATASETS"
 #define GDAL_DMD_SUBDATASETS "DMD_SUBDATASETS"
 #define DMD_CREATION_FIELD_DOMAIN_TYPES "DMD_CREATION_FIELD_DOMAIN_TYPES"
@@ -298,6 +314,10 @@
 #define GDAL_DMD_ALTER_GEOM_FIELD_DEFN_FLAGS "DMD_ALTER_GEOM_FIELD_DEFN_FLAGS"
 #define DMD_SUPPORTED_SQL_DIALECTS "DMD_SUPPORTED_SQL_DIALECTS"
 #define GDAL_DMD_SUPPORTED_SQL_DIALECTS "DMD_SUPPORTED_SQL_DIALECTS"
+#define DMD_NUMERIC_FIELD_WIDTH_INCLUDES_DECIMAL_SEPARATOR "DMD_NUMERIC_FIELD_WIDTH_INCLUDES_DECIMAL_SEPARATOR"
+#define GDAL_DMD_NUMERIC_FIELD_WIDTH_INCLUDES_DECIMAL_SEPARATOR "DMD_NUMERIC_FIELD_WIDTH_INCLUDES_DECIMAL_SEPARATOR"
+#define DMD_NUMERIC_FIELD_WIDTH_INCLUDES_SIGN "DMD_NUMERIC_FIELD_WIDTH_INCLUDES_SIGN"
+#define GDAL_DMD_NUMERIC_FIELD_WIDTH_INCLUDES_SIGN "DMD_NUMERIC_FIELD_WIDTH_INCLUDES_SIGN"
 
 #define DCAP_OPEN       "DCAP_OPEN"
 #define GDAL_DCAP_OPEN       "DCAP_OPEN"
@@ -379,6 +399,8 @@
 #define GDAL_DMD_RELATIONSHIP_RELATED_TABLE_TYPES    "DMD_RELATIONSHIP_RELATED_TABLE_TYPES"
 #define DCAP_RENAME_LAYERS    "DCAP_RENAME_LAYERS"
 #define GDAL_DCAP_RENAME_LAYERS    "DCAP_RENAME_LAYERS"
+#define DCAP_FLUSHCACHE_CONSISTENT_STATE    "DCAP_FLUSHCACHE_CONSISTENT_STATE"
+#define GDAL_DCAP_FLUSHCACHE_CONSISTENT_STATE    "DCAP_FLUSHCACHE_CONSISTENT_STATE"
 
 #define DIM_TYPE_HORIZONTAL_X "HORIZONTAL_X"
 #define GDAL_DIM_TYPE_HORIZONTAL_X "HORIZONTAL_X"

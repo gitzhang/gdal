@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2018-2019, Airbus DS Intelligence
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_http.h"
@@ -155,9 +139,9 @@ class GDALDAASDataset final : public GDALDataset
     const OGRSpatialReference *GetSpatialRef() const override;
     CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff, int nXSize,
                      int nYSize, void *pData, int nBufXSize, int nBufYSize,
-                     GDALDataType eBufType, int nBandCount, int *panBands,
-                     GSpacing nPixelSpace, GSpacing nLineSpace,
-                     GSpacing nBandSpace,
+                     GDALDataType eBufType, int nBandCount,
+                     BANDMAP_TYPE panBands, GSpacing nPixelSpace,
+                     GSpacing nLineSpace, GSpacing nBandSpace,
                      GDALRasterIOExtraArg *psExtraArg) override;
     CPLErr AdviseRead(int nXOff, int nYOff, int nXSize, int nYSize,
                       int /* nBufXSize */, int /* nBufYSize */,
@@ -478,13 +462,13 @@ static CPLHTTPResult *DAAS_CPLHTTPFetch(const char *pszURL, char **papszOptions)
 
 bool GDALDAASDataset::GetAuthorization()
 {
-    CPLString osClientId =
+    const CPLString osClientId =
         CSLFetchNameValueDef(m_papszOpenOptions, "CLIENT_ID",
                              CPLGetConfigOption("GDAL_DAAS_CLIENT_ID", ""));
-    CPLString osAPIKey =
+    const CPLString osAPIKey =
         CSLFetchNameValueDef(m_papszOpenOptions, "API_KEY",
                              CPLGetConfigOption("GDAL_DAAS_API_KEY", ""));
-    CPLString osAuthorization =
+    const CPLString osAuthorization =
         CSLFetchNameValueDef(m_papszOpenOptions, "ACCESS_TOKEN",
                              CPLGetConfigOption("GDAL_DAAS_ACCESS_TOKEN", ""));
     m_osXForwardUser = CSLFetchNameValueDef(
@@ -601,7 +585,8 @@ bool GDALDAASDataset::GetAuthorization()
 /*                           GetObject()                                */
 /************************************************************************/
 
-static CPLJSONObject GetObject(CPLJSONObject &oContainer, const char *pszPath,
+static CPLJSONObject GetObject(const CPLJSONObject &oContainer,
+                               const char *pszPath,
                                CPLJSONObject::Type eExpectedType,
                                const char *pszExpectedType, bool bVerboseError,
                                bool &bError)
@@ -632,7 +617,7 @@ static CPLJSONObject GetObject(CPLJSONObject &oContainer, const char *pszPath,
 /*                          GetInteger()                                */
 /************************************************************************/
 
-static int GetInteger(CPLJSONObject &oContainer, const char *pszPath,
+static int GetInteger(const CPLJSONObject &oContainer, const char *pszPath,
                       bool bVerboseError, bool &bError)
 {
     CPLJSONObject oObj =
@@ -649,7 +634,7 @@ static int GetInteger(CPLJSONObject &oContainer, const char *pszPath,
 /*                          GetDouble()                                */
 /************************************************************************/
 
-static double GetDouble(CPLJSONObject &oContainer, const char *pszPath,
+static double GetDouble(const CPLJSONObject &oContainer, const char *pszPath,
                         bool bVerboseError, bool &bError)
 {
     CPLJSONObject oObj = oContainer.GetObj(pszPath);
@@ -676,7 +661,7 @@ static double GetDouble(CPLJSONObject &oContainer, const char *pszPath,
 /*                          GetString()                                 */
 /************************************************************************/
 
-static CPLString GetString(CPLJSONObject &oContainer, const char *pszPath,
+static CPLString GetString(const CPLJSONObject &oContainer, const char *pszPath,
                            bool bVerboseError, bool &bError)
 {
     CPLJSONObject oObj =
@@ -706,6 +691,7 @@ GetGDALDataTypeFromDAASPixelType(const CPLString &osPixelType)
         {"Int32", GDT_Int32},     {"Float32", GDT_Float32},
         {"Float64", GDT_Float64},
     };
+
     for (size_t i = 0; i < CPL_ARRAYSIZE(asDataTypes); ++i)
     {
         if (osPixelType == asDataTypes[i].pszName)
@@ -815,6 +801,7 @@ bool GDALDAASDataset::GetImageMetadata()
     {
         oGetBufferDict = oGetBufferObj;
     }
+    CPL_IGNORE_RET_VAL(oGetBufferObj);
     if (!oGetBufferDict.IsValid())
     {
         CPLError(CE_Failure, CPLE_AppDefined, "%s missing",
@@ -995,8 +982,10 @@ void GDALDAASDataset::ReadSRS(const CPLJSONObject &oProperties)
             if (oSRSObj.GetType() == CPLJSONObject::Type::Object)
             {
                 bool bError = false;
-                CPLString osType(GetString(oSRSObj, "type", true, bError));
-                CPLString osValue(GetString(oSRSObj, "value", true, bError));
+                const std::string osType(
+                    GetString(oSRSObj, "type", true, bError));
+                const std::string osValue(
+                    GetString(oSRSObj, "value", true, bError));
                 // Use urn in priority
                 if (osType == "urn" && !osValue.empty())
                 {
@@ -1049,6 +1038,7 @@ void GDALDAASDataset::ReadRPCs(const CPLJSONObject &oProperties)
     {
         bool bRPCError = false;
         CPLStringList aoRPC;
+
         const struct
         {
             const char *pszJsonName;
@@ -1061,6 +1051,7 @@ void GDALDAASDataset::ReadRPCs(const CPLJSONObject &oProperties)
             {"sampScale", RPC_SAMP_SCALE}, {"latScale", RPC_LAT_SCALE},
             {"longScale", RPC_LONG_SCALE}, {"heightScale", RPC_HEIGHT_SCALE},
         };
+
         for (size_t i = 0; i < CPL_ARRAYSIZE(asRPCSingleValues); ++i)
         {
             bool bRPCErrorTmp = false;
@@ -1078,7 +1069,7 @@ void GDALDAASDataset::ReadRPCs(const CPLJSONObject &oProperties)
                 continue;
             }
             aoRPC.SetNameValue(asRPCSingleValues[i].pszGDALName,
-                               CPLSPrintf("%.18g", dfRPCVal));
+                               CPLSPrintf("%.17g", dfRPCVal));
         }
 
         const struct
@@ -1091,6 +1082,7 @@ void GDALDAASDataset::ReadRPCs(const CPLJSONObject &oProperties)
             {"sampNumCoeff", RPC_SAMP_NUM_COEFF},
             {"sampDenCoeff", RPC_SAMP_DEN_COEFF},
         };
+
         for (size_t i = 0; i < CPL_ARRAYSIZE(asRPCArrayValues); ++i)
         {
             CPLJSONArray oRPCArray =
@@ -1102,7 +1094,7 @@ void GDALDAASDataset::ReadRPCs(const CPLJSONObject &oProperties)
                 {
                     if (j > 0)
                         osVal += " ";
-                    osVal += CPLSPrintf("%.18g", oRPCArray[j].ToDouble());
+                    osVal += CPLSPrintf("%.17g", oRPCArray[j].ToDouble());
                 }
                 aoRPC.SetNameValue(asRPCArrayValues[i].pszGDALName,
                                    osVal.c_str());
@@ -1192,8 +1184,8 @@ bool GDALDAASDataset::SetupServerSideReprojection(const char *pszTargetSRS)
     std::copy_n(adfGeoTransform, 6, m_adfGeoTransform.begin());
     m_bRequestInGeoreferencedCoordinates = true;
     m_osSRSType = "epsg";
-    m_osSRSValue = osTargetEPSGCode;
-    m_oSRS = oSRS;
+    m_osSRSValue = std::move(osTargetEPSGCode);
+    m_oSRS = std::move(oSRS);
     nRasterXSize = nXSize;
     nRasterYSize = nYSize;
     return true;
@@ -1323,7 +1315,7 @@ bool GDALDAASDataset::Open(GDALOpenInfo *poOpenInfo)
             break;
         }
         m_apoOverviewDS.push_back(
-            cpl::make_unique<GDALDAASDataset>(this, iOvr));
+            std::make_unique<GDALDAASDataset>(this, iOvr));
     }
 
     return true;
@@ -1334,7 +1326,7 @@ GDALDataset *GDALDAASDataset::OpenStatic(GDALOpenInfo *poOpenInfo)
     if (!Identify(poOpenInfo))
         return nullptr;
 
-    auto poDS = cpl::make_unique<GDALDAASDataset>();
+    auto poDS = std::make_unique<GDALDAASDataset>();
     if (!poDS->Open(poOpenInfo))
         return nullptr;
     return poDS.release();
@@ -1371,6 +1363,7 @@ GDALDAASRasterBand::GDALDAASRasterBand(GDALDAASDataset *poDSIn, int nBandIn,
         {"BLUE", GCI_BlueBand},   {"GRAY", GCI_GrayIndex},
         {"ALPHA", GCI_AlphaBand}, {"UNDEFINED", GCI_Undefined},
     };
+
     for (size_t i = 0; i < CPL_ARRAYSIZE(asColorInterpretations); ++i)
     {
         if (EQUAL(oBandDesc.osColorInterp, asColorInterpretations[i].pszName))
@@ -1501,7 +1494,7 @@ CPLErr GDALDAASDataset::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
                                   int nXSize, int nYSize, void *pData,
                                   int nBufXSize, int nBufYSize,
                                   GDALDataType eBufType, int nBandCount,
-                                  int *panBandMap, GSpacing nPixelSpace,
+                                  BANDMAP_TYPE panBandMap, GSpacing nPixelSpace,
                                   GSpacing nLineSpace, GSpacing nBandSpace,
                                   GDALRasterIOExtraArg *psExtraArg)
 {
@@ -2165,7 +2158,7 @@ CPLErr GDALDAASRasterBand::GetBlocks(int nBlockXOff, int nBlockYOff,
 
     CPLJSONArray oBands;
     bool bOK = true;
-    for (auto &iBand : anRequestedBands)
+    for (const int iBand : anRequestedBands)
     {
         auto desc = (iBand == MAIN_MASK_BAND_NUMBER)
                         ? poGDS->m_poMaskBand->GetDescription()
@@ -2212,7 +2205,7 @@ CPLErr GDALDAASRasterBand::GetBlocks(int nBlockXOff, int nBlockYOff,
         {
             for (int iXBlock = 0; iXBlock < nXBlocks; iXBlock++)
             {
-                for (auto &iBand : anRequestedBands)
+                for (const int iBand : anRequestedBands)
                 {
                     GByte *pabyDstBuffer = nullptr;
                     GDALDAASRasterBand *poIterBand;
@@ -2411,7 +2404,7 @@ CPLErr GDALDAASRasterBand::GetBlocks(int nBlockXOff, int nBlockYOff,
     }
     else
     {
-        CPLString osTmpMemFile = CPLSPrintf("/vsimem/daas_%p", this);
+        const CPLString osTmpMemFile = VSIMemGenerateHiddenFilename("daas");
         VSIFCloseL(VSIFileFromMemBuffer(
             osTmpMemFile, psResult->pasMimePart[iDataPart].pabyData,
             psResult->pasMimePart[iDataPart].nDataLen, false));
@@ -2520,7 +2513,7 @@ CPLErr GDALDAASRasterBand::GetBlocks(int nBlockXOff, int nBlockYOff,
                     GF_Read, iXBlock * nBlockXSize, iYBlock * nBlockYSize,
                     nBlockActualXSize, nBlockActualYSize, pabyDstBuffer,
                     nBlockActualXSize, nBlockActualYSize, eIterBandDT, nDTSize,
-                    nDTSize * nBlockXSize, nullptr);
+                    static_cast<GSpacing>(nDTSize) * nBlockXSize, nullptr);
 
                 if (poBlock)
                     poBlock->DropLock();

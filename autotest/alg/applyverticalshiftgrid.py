@@ -10,23 +10,7 @@
 ###############################################################################
 # Copyright (c) 2017, Even Rouault <even dot rouault at spatialys dot com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 
@@ -82,6 +66,7 @@ def test_applyverticalshiftgrid_1():
 # Error cases
 
 
+@gdaltest.disable_exceptions()
 def test_applyverticalshiftgrid_2():
 
     sr = osr.SpatialReference()
@@ -101,7 +86,7 @@ def test_applyverticalshiftgrid_2():
             grid_ds.SetProjection(sr.ExportToWkt())
         if i == 5:
             grid_ds.AddBand(gdal.GDT_Byte)
-        with gdaltest.error_handler():
+        with gdal.quiet_errors():
             out_ds = gdal.ApplyVerticalShiftGrid(src_ds, grid_ds)
         assert out_ds is None, i
 
@@ -112,7 +97,7 @@ def test_applyverticalshiftgrid_2():
     grid_ds = gdal.GetDriverByName("MEM").Create("", 1, 1)
     grid_ds.SetGeoTransform([0, 1, 0, 0, 0, -1])
     grid_ds.SetProjection(sr.ExportToWkt())
-    with gdaltest.error_handler():
+    with gdal.quiet_errors():
         out_ds = gdal.ApplyVerticalShiftGrid(src_ds, grid_ds)
     assert out_ds is None
 
@@ -123,7 +108,7 @@ def test_applyverticalshiftgrid_2():
     grid_ds = gdal.GetDriverByName("MEM").Create("", 1, 1)
     grid_ds.SetGeoTransform([0, 0, 0, 0, 0, 0])
     grid_ds.SetProjection(sr.ExportToWkt())
-    with gdaltest.error_handler():
+    with gdal.quiet_errors():
         out_ds = gdal.ApplyVerticalShiftGrid(src_ds, grid_ds)
     assert out_ds is None
 
@@ -135,7 +120,7 @@ def test_applyverticalshiftgrid_2():
     grid_ds = gdal.GetDriverByName("MEM").Create("", 1, 1)
     grid_ds.SetGeoTransform([0, 1, 0, 0, 0, -1])
     grid_ds.SetProjection('LOCAL_CS["foo"]')
-    with gdaltest.error_handler():
+    with gdal.quiet_errors():
         out_ds = gdal.ApplyVerticalShiftGrid(src_ds, grid_ds)
     assert out_ds is None
 
@@ -147,7 +132,7 @@ def test_applyverticalshiftgrid_2():
         grid_ds = gdal.GetDriverByName("MEM").Create("", 1, 1)
         grid_ds.SetGeoTransform([0, 1, 0, 0, 0, -1])
         grid_ds.SetProjection(sr.ExportToWkt())
-        with gdaltest.error_handler():
+        with gdal.quiet_errors():
             out_ds = gdal.ApplyVerticalShiftGrid(
                 src_ds, grid_ds, options=["BLOCKSIZE=2000000000"]
             )
@@ -160,7 +145,7 @@ def test_applyverticalshiftgrid_2():
     grid_ds = gdal.GetDriverByName("MEM").Create("", 1, 1)
     grid_ds.SetGeoTransform([0, 1, 0, 0, 0, -1])
     grid_ds.SetProjection(sr.ExportToWkt())
-    with gdaltest.error_handler():
+    with gdal.quiet_errors():
         out_ds = gdal.ApplyVerticalShiftGrid(src_ds, grid_ds, options=["DATATYPE=x"])
     assert out_ds is None
 
@@ -246,9 +231,8 @@ def test_applyverticalshiftgrid_4():
     out_ds = gdal.ApplyVerticalShiftGrid(
         src_ds, grid_ds, options=["ERROR_ON_MISSING_VERT_SHIFT=YES"]
     )
-    with gdaltest.error_handler():
-        data = out_ds.GetRasterBand(1).ReadRaster()
-    assert data is None
+    with pytest.raises(Exception):
+        out_ds.GetRasterBand(1).ReadRaster()
 
     # ERROR_ON_MISSING_VERT_SHIFT due to nodata in grid
     src_ds = gdal.GetDriverByName("MEM").Create("", 1, 1)
@@ -262,9 +246,8 @@ def test_applyverticalshiftgrid_4():
     out_ds = gdal.ApplyVerticalShiftGrid(
         src_ds, grid_ds, options=["ERROR_ON_MISSING_VERT_SHIFT=YES"]
     )
-    with gdaltest.error_handler():
-        data = out_ds.GetRasterBand(1).ReadRaster()
-    assert data is None
+    with pytest.raises(Exception):
+        out_ds.GetRasterBand(1).ReadRaster()
 
 
 ###############################################################################
@@ -306,12 +289,10 @@ def test_applyverticalshiftgrid_5():
 # Simulate EGM grids
 
 
+@pytest.mark.require_driver("GTX")
 def test_applyverticalshiftgrid_6():
 
     drv = gdal.GetDriverByName("GTX")
-    if drv is None:
-        pytest.skip("GTX driver missing")
-
     grid_ds = drv.Create(
         "tmp/applyverticalshiftgrid_6.gtx", 1440, 721, 1, gdal.GDT_Float32
     )
@@ -336,12 +317,10 @@ def test_applyverticalshiftgrid_6():
 # Simulate USA geoid grids with long origin > 180
 
 
+@pytest.mark.require_driver("GTX")
 def test_applyverticalshiftgrid_7():
 
     drv = gdal.GetDriverByName("GTX")
-    if drv is None:
-        pytest.skip("GTX driver missing")
-
     grid_ds = drv.Create(
         "tmp/applyverticalshiftgrid_7.gtx", 700, 721, 1, gdal.GDT_Float32
     )

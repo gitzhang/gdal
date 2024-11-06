@@ -9,26 +9,11 @@
  * Copyright (c) 1999, Frank Warmerdam
  * Copyright (c) 2008-2014, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_port.h"
+#include "ogr_geometry.h"
 #include "ogr_p.h"
 
 #include <cassert>
@@ -150,7 +135,7 @@ std::string intelliround(std::string &s)
     if (s[i - 2] == '0' && s[i - 3] == '0' && s[i - 4] == '0' &&
         s[i - 5] == '0' && s[i - 6] == '0')
     {
-        s.resize(s.size() - 1);
+        s.pop_back();
     }
     // I don't understand this case exactly.  It's like saying if the
     // value is large enough and there are sufficient sig digits before
@@ -203,12 +188,14 @@ void OGRFormatDouble(char *pszBuffer, int nBufferLen, double dfVal,
 {
     OGRWktOptions opts;
 
-    opts.precision = nPrecision;
+    opts.xyPrecision = nPrecision;
+    opts.zPrecision = nPrecision;
+    opts.mPrecision = nPrecision;
     opts.format = (chConversionSpecifier == 'g' || chConversionSpecifier == 'G')
                       ? OGRWktFormat::G
                       : OGRWktFormat::F;
 
-    std::string s = OGRFormatDouble(dfVal, opts);
+    std::string s = OGRFormatDouble(dfVal, opts, 1);
     if (chDecimalSep != '\0' && chDecimalSep != '.')
     {
         auto pos = s.find('.');
@@ -228,7 +215,7 @@ void OGRFormatDouble(char *pszBuffer, int nBufferLen, double dfVal,
 
 /// Simplified OGRFormatDouble that can be made to adhere to provided
 /// options.
-std::string OGRFormatDouble(double val, const OGRWktOptions &opts)
+std::string OGRFormatDouble(double val, const OGRWktOptions &opts, int nDimIdx)
 {
     // So to have identical cross platform representation.
     if (std::isinf(val))
@@ -248,14 +235,16 @@ std::string OGRFormatDouble(double val, const OGRWktOptions &opts)
         oss << std::uppercase;
         l_round = false;
     }
-    oss << std::setprecision(opts.precision);
+    oss << std::setprecision(nDimIdx < 3    ? opts.xyPrecision
+                             : nDimIdx == 3 ? opts.zPrecision
+                                            : opts.mPrecision);
     oss << val;
 
     std::string sval = oss.str();
 
     if (l_round)
         sval = intelliround(sval);
-    return removeTrailingZeros(sval);
+    return removeTrailingZeros(std::move(sval));
 }
 
 /************************************************************************/
@@ -284,7 +273,7 @@ static bool isInteger(const std::string &s)
 }
 
 std::string OGRMakeWktCoordinate(double x, double y, double z, int nDimension,
-                                 OGRWktOptions opts)
+                                 const OGRWktOptions &opts)
 {
     std::string wkt;
 
@@ -299,19 +288,18 @@ std::string OGRMakeWktCoordinate(double x, double y, double z, int nDimension,
     }
     else
     {
-        wkt = OGRFormatDouble(x, opts);
+        wkt = OGRFormatDouble(x, opts, 1);
         // ABELL - Why do we do special formatting?
         if (isInteger(wkt))
             wkt += ".0";
         wkt += ' ';
 
-        std::string yval = OGRFormatDouble(y, opts);
+        std::string yval = OGRFormatDouble(y, opts, 2);
         if (isInteger(yval))
             yval += ".0";
         wkt += yval;
     }
 
-    // Why do we always format Z with type G.
     if (nDimension == 3)
     {
         wkt += ' ';
@@ -319,8 +307,7 @@ std::string OGRMakeWktCoordinate(double x, double y, double z, int nDimension,
             wkt += std::to_string(static_cast<int>(z));
         else
         {
-            opts.format = OGRWktFormat::G;
-            wkt += OGRFormatDouble(z, opts);
+            wkt += OGRFormatDouble(z, opts, 3);
         }
     }
     return wkt;
@@ -348,7 +335,7 @@ void OGRMakeWktCoordinateM(char *pszTarget, double x, double y, double z,
 
 std::string OGRMakeWktCoordinateM(double x, double y, double z, double m,
                                   OGRBoolean hasZ, OGRBoolean hasM,
-                                  OGRWktOptions opts)
+                                  const OGRWktOptions &opts)
 {
     std::string wkt;
     if (opts.format == OGRWktFormat::Default && CPLIsDoubleAnInt(x) &&
@@ -360,35 +347,33 @@ std::string OGRMakeWktCoordinateM(double x, double y, double z, double m,
     }
     else
     {
-        wkt = OGRFormatDouble(x, opts);
+        wkt = OGRFormatDouble(x, opts, 1);
         if (isInteger(wkt))
             wkt += ".0";
         wkt += ' ';
 
-        std::string yval = OGRFormatDouble(y, opts);
+        std::string yval = OGRFormatDouble(y, opts, 2);
         if (isInteger(yval))
             yval += ".0";
         wkt += yval;
     }
 
-    // For some reason we always format Z and M as G-type
-    opts.format = OGRWktFormat::G;
     if (hasZ)
     {
-        /*if( opts.format == OGRWktFormat::Default && CPLIsDoubleAnInt(z) )
-            wkt += " " + std::to_string(static_cast<int>(z));
-        else*/
         wkt += ' ';
-        wkt += OGRFormatDouble(z, opts);
+        if (opts.format == OGRWktFormat::Default && CPLIsDoubleAnInt(z))
+            wkt += std::to_string(static_cast<int>(z));
+        else
+            wkt += OGRFormatDouble(z, opts, 3);
     }
 
     if (hasM)
     {
-        /*if( opts.format == OGRWktFormat::Default && CPLIsDoubleAnInt(m) )
-            wkt += " " + std::to_string(static_cast<int>(m));
-        else*/
         wkt += ' ';
-        wkt += OGRFormatDouble(m, opts);
+        if (opts.format == OGRWktFormat::Default && CPLIsDoubleAnInt(m))
+            wkt += std::to_string(static_cast<int>(m));
+        else
+            wkt += OGRFormatDouble(m, opts, 4);
     }
     return wkt;
 }
@@ -511,9 +496,10 @@ const char *OGRWktReadPoints(const char *pszInput, OGRRawPoint **ppaoPoints,
         pszInput = OGRWktReadToken(pszInput, szTokenX);
         pszInput = OGRWktReadToken(pszInput, szTokenY);
 
-        if ((!isdigit(szTokenX[0]) && szTokenX[0] != '-' &&
-             szTokenX[0] != '.') ||
-            (!isdigit(szTokenY[0]) && szTokenY[0] != '-' && szTokenY[0] != '.'))
+        if ((!isdigit(static_cast<unsigned char>(szTokenX[0])) &&
+             szTokenX[0] != '-' && szTokenX[0] != '.') ||
+            (!isdigit(static_cast<unsigned char>(szTokenY[0])) &&
+             szTokenY[0] != '-' && szTokenY[0] != '.'))
             return nullptr;
 
         /* --------------------------------------------------------------------
@@ -549,7 +535,8 @@ const char *OGRWktReadPoints(const char *pszInput, OGRRawPoint **ppaoPoints,
          */
         pszInput = OGRWktReadToken(pszInput, szDelim);
 
-        if (isdigit(szDelim[0]) || szDelim[0] == '-' || szDelim[0] == '.')
+        if (isdigit(static_cast<unsigned char>(szDelim[0])) ||
+            szDelim[0] == '-' || szDelim[0] == '.')
         {
             if (*ppadfZ == nullptr)
             {
@@ -574,7 +561,8 @@ const char *OGRWktReadPoints(const char *pszInput, OGRRawPoint **ppaoPoints,
         /*      If we do, just skip it. */
         /* --------------------------------------------------------------------
          */
-        if (isdigit(szDelim[0]) || szDelim[0] == '-' || szDelim[0] == '.')
+        if (isdigit(static_cast<unsigned char>(szDelim[0])) ||
+            szDelim[0] == '-' || szDelim[0] == '.')
         {
             pszInput = OGRWktReadToken(pszInput, szDelim);
         }
@@ -657,10 +645,12 @@ const char *OGRWktReadPointsM(const char *pszInput, OGRRawPoint **ppaoPoints,
         pszInput = OGRWktReadToken(pszInput, szTokenX);
         pszInput = OGRWktReadToken(pszInput, szTokenY);
 
-        if ((!isdigit(szTokenX[0]) && szTokenX[0] != '-' &&
-             szTokenX[0] != '.' && !EQUAL(szTokenX, "nan")) ||
-            (!isdigit(szTokenY[0]) && szTokenY[0] != '-' &&
-             szTokenY[0] != '.' && !EQUAL(szTokenY, "nan")))
+        if ((!isdigit(static_cast<unsigned char>(szTokenX[0])) &&
+             szTokenX[0] != '-' && szTokenX[0] != '.' &&
+             !EQUAL(szTokenX, "nan")) ||
+            (!isdigit(static_cast<unsigned char>(szTokenY[0])) &&
+             szTokenY[0] != '-' && szTokenY[0] != '.' &&
+             !EQUAL(szTokenY, "nan")))
             return nullptr;
 
         /* --------------------------------------------------------------------
@@ -710,8 +700,8 @@ const char *OGRWktReadPointsM(const char *pszInput, OGRRawPoint **ppaoPoints,
 
         if (!(*flags & OGRGeometry::OGR_G_3D) &&
             !(*flags & OGRGeometry::OGR_G_MEASURED) &&
-            (isdigit(szDelim[0]) || szDelim[0] == '-' || szDelim[0] == '.' ||
-             EQUAL(szDelim, "nan")))
+            (isdigit(static_cast<unsigned char>(szDelim[0])) ||
+             szDelim[0] == '-' || szDelim[0] == '.' || EQUAL(szDelim, "nan")))
         {
             *flags |= OGRGeometry::OGR_G_3D;
         }
@@ -730,8 +720,8 @@ const char *OGRWktReadPointsM(const char *pszInput, OGRRawPoint **ppaoPoints,
                 *ppadfZ = static_cast<double *>(
                     CPLCalloc(sizeof(double), *pnMaxPoints));
             }
-            if (isdigit(szDelim[0]) || szDelim[0] == '-' || szDelim[0] == '.' ||
-                EQUAL(szDelim, "nan"))
+            if (isdigit(static_cast<unsigned char>(szDelim[0])) ||
+                szDelim[0] == '-' || szDelim[0] == '.' || EQUAL(szDelim, "nan"))
             {
                 (*ppadfZ)[*pnPointsRead] = CPLAtof(szDelim);
                 pszInput = OGRWktReadToken(pszInput, szDelim);
@@ -755,8 +745,8 @@ const char *OGRWktReadPointsM(const char *pszInput, OGRRawPoint **ppaoPoints,
          */
 
         if (!(*flags & OGRGeometry::OGR_G_MEASURED) &&
-            (isdigit(szDelim[0]) || szDelim[0] == '-' || szDelim[0] == '.' ||
-             EQUAL(szDelim, "nan")))
+            (isdigit(static_cast<unsigned char>(szDelim[0])) ||
+             szDelim[0] == '-' || szDelim[0] == '.' || EQUAL(szDelim, "nan")))
         {
             if (bNoFlags)
             {
@@ -782,8 +772,8 @@ const char *OGRWktReadPointsM(const char *pszInput, OGRRawPoint **ppaoPoints,
                 *ppadfM = static_cast<double *>(
                     CPLCalloc(sizeof(double), *pnMaxPoints));
             }
-            if (isdigit(szDelim[0]) || szDelim[0] == '-' || szDelim[0] == '.' ||
-                EQUAL(szDelim, "nan"))
+            if (isdigit(static_cast<unsigned char>(szDelim[0])) ||
+                szDelim[0] == '-' || szDelim[0] == '.' || EQUAL(szDelim, "nan"))
             {
                 (*ppadfM)[*pnPointsRead] = CPLAtof(szDelim);
                 pszInput = OGRWktReadToken(pszInput, szDelim);
@@ -807,8 +797,8 @@ const char *OGRWktReadPointsM(const char *pszInput, OGRRawPoint **ppaoPoints,
          */
 
         if (!(*flags & OGRGeometry::OGR_G_3D) &&
-            (isdigit(szDelim[0]) || szDelim[0] == '-' || szDelim[0] == '.' ||
-             EQUAL(szDelim, "nan")))
+            (isdigit(static_cast<unsigned char>(szDelim[0])) ||
+             szDelim[0] == '-' || szDelim[0] == '.' || EQUAL(szDelim, "nan")))
         {
             *flags |= OGRGeometry::OGR_G_3D;
             if (*ppadfZ == nullptr)
@@ -943,6 +933,94 @@ int OGRGeneralCmdLineProcessor(int nArgc, char ***ppapszArgv,
 }
 
 /************************************************************************/
+/*                       OGRTimezoneToTZFlag()                          */
+/************************************************************************/
+
+/** \brief Converts a text timezone into OGR TZFlag integer representation.
+ *
+ * @param pszTZ "UTC", "Etc/UTC", or "(+/-)[0-9][0-9](:?)[0-9][0-9]"
+ * @param bEmitErrorIfUnhandledFormat Whether to emit an error if pszTZ is
+ *                                    a non-empty string with unrecognized
+ *                                    format.
+ */
+int OGRTimezoneToTZFlag(const char *pszTZ, bool bEmitErrorIfUnhandledFormat)
+{
+    int nTZFlag = OGR_TZFLAG_UNKNOWN;
+    const size_t nTZLen = strlen(pszTZ);
+    if (strcmp(pszTZ, "UTC") == 0 || strcmp(pszTZ, "Etc/UTC") == 0)
+    {
+        nTZFlag = OGR_TZFLAG_UTC;
+    }
+    else if ((pszTZ[0] == '+' || pszTZ[0] == '-') &&
+             ((nTZLen == 6 && pszTZ[3] == ':') ||
+              (nTZLen == 5 && pszTZ[3] >= '0' && pszTZ[3] <= '9')))
+    {
+        int nTZHour = atoi(pszTZ + 1);
+        int nTZMin = atoi(pszTZ + (nTZLen == 6 ? 4 : 3));
+        if (nTZHour >= 0 && nTZHour <= 14 && nTZMin >= 0 && nTZMin < 60 &&
+            (nTZMin % 15) == 0)
+        {
+            nTZFlag = (nTZHour * 4) + (nTZMin / 15);
+            if (pszTZ[0] == '+')
+            {
+                nTZFlag = OGR_TZFLAG_UTC + nTZFlag;
+            }
+            else
+            {
+                nTZFlag = OGR_TZFLAG_UTC - nTZFlag;
+            }
+        }
+    }
+    else if (pszTZ[0] != 0 && bEmitErrorIfUnhandledFormat)
+    {
+        CPLError(CE_Failure, CPLE_AppDefined, "Unrecognized timezone: '%s'",
+                 pszTZ);
+    }
+    return nTZFlag;
+}
+
+/************************************************************************/
+/*                       OGRTZFlagToTimezone()                          */
+/************************************************************************/
+
+/** \brief Converts a OGR TZFlag integer representation into a string
+ *
+ * @param nTZFlag OGR TZFlag integer (only ones with
+ *        value > OGR_TZFLAG_MIXED_TZ will yield a non-empty output)
+ * @param pszUTCRepresentation String to return if nTZFlag == OGR_TZFLAG_UTC.
+ *                             Typically "UTC", "Z", or "+00:00"
+ */
+std::string OGRTZFlagToTimezone(int nTZFlag, const char *pszUTCRepresentation)
+{
+    if (nTZFlag == OGR_TZFLAG_UTC)
+    {
+        return pszUTCRepresentation;
+    }
+    else if (nTZFlag > OGR_TZFLAG_MIXED_TZ)
+    {
+        char chSign;
+        const int nOffset = (nTZFlag - OGR_TZFLAG_UTC) * 15;
+        int nHours = static_cast<int>(nOffset / 60);  // Round towards zero.
+        const int nMinutes = std::abs(nOffset - nHours * 60);
+
+        if (nOffset < 0)
+        {
+            chSign = '-';
+            nHours = std::abs(nHours);
+        }
+        else
+        {
+            chSign = '+';
+        }
+        return CPLSPrintf("%c%02d:%02d", chSign, nHours, nMinutes);
+    }
+    else
+    {
+        return std::string();
+    }
+}
+
+/************************************************************************/
 /*                            OGRParseDate()                            */
 /*                                                                      */
 /*      Parse a variety of text date formats into an OGRField.          */
@@ -955,11 +1033,13 @@ int OGRGeneralCmdLineProcessor(int nArgc, char ***ppapszArgv,
  * into the OGRField.Date format suitable for use with OGR.  Generally
  * speaking this function is expecting values like:
  *
- *   YYYY-MM-DD HH:MM:SS[.sss]+nn
- *   or YYYY-MM-DDTHH:MM:SS[.sss]Z (ISO 8601 format)
+ *   YYYY-MM-DD HH:MM:SS(.sss)?+nn
+ *   or YYYY-MM-DDTHH:MM:SS(.sss)?Z (ISO 8601 format)
  *   or YYYY-MM-DDZ
+ *   or THH:MM(:SS(.sss)?)?Z? (ISO 8601 extended format)
+ *   or THHMM(SS(.sss)?)?Z? (ISO 8601 basic format)
  *
- * The seconds may also have a decimal portion (which is ignored).  And
+ * The seconds may also have a decimal portion (parsed as milliseconds).  And
  * just dates (YYYY-MM-DD) or just times (HH:MM:SS[.sss]) are also supported.
  * The date may also be in YYYY/MM/DD format.  If the year is less than 100
  * and greater than 30 a "1900" century value will be set.  If it is less than
@@ -973,13 +1053,12 @@ int OGRGeneralCmdLineProcessor(int nArgc, char ***ppapszArgv,
  *
  * @param pszInput the input date string.
  * @param psField the OGRField that will be updated with the parsed result.
- * @param nOptions parsing options, for now always 0.
+ * @param nOptions parsing options. 0 or OGRPARSEDATE_OPTION_LAX
  *
  * @return TRUE if apparently successful or FALSE on failure.
  */
 
-int OGRParseDate(const char *pszInput, OGRField *psField,
-                 CPL_UNUSED int nOptions)
+int OGRParseDate(const char *pszInput, OGRField *psField, int nOptions)
 {
     psField->Date.Year = 0;
     psField->Date.Month = 0;
@@ -997,7 +1076,8 @@ int OGRParseDate(const char *pszInput, OGRField *psField,
         ++pszInput;
 
     bool bGotSomething = false;
-    if (strstr(pszInput, "-") != nullptr || strstr(pszInput, "/") != nullptr)
+    bool bTFound = false;
+    if (strchr(pszInput, '-') || strchr(pszInput, '/'))
     {
         if (!(*pszInput == '-' || *pszInput == '+' ||
               (*pszInput >= '0' && *pszInput <= '9')))
@@ -1031,25 +1111,53 @@ int OGRParseDate(const char *pszInput, OGRField *psField,
         else
             ++pszInput;
 
-        const int nMonth = atoi(pszInput);
-        if (nMonth <= 0 || nMonth > 12)
+        if (!(*pszInput >= '0' && *pszInput <= '9'))
             return FALSE;
-        psField->Date.Month = static_cast<GByte>(nMonth);
-
-        while (*pszInput >= '0' && *pszInput <= '9')
+        if (!(pszInput[1] >= '0' && pszInput[1] <= '9'))
+        {
+            if ((nOptions & OGRPARSEDATE_OPTION_LAX) == 0)
+                return FALSE;
+            const int nMonth = (pszInput[0] - '0');
+            if (nMonth == 0)
+                return FALSE;
+            psField->Date.Month = static_cast<GByte>(nMonth);
             ++pszInput;
+        }
+        else
+        {
+            const int nMonth = (pszInput[0] - '0') * 10 + (pszInput[1] - '0');
+            if (nMonth == 0 || nMonth > 12)
+                return FALSE;
+            psField->Date.Month = static_cast<GByte>(nMonth);
+
+            pszInput += 2;
+        }
         if (*pszInput != '-' && *pszInput != '/')
             return FALSE;
         else
             ++pszInput;
 
-        const int nDay = atoi(pszInput);
-        if (nDay <= 0 || nDay > 31)
+        if (!(*pszInput >= '0' && *pszInput <= '9'))
             return FALSE;
-        psField->Date.Day = static_cast<GByte>(nDay);
-
-        while (*pszInput >= '0' && *pszInput <= '9')
+        if (!(pszInput[1] >= '0' && pszInput[1] <= '9'))
+        {
+            if ((nOptions & OGRPARSEDATE_OPTION_LAX) == 0)
+                return FALSE;
+            const int nDay = (pszInput[0] - '0');
+            if (nDay == 0)
+                return FALSE;
+            psField->Date.Day = static_cast<GByte>(nDay);
             ++pszInput;
+        }
+        else
+        {
+            const int nDay = (pszInput[0] - '0') * 10 + (pszInput[1] - '0');
+            if (nDay == 0 || nDay > 31)
+                return FALSE;
+            psField->Date.Day = static_cast<GByte>(nDay);
+
+            pszInput += 2;
+        }
         if (*pszInput == '\0')
             return TRUE;
 
@@ -1057,7 +1165,10 @@ int OGRParseDate(const char *pszInput, OGRField *psField,
 
         // If ISO 8601 format.
         if (*pszInput == 'T')
+        {
+            bTFound = true;
             ++pszInput;
+        }
         else if (*pszInput == 'Z')
             return TRUE;
         else if (*pszInput != ' ')
@@ -1069,47 +1180,88 @@ int OGRParseDate(const char *pszInput, OGRField *psField,
     /* -------------------------------------------------------------------- */
     while (*pszInput == ' ')
         ++pszInput;
+    if (*pszInput == 'T')
+    {
+        bTFound = true;
+        ++pszInput;
+    }
 
-    if (strstr(pszInput, ":") != nullptr)
+    if (bTFound || strchr(pszInput, ':'))
     {
         if (!(*pszInput >= '0' && *pszInput <= '9'))
             return FALSE;
-        const int nHour = atoi(pszInput);
-        if (nHour < 0 || nHour > 23)
-            return FALSE;
-        psField->Date.Hour = static_cast<GByte>(nHour);
+        if (!(pszInput[1] >= '0' && pszInput[1] <= '9'))
+        {
+            if ((nOptions & OGRPARSEDATE_OPTION_LAX) == 0)
+                return FALSE;
 
-        while (*pszInput >= '0' && *pszInput <= '9')
-            ++pszInput;
-        if (*pszInput != ':')
-            return FALSE;
+            if (!((bTFound || pszInput[1] == ':')))
+                return FALSE;
+            const int nHour = (pszInput[0] - '0');
+            psField->Date.Hour = static_cast<GByte>(nHour);
+
+            pszInput++;
+        }
         else
+        {
+            if (!((bTFound || pszInput[2] == ':')))
+                return FALSE;
+            const int nHour = (pszInput[0] - '0') * 10 + (pszInput[1] - '0');
+            if (nHour > 23)
+                return FALSE;
+            psField->Date.Hour = static_cast<GByte>(nHour);
+
+            pszInput += 2;
+        }
+        if (*pszInput == ':')
             ++pszInput;
 
         if (!(*pszInput >= '0' && *pszInput <= '9'))
             return FALSE;
-        const int nMinute = atoi(pszInput);
-        if (nMinute < 0 || nMinute > 59)
-            return FALSE;
-        psField->Date.Minute = static_cast<GByte>(nMinute);
-
-        while (*pszInput >= '0' && *pszInput <= '9')
-            ++pszInput;
-        if (*pszInput == ':')
+        if (!(pszInput[1] >= '0' && pszInput[1] <= '9'))
         {
-            ++pszInput;
+            if ((nOptions & OGRPARSEDATE_OPTION_LAX) == 0)
+                return FALSE;
 
-            if (!(*pszInput >= '0' && *pszInput <= '9'))
+            const int nMinute = (pszInput[0] - '0');
+            psField->Date.Minute = static_cast<GByte>(nMinute);
+
+            pszInput++;
+        }
+        else
+        {
+            const int nMinute = (pszInput[0] - '0') * 10 + (pszInput[1] - '0');
+            if (nMinute > 59)
+                return FALSE;
+            psField->Date.Minute = static_cast<GByte>(nMinute);
+
+            pszInput += 2;
+        }
+
+        if ((bTFound && *pszInput >= '0' && *pszInput <= '9') ||
+            *pszInput == ':')
+        {
+            if (*pszInput == ':')
+                ++pszInput;
+
+            if (!(*pszInput >= '0' && *pszInput <= '9' &&
+                  (((nOptions & OGRPARSEDATE_OPTION_LAX) != 0) ||
+                   (pszInput[1] >= '0' && pszInput[1] <= '9'))))
                 return FALSE;
             const double dfSeconds = CPLAtof(pszInput);
             // We accept second=60 for leap seconds
-            if (dfSeconds > 60.0 || dfSeconds < 0.0)
+            if (dfSeconds > 60.0)
                 return FALSE;
             psField->Date.Second = static_cast<float>(dfSeconds);
 
-            while ((*pszInput >= '0' && *pszInput <= '9') || *pszInput == '.')
+            pszInput += 2;
+            if (*pszInput == '.')
             {
                 ++pszInput;
+                while (*pszInput >= '0' && *pszInput <= '9')
+                {
+                    ++pszInput;
+                }
             }
 
             // If ISO 8601 format.
@@ -1150,7 +1302,9 @@ int OGRParseDate(const char *pszInput, OGRField *psField,
             if (pszInput[0] == '-')
                 psField->Date.TZFlag = -1 * (psField->Date.TZFlag - 100) + 100;
         }
-        else if (isdigit(pszInput[3]) && isdigit(pszInput[4])  // +HHMM offset
+        else if (isdigit(static_cast<unsigned char>(pszInput[3])) &&
+                 isdigit(
+                     static_cast<unsigned char>(pszInput[4]))  // +HHMM offset
                  && atoi(pszInput + 3) % 15 == 0)
         {
             psField->Date.TZFlag = static_cast<GByte>(
@@ -1160,7 +1314,8 @@ int OGRParseDate(const char *pszInput, OGRField *psField,
             if (pszInput[0] == '-')
                 psField->Date.TZFlag = -1 * (psField->Date.TZFlag - 100) + 100;
         }
-        else if (isdigit(pszInput[3]) && pszInput[4] == '\0'  // +HMM offset
+        else if (isdigit(static_cast<unsigned char>(pszInput[3])) &&
+                 pszInput[4] == '\0'  // +HMM offset
                  && atoi(pszInput + 2) % 15 == 0)
         {
             psField->Date.TZFlag = static_cast<GByte>(
@@ -1174,6 +1329,57 @@ int OGRParseDate(const char *pszInput, OGRField *psField,
     }
 
     return TRUE;
+}
+
+/************************************************************************/
+/*               OGRParseDateTimeYYYYMMDDTHHMMZ()                       */
+/************************************************************************/
+
+bool OGRParseDateTimeYYYYMMDDTHHMMZ(const char *pszInput, size_t nLen,
+                                    OGRField *psField)
+{
+    // Detect "YYYY-MM-DDTHH:MM[Z]" (16 or 17 characters)
+    if ((nLen == 16 || (nLen == 17 && pszInput[16] == 'Z')) &&
+        pszInput[4] == '-' && pszInput[7] == '-' && pszInput[10] == 'T' &&
+        pszInput[13] == ':' && static_cast<unsigned>(pszInput[0] - '0') <= 9 &&
+        static_cast<unsigned>(pszInput[1] - '0') <= 9 &&
+        static_cast<unsigned>(pszInput[2] - '0') <= 9 &&
+        static_cast<unsigned>(pszInput[3] - '0') <= 9 &&
+        static_cast<unsigned>(pszInput[5] - '0') <= 9 &&
+        static_cast<unsigned>(pszInput[6] - '0') <= 9 &&
+        static_cast<unsigned>(pszInput[8] - '0') <= 9 &&
+        static_cast<unsigned>(pszInput[9] - '0') <= 9 &&
+        static_cast<unsigned>(pszInput[11] - '0') <= 9 &&
+        static_cast<unsigned>(pszInput[12] - '0') <= 9 &&
+        static_cast<unsigned>(pszInput[14] - '0') <= 9 &&
+        static_cast<unsigned>(pszInput[15] - '0') <= 9)
+    {
+        psField->Date.Year = static_cast<GInt16>(
+            ((((pszInput[0] - '0') * 10 + (pszInput[1] - '0')) * 10) +
+             (pszInput[2] - '0')) *
+                10 +
+            (pszInput[3] - '0'));
+        psField->Date.Month =
+            static_cast<GByte>((pszInput[5] - '0') * 10 + (pszInput[6] - '0'));
+        psField->Date.Day =
+            static_cast<GByte>((pszInput[8] - '0') * 10 + (pszInput[9] - '0'));
+        psField->Date.Hour = static_cast<GByte>((pszInput[11] - '0') * 10 +
+                                                (pszInput[12] - '0'));
+        psField->Date.Minute = static_cast<GByte>((pszInput[14] - '0') * 10 +
+                                                  (pszInput[15] - '0'));
+        psField->Date.Second = 0.0f;
+        psField->Date.TZFlag = nLen == 16 ? 0 : 100;
+        psField->Date.Reserved = 0;
+        if (psField->Date.Month == 0 || psField->Date.Month > 12 ||
+            psField->Date.Day == 0 || psField->Date.Day > 31 ||
+            psField->Date.Hour > 23 || psField->Date.Minute > 59)
+        {
+            return false;
+        }
+        return true;
+    }
+
+    return false;
 }
 
 /************************************************************************/
@@ -1486,6 +1692,16 @@ char *OGRGetXMLDateTime(const OGRField *psField, bool bAlwaysMillisecond)
 int OGRGetISO8601DateTime(const OGRField *psField, bool bAlwaysMillisecond,
                           char szBuffer[OGR_SIZEOF_ISO8601_DATETIME_BUFFER])
 {
+    OGRISO8601Format sFormat;
+    sFormat.ePrecision = bAlwaysMillisecond ? OGRISO8601Precision::MILLISECOND
+                                            : OGRISO8601Precision::AUTO;
+    return OGRGetISO8601DateTime(psField, sFormat, szBuffer);
+}
+
+int OGRGetISO8601DateTime(const OGRField *psField,
+                          const OGRISO8601Format &sFormat,
+                          char szBuffer[OGR_SIZEOF_ISO8601_DATETIME_BUFFER])
+{
     const GInt16 year = psField->Date.Year;
     const GByte month = psField->Date.Month;
     const GByte day = psField->Date.Day;
@@ -1522,44 +1738,53 @@ int OGRGetISO8601DateTime(const OGRField *psField, bool bAlwaysMillisecond,
     szBuffer[13] = ':';
     szBuffer[14] = ((minute / 10) % 10) + '0';
     szBuffer[15] = (minute % 10) + '0';
-    szBuffer[16] = ':';
-
     int nPos;
-    if (bAlwaysMillisecond || OGR_GET_MS(second))
+    if (sFormat.ePrecision == OGRISO8601Precision::MINUTE)
     {
-        /* Below is equivalent of the below snprintf(), but hand-made for
-         * faster execution. */
-        /* snprintf(szBuffer, nMaxSize,
-                               "%04d-%02u-%02uT%02u:%02u:%06.3f%s",
-                               year, month, day, hour, minute, second,
-                               szTimeZone);
-        */
-        int nMilliSecond = static_cast<int>(second * 1000.0f + 0.5f);
-        szBuffer[22] = (nMilliSecond % 10) + '0';
-        nMilliSecond /= 10;
-        szBuffer[21] = (nMilliSecond % 10) + '0';
-        nMilliSecond /= 10;
-        szBuffer[20] = (nMilliSecond % 10) + '0';
-        nMilliSecond /= 10;
-        szBuffer[19] = '.';
-        szBuffer[18] = (nMilliSecond % 10) + '0';
-        nMilliSecond /= 10;
-        szBuffer[17] = (nMilliSecond % 10) + '0';
-        nPos = 23;
+        nPos = 16;
     }
     else
     {
-        /* Below is equivalent of the below snprintf(), but hand-made for
-         * faster execution. */
-        /* snprintf(szBuffer, nMaxSize,
-                               "%04d-%02u-%02uT%02u:%02u:%02u%s",
-                               year, month, day, hour, minute,
-                               static_cast<GByte>(second), szTimeZone);
-        */
-        int nSecond = static_cast<int>(second + 0.5f);
-        szBuffer[17] = ((nSecond / 10) % 10) + '0';
-        szBuffer[18] = (nSecond % 10) + '0';
-        nPos = 19;
+        szBuffer[16] = ':';
+
+        if (sFormat.ePrecision == OGRISO8601Precision::MILLISECOND ||
+            (sFormat.ePrecision == OGRISO8601Precision::AUTO &&
+             OGR_GET_MS(second)))
+        {
+            /* Below is equivalent of the below snprintf(), but hand-made for
+             * faster execution. */
+            /* snprintf(szBuffer, nMaxSize,
+                                   "%04d-%02u-%02uT%02u:%02u:%06.3f%s",
+                                   year, month, day, hour, minute, second,
+                                   szTimeZone);
+            */
+            int nMilliSecond = static_cast<int>(second * 1000.0f + 0.5f);
+            szBuffer[22] = (nMilliSecond % 10) + '0';
+            nMilliSecond /= 10;
+            szBuffer[21] = (nMilliSecond % 10) + '0';
+            nMilliSecond /= 10;
+            szBuffer[20] = (nMilliSecond % 10) + '0';
+            nMilliSecond /= 10;
+            szBuffer[19] = '.';
+            szBuffer[18] = (nMilliSecond % 10) + '0';
+            nMilliSecond /= 10;
+            szBuffer[17] = (nMilliSecond % 10) + '0';
+            nPos = 23;
+        }
+        else
+        {
+            /* Below is equivalent of the below snprintf(), but hand-made for
+             * faster execution. */
+            /* snprintf(szBuffer, nMaxSize,
+                                   "%04d-%02u-%02uT%02u:%02u:%02u%s",
+                                   year, month, day, hour, minute,
+                                   static_cast<GByte>(second), szTimeZone);
+            */
+            int nSecond = static_cast<int>(second + 0.5f);
+            szBuffer[17] = ((nSecond / 10) % 10) + '0';
+            szBuffer[18] = (nSecond % 10) + '0';
+            nPos = 19;
+        }
     }
 
     switch (TZFlag)
@@ -2088,4 +2313,26 @@ int OGRFormatFloat(char *pszBuffer, int nBufferLen, float fVal, int nPrecision,
     }
 
     return nSize;
+}
+
+int OGR_GET_MS(float fSec)
+{
+    if (std::isnan(fSec))
+        return 0;
+    if (fSec >= 999)
+        return 999;
+    if (fSec <= 0)
+        return 0;
+    const float fValue = (fSec - static_cast<int>(fSec)) * 1000 + 0.5f;
+    return static_cast<int>(fValue);
+}
+
+/************************************************************************/
+/*                    OGRDuplicateCharacter()                           */
+/************************************************************************/
+
+std::string OGRDuplicateCharacter(const std::string &osStr, char ch)
+{
+    char aszReplacement[] = {ch, ch, 0};
+    return CPLString(osStr).replaceAll(ch, aszReplacement);
 }

@@ -10,23 +10,7 @@
  ******************************************************************************
  * Copyright (c) 2000,  Daniel Morissette
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #ifndef OGDOGDI_H_INCLUDED
@@ -70,10 +54,12 @@ class OGROGDILayer final : public OGRLayer
     virtual ~OGROGDILayer();
 
     virtual void SetSpatialFilter(OGRGeometry *) override;
+
     virtual void SetSpatialFilter(int iGeomField, OGRGeometry *poGeom) override
     {
         OGRLayer::SetSpatialFilter(iGeomField, poGeom);
     }
+
     virtual OGRErr SetAttributeFilter(const char *pszQuery) override;
 
     void ResetReading() override;
@@ -98,7 +84,7 @@ class OGROGDILayer final : public OGRLayer
 /*                          OGROGDIDataSource                           */
 /************************************************************************/
 
-class OGROGDIDataSource final : public OGRDataSource
+class OGROGDIDataSource final : public GDALDataset
 {
     OGROGDILayer **m_papoLayers;
     int m_nLayers;
@@ -110,8 +96,6 @@ class OGROGDIDataSource final : public OGRDataSource
 
     OGROGDILayer *m_poCurrentLayer;
 
-    char *m_pszFullName;
-
     int m_bLaunderLayerNames;
 
     void IAddLayer(const char *pszLayerName, ecs_Family eFamily);
@@ -122,26 +106,23 @@ class OGROGDIDataSource final : public OGRDataSource
 
     int Open(const char *);
 
-    const char *GetName() override
-    {
-        return m_pszFullName;
-    }
     int GetLayerCount() override
     {
         return m_nLayers;
     }
-    OGRLayer *GetLayer(int) override;
 
-    int TestCapability(const char *) override;
+    OGRLayer *GetLayer(int) override;
 
     ecs_Region *GetGlobalBounds()
     {
         return &m_sGlobalBounds;
     }
+
     OGRSpatialReference *DSGetSpatialRef()
     {
         return m_poSpatialRef;
     }
+
     int GetClientID()
     {
         return m_nClientID;
@@ -151,6 +132,7 @@ class OGROGDIDataSource final : public OGRDataSource
     {
         return m_poCurrentLayer;
     }
+
     void SetCurrentLayer(OGROGDILayer *poLayer)
     {
         m_poCurrentLayer = poLayer;
@@ -160,21 +142,6 @@ class OGROGDIDataSource final : public OGRDataSource
     {
         return m_bLaunderLayerNames;
     }
-};
-
-/************************************************************************/
-/*                            OGROGDIDriver                             */
-/************************************************************************/
-
-class OGROGDIDriver final : public OGRSFDriver
-{
-  public:
-    ~OGROGDIDriver();
-
-    const char *GetName() override;
-    OGRDataSource *Open(const char *, int) override;
-
-    int TestCapability(const char *) override;
 };
 
 #endif /* OGDOGDI_H_INCLUDED */

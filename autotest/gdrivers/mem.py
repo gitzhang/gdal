@@ -10,23 +10,7 @@
 # Copyright (c) 2005, Frank Warmerdam <warmerdam@pobox.com>
 # Copyright (c) 2008-2012, Even Rouault <even dot rouault at spatialys.com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 import ctypes
@@ -36,6 +20,43 @@ import gdaltest
 import pytest
 
 from osgeo import gdal
+
+
+@pytest.fixture
+@gdaltest.disable_exceptions()
+def mem_native_memory():
+
+    with gdal.quiet_errors():
+        ds = gdal.Open("MEM:::")
+    assert ds is None, "opening MEM dataset should have failed."
+    for libname in ["msvcrt", "libc.so.6"]:
+        try:
+            crt = ctypes.CDLL(libname)
+        except OSError:
+            crt = None
+        if crt is not None:
+            break
+
+    if crt is None:
+        pytest.skip()
+
+    malloc = crt.malloc
+    malloc.argtypes = [ctypes.c_size_t]
+    malloc.restype = ctypes.c_void_p
+
+    free = crt.free
+    free.argtypes = [ctypes.c_void_p]
+    free.restype = None
+
+    # allocate band data array.
+    width = 50
+    height = 3
+    p = malloc(width * height * 4)
+    if p is None:
+        pytest.skip()
+
+    return p, free, width, height
+
 
 ###############################################################################
 # Create a MEM dataset, and set some data, then test it.
@@ -101,38 +122,9 @@ def test_mem_1():
 # Open an in-memory array.
 
 
-def test_mem_2():
+def test_mem_2(mem_native_memory):
 
-    gdal.PushErrorHandler("CPLQuietErrorHandler")
-    ds = gdal.Open("MEM:::")
-    gdal.PopErrorHandler()
-    assert ds is None, "opening MEM dataset should have failed."
-
-    for libname in ["msvcrt", "libc.so.6"]:
-        try:
-            crt = ctypes.CDLL(libname)
-        except OSError:
-            crt = None
-        if crt is not None:
-            break
-
-    if crt is None:
-        pytest.skip()
-
-    malloc = crt.malloc
-    malloc.argtypes = [ctypes.c_size_t]
-    malloc.restype = ctypes.c_void_p
-
-    free = crt.free
-    free.argtypes = [ctypes.c_void_p]
-    free.restype = None
-
-    # allocate band data array.
-    width = 50
-    height = 3
-    p = malloc(width * height * 4)
-    if p is None:
-        pytest.skip()
+    p, free, width, height = mem_native_memory
     float_p = ctypes.cast(p, ctypes.POINTER(ctypes.c_float))
 
     # build ds name.
@@ -148,7 +140,14 @@ def test_mem_2():
         for i in range(width * height):
             float_p[i] = 5.0
 
-        dsro = gdal.Open(dsname)
+        with pytest.raises(
+            Exception,
+            match="Opening a MEM dataset with the MEM:::DATAPOINTER= syntax is no longer supported by default for security reasons",
+        ):
+            gdal.Open(dsname)
+
+        with gdal.config_option("GDAL_MEM_ENABLE_OPEN", "YES"):
+            dsro = gdal.Open(dsname)
         if dsro is None:
             free(p)
             pytest.fail("opening MEM dataset failed in read only mode.")
@@ -160,7 +159,8 @@ def test_mem_2():
             pytest.fail("checksum failed.")
         dsro = None
 
-        dsup = gdal.Open(dsname, gdal.GA_Update)
+        with gdal.config_option("GDAL_MEM_ENABLE_OPEN", "YES"):
+            dsup = gdal.Open(dsname, gdal.GA_Update)
         if dsup is None:
             free(p)
             pytest.fail("opening MEM dataset failed in update mode.")
@@ -175,6 +175,44 @@ def test_mem_2():
 
         dsup = None
 
+
+@pytest.mark.parametrize(
+    "ds_definition, expected_sr",
+    [
+        (
+            r"MEM:::DATAPOINTER=0x{datapointer:X},GEOTRANSFORM=-1e+06/1953.125/0/1e+06/0/-3906.25,PIXELS=50,LINES=3,SPATIALREFERENCE={proj_crs},DATATYPE=Float32",
+            "Lambert",
+        ),
+        (
+            r"MEM:::DATAPOINTER=0x{datapointer:X},GEOTRANSFORM=-1e+06/1953.125/0/1e+06/0/-3906.25,PIXELS=50,LINES=3,SPATIALREFERENCE=bogus,DATATYPE=Float32",
+            "",
+        ),
+        (
+            r'MEM:::DATAPOINTER=0x{datapointer:X},GEOTRANSFORM=-1e+06/1953.125/0/1e+06/0/-3906.25,PIXELS=50,LINES=3,SPATIALREFERENCE="{ll_crs}",DATATYPE=Float32',
+            "GEOGCS",
+        ),
+    ],
+)
+def test_geotransform(ds_definition, expected_sr, mem_native_memory):
+    """Test GEOTRANSFORM and SPATIALREFERENCE"""
+
+    p, free, width, height = mem_native_memory
+
+    ## more ds names, ensure GEOTRANSFORM and SPATIALREFERENCE get tested
+    proj_crs = "+proj=laea +lon_0=147 +lat_0=-42"
+    ll_crs = """GEOGCS[\\"WGS 84\\",DATUM[\\"WGS_1984\\",SPHEROID[\\"WGS 84\\",6378137,298.257223563,AUTHORITY[\\"EPSG\\",\\"7030\\"]],AUTHORITY[\\"EPSG\\",\\"6326\\"]],PRIMEM[\\"Greenwich\\",0,AUTHORITY[\\"EPSG\\",\\"8901\\"]],UNIT[\\"degree\\",0.0174532925199433,AUTHORITY[\\"EPSG\\",\\"9122\\"]],AXIS[\\"Latitude\\",NORTH],AXIS[\\"Longitude\\",EAST],AUTHORITY[\\"EPSG\\",\\"4326\\"]]"""
+
+    with gdal.config_option("GDAL_MEM_ENABLE_OPEN", "YES"):
+        dsro = gdal.Open(
+            ds_definition.format(datapointer=p, proj_crs=proj_crs, ll_crs=ll_crs)
+        )
+    if dsro is None:
+        free(p)
+        pytest.fail("opening MEM dataset failed in read only mode.")
+
+    assert dsro.GetGeoTransform() == (-1e06, 1953.125, 0, 1e06, 0, -3906.25)
+    assert expected_sr in dsro.GetProjectionRef()
+    dsro = None
     free(p)
 
 
@@ -252,6 +290,7 @@ def test_mem_5():
 # Test out-of-memory situations
 
 
+@gdaltest.disable_exceptions()
 def test_mem_6():
 
     if gdal.GetConfigOption("SKIP_MEM_INTENSIVE_TEST") is not None:
@@ -260,43 +299,43 @@ def test_mem_6():
     drv = gdal.GetDriverByName("MEM")
 
     # Multiplication overflow
-    with gdaltest.error_handler():
+    with gdal.quiet_errors():
         ds = drv.Create("", 1, 1, 0x7FFFFFFF, gdal.GDT_Float64)
     assert ds is None
     ds = None
 
     # Multiplication overflow
-    with gdaltest.error_handler():
+    with gdal.quiet_errors():
         ds = drv.Create("", 0x7FFFFFFF, 0x7FFFFFFF, 16)
     assert ds is None
     ds = None
 
     # Multiplication overflow
-    with gdaltest.error_handler():
+    with gdal.quiet_errors():
         ds = drv.Create("", 0x7FFFFFFF, 0x7FFFFFFF, 1, gdal.GDT_Float64)
     assert ds is None
     ds = None
 
     # Out of memory error
-    with gdaltest.error_handler():
+    with gdal.quiet_errors():
         ds = drv.Create("", 0x7FFFFFFF, 0x7FFFFFFF, 1, options=["INTERLEAVE=PIXEL"])
     assert ds is None
     ds = None
 
     # Out of memory error
-    with gdaltest.error_handler():
+    with gdal.quiet_errors():
         ds = drv.Create("", 0x7FFFFFFF, 0x7FFFFFFF, 1)
     assert ds is None
     ds = None
 
     # 32 bit overflow on 32-bit builds, or possible out of memory error
     ds = drv.Create("", 0x7FFFFFFF, 1, 0)
-    with gdaltest.error_handler():
+    with gdal.quiet_errors():
         ds.AddBand(gdal.GDT_Float64)
 
     # Will raise out of memory error in all cases
     ds = drv.Create("", 0x7FFFFFFF, 0x7FFFFFFF, 0)
-    with gdaltest.error_handler():
+    with gdal.quiet_errors():
         ret = ds.AddBand(gdal.GDT_Float64)
     assert ret != 0
 
@@ -471,11 +510,12 @@ def test_mem_9():
 # Test BuildOverviews()
 
 
+@gdaltest.disable_exceptions()
 def test_mem_10():
 
     # Error case: building overview on a 0 band dataset
     ds = gdal.GetDriverByName("MEM").Create("", 1, 1, 0)
-    with gdaltest.error_handler():
+    with gdal.quiet_errors():
         ds.BuildOverviews("NEAR", [2])
 
     # Requesting overviews when they are not

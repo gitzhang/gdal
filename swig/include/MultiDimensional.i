@@ -8,24 +8,10 @@
  ******************************************************************************
  * Copyright (c) 2019, Even Rouault <even.rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  *****************************************************************************/
+
+%include RasterAttributeTable.i
 
 %rename (ExtendedDataTypeSubType) GDALExtendedDataTypeSubType;
 typedef enum {
@@ -74,7 +60,7 @@ public:
 #endif
     GDALMDArrayH hRet = GDALGroupOpenMDArray(self, name, options);
 #if defined(SWIGPYTHON)
-    if( bUseExceptions && hRet == NULL && eLastErrorType == CE_None && CPLGetLastErrorType() == CE_None )
+    if( GetUseExceptions() && hRet == NULL && eLastErrorType == CE_None && CPLGetLastErrorType() == CE_None )
         CPLError(CE_Failure, CPLE_AppDefined, "Array %s does not exist", name);
 #endif
     return hRet;
@@ -87,7 +73,7 @@ public:
 #endif
     GDALMDArrayH hRet = GDALGroupOpenMDArrayFromFullname(self, name, options);
 #if defined(SWIGPYTHON)
-    if( bUseExceptions && hRet == NULL && eLastErrorType == CE_None && CPLGetLastErrorType() == CE_None )
+    if( GetUseExceptions() && hRet == NULL && eLastErrorType == CE_None && CPLGetLastErrorType() == CE_None )
         CPLError(CE_Failure, CPLE_AppDefined, "Array %s does not exist", name);
 #endif
     return hRet;
@@ -100,7 +86,7 @@ public:
 #endif
     GDALMDArrayH hRet = GDALGroupResolveMDArray(self, name, starting_point, options);
 #if defined(SWIGPYTHON)
-    if( bUseExceptions && hRet == NULL && eLastErrorType == CE_None && CPLGetLastErrorType() == CE_None )
+    if( GetUseExceptions() && hRet == NULL && eLastErrorType == CE_None && CPLGetLastErrorType() == CE_None )
         CPLError(CE_Failure, CPLE_AppDefined, "Array %s does not exist", name);
 #endif
     return hRet;
@@ -119,7 +105,7 @@ public:
 #endif
     GDALGroupH hRet = GDALGroupOpenGroup(self, name, options);
 #if defined(SWIGPYTHON)
-    if( bUseExceptions && hRet == NULL && eLastErrorType == CE_None && CPLGetLastErrorType() == CE_None )
+    if( GetUseExceptions() && hRet == NULL && eLastErrorType == CE_None && CPLGetLastErrorType() == CE_None )
         CPLError(CE_Failure, CPLE_AppDefined, "Group %s does not exist", name);
 #endif
     return hRet;
@@ -132,7 +118,7 @@ public:
 #endif
     GDALGroupH hRet = GDALGroupOpenGroupFromFullname(self, name, options);
 #if defined(SWIGPYTHON)
-    if( bUseExceptions && hRet == NULL && eLastErrorType == CE_None && CPLGetLastErrorType() == CE_None )
+    if( GetUseExceptions() && hRet == NULL && eLastErrorType == CE_None && CPLGetLastErrorType() == CE_None )
         CPLError(CE_Failure, CPLE_AppDefined, "Group %s does not exist", name);
 #endif
     return hRet;
@@ -150,7 +136,7 @@ public:
 #endif
     OGRLayerH hRet = GDALGroupOpenVectorLayer(self, name, options);
 #if defined(SWIGPYTHON)
-    if( bUseExceptions && hRet == NULL && eLastErrorType == CE_None && CPLGetLastErrorType() == CE_None )
+    if( GetUseExceptions() && hRet == NULL && eLastErrorType == CE_None && CPLGetLastErrorType() == CE_None )
         CPLError(CE_Failure, CPLE_AppDefined, "Vector layer %s does not exist", name);
 #endif
     return (OGRLayerShadow*) hRet;
@@ -169,7 +155,7 @@ public:
 #endif
     GDALAttributeH hRet = GDALGroupGetAttribute(self, name);
 #if defined(SWIGPYTHON)
-    if( bUseExceptions && hRet == NULL && eLastErrorType == CE_None && CPLGetLastErrorType() == CE_None )
+    if( GetUseExceptions() && hRet == NULL && eLastErrorType == CE_None && CPLGetLastErrorType() == CE_None )
         CPLError(CE_Failure, CPLE_AppDefined, "Attribute %s does not exist", name);
 #endif
     return hRet;
@@ -193,42 +179,67 @@ public:
     return GDALGroupCreateGroup(self, name, options);
   }
 
+  CPLErr DeleteGroup( const char *name,
+                            char **options = 0 ) {
+    return GDALGroupDeleteGroup(self, name, options) ? CE_None : CE_Failure;
+  }
+
 %newobject CreateDimension;
   GDALDimensionHS *CreateDimension( const char *name,
                                     const char* type,
                                     const char* direction,
-                                    unsigned long long size,
+                                    GUIntBig size,
                                     char **options = 0 ) {
     return GDALGroupCreateDimension(self, name, type, direction, size, options);
   }
 
-#if defined(SWIGPYTHON)
+#if defined(SWIGPYTHON) || defined(SWIGJAVA)
 %newobject CreateMDArray;
-%apply (int object_list_count, GDALDimensionHS **poObjects) {(int nDimensions, GDALDimensionHS **dimensions)};
+%apply (int object_list_count, GDALDimensionHS **poObjects) {(int dimensions, GDALDimensionHS **dimensionsValues)};
 %apply Pointer NONNULL {GDALExtendedDataTypeHS* data_type};
   GDALMDArrayHS *CreateMDArray(const char* name,
-                               int nDimensions,
-                               GDALDimensionHS** dimensions,
+                               int dimensions,
+                               GDALDimensionHS **dimensionsValues,
                                GDALExtendedDataTypeHS* data_type,
                                char **options = 0)
   {
-    return GDALGroupCreateMDArray(self, name, nDimensions, dimensions,
+    return GDALGroupCreateMDArray(self, name, dimensions, dimensionsValues,
                                   data_type, options);
   }
-%clear (int nDimensions, GDALDimensionHS **dimensions);
+%clear (int dimensions, GDALDimensionHS **dimensionsValue);
 #endif
 
+  CPLErr DeleteMDArray( const char *name,
+                            char **options = 0 ) {
+    return GDALGroupDeleteMDArray(self, name, options) ? CE_None : CE_Failure;
+  }
+
 %newobject CreateAttribute;
-%apply (int nList, GUIntBig* pList) {(int nDimensions, GUIntBig *dimensions)};
+%apply (int nList, GUIntBig *pList) {(int dimensions, GUIntBig *sizes)};
   GDALAttributeHS *CreateAttribute( const char *name,
-                                    int nDimensions,
-                                    GUIntBig *dimensions,
+                                    int dimensions,
+                                    GUIntBig *sizes,
                                     GDALExtendedDataTypeHS* data_type,
                                     char **options = 0)
   {
-    return GDALGroupCreateAttribute(self, name, nDimensions,
-                                    (const GUInt64*)dimensions,
+    return GDALGroupCreateAttribute(self, name, dimensions,
+                                    (const GUInt64*) sizes,
                                     data_type, options);
+  }
+
+  CPLErr DeleteAttribute( const char *name,
+                            char **options = 0 ) {
+    return GDALGroupDeleteAttribute(self, name, options) ? CE_None : CE_Failure;
+  }
+
+  CPLErr Rename( const char* newName ) {
+    return GDALGroupRename( self, newName ) ? CE_None : CE_Failure;
+  }
+
+%newobject SubsetDimensionFromSelection;
+  GDALGroupHS *SubsetDimensionFromSelection( const char *selection,
+                                             char **options = 0 ) {
+    return GDALGroupSubsetDimensionFromSelection(self, selection, options);
   }
 
 } /* extend */
@@ -407,7 +418,6 @@ static CPLErr MDArrayReadWriteCheckArguments(GDALMDArrayHS* array,
 }
 %}
 
-
 %rename (MDArray) GDALMDArrayHS;
 
 class GDALMDArrayHS {
@@ -428,7 +438,7 @@ public:
     return GDALMDArrayGetFullName(self);
   }
 
-  unsigned long long GetTotalElementsCount() {
+  GUIntBig GetTotalElementsCount() {
     return GDALMDArrayGetTotalElementsCount(self);
   }
 
@@ -482,6 +492,18 @@ public:
     return GDALMDArrayGetStructuralInfo( self );
   }
 %clear char **;
+
+%apply (int nList, GUIntBig* pList) {(int newDimensions, GUIntBig* newSizes)};
+  CPLErr Resize( int newDimensions, GUIntBig* newSizes, char** options = NULL ) {
+    if( static_cast<size_t>(newDimensions) != GDALMDArrayGetDimensionCount(self) )
+    {
+        CPLError(CE_Failure, CPLE_IllegalArg,
+                 "newSizes array not of expected size");
+        return CE_Failure;
+    }
+    return GDALMDArrayResize( self, newSizes, options ) ? CE_None : CE_Failure;
+  }
+%clear (int newDimensions, GUIntBig* newSizes);
 
 #if defined(SWIGPYTHON)
 %apply Pointer NONNULL {GDALExtendedDataTypeHS* buffer_datatype};
@@ -611,7 +633,7 @@ public:
     if (*buf == NULL)
     {
         *buf = Py_None;
-        if( !bUseExceptions )
+        if( !GetUseExceptions() )
         {
             PyErr_Clear();
         }
@@ -653,8 +675,8 @@ public:
   {
 
     const int nExpectedDims = (int)GDALMDArrayGetDimensionCount(self);
-    std::vector<size_t> count_internal(nExpectedDims);
-    if( nExpectedDims != 1 )
+    std::vector<size_t> count_internal(nExpectedDims + 1);
+    if( nExpectedDims > 1 )
     {
         CPLError(CE_Failure, CPLE_AppDefined,
             "Unsupported number of dimensions");
@@ -669,23 +691,26 @@ public:
             return CE_Failure;
         }
     }
-    if( nDims1 != 1 )
+    if( nExpectedDims == 1 )
     {
-        CPLError(CE_Failure, CPLE_AppDefined,
-            "Wrong number of values in array_start_idx");
-        return CE_Failure;
-    }
-    if( nDims2 != 1 )
-    {
-        CPLError(CE_Failure, CPLE_AppDefined,
-            "Wrong number of values in count");
-        return CE_Failure;
-    }
-    if( nDims3 != 1 )
-    {
-        CPLError(CE_Failure, CPLE_AppDefined,
-            "Wrong number of values in array_step");
-        return CE_Failure;
+        if( nDims1 != 1 )
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                "Wrong number of values in array_start_idx");
+            return CE_Failure;
+        }
+        if( nDims2 != 1 )
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                "Wrong number of values in count");
+            return CE_Failure;
+        }
+        if( nDims3 != 1 )
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                "Wrong number of values in array_step");
+            return CE_Failure;
+        }
     }
 
     CPLErr eErr = GDALMDArrayWrite(self,
@@ -810,7 +835,7 @@ public:
 #endif
     GDALAttributeH hRet = GDALMDArrayGetAttribute(self, name);
 #if defined(SWIGPYTHON)
-    if( bUseExceptions && hRet == NULL && eLastErrorType == CE_None && CPLGetLastErrorType() == CE_None )
+    if( GetUseExceptions() && hRet == NULL && eLastErrorType == CE_None && CPLGetLastErrorType() == CE_None )
         CPLError(CE_Failure, CPLE_AppDefined, "Attribute %s does not exist", name);
 #endif
     return hRet;
@@ -823,16 +848,21 @@ public:
 #endif
 
 %newobject CreateAttribute;
-%apply (int nList, GUIntBig* pList) {(int nDimensions, GUIntBig *dimensions)};
+%apply (int nList, GUIntBig *pList) {(int dimensions, GUIntBig *sizes)};
   GDALAttributeHS *CreateAttribute( const char *name,
-                                    int nDimensions,
-                                    GUIntBig *dimensions,
+                                    int dimensions,
+                                    GUIntBig *sizes,
                                     GDALExtendedDataTypeHS* data_type,
                                     char **options = 0)
   {
-    return GDALMDArrayCreateAttribute(self, name, nDimensions,
-                                    (const GUInt64*)dimensions,
+    return GDALMDArrayCreateAttribute(self, name, dimensions,
+                                    (const GUInt64*) sizes,
                                     data_type, options);
+  }
+
+  CPLErr DeleteAttribute( const char *name,
+                            char **options = 0 ) {
+    return GDALMDArrayDeleteAttribute(self, name, options) ? CE_None : CE_Failure;
   }
 
 #if defined(SWIGPYTHON)
@@ -853,7 +883,7 @@ public:
     if (*buf == NULL)
     {
         *buf = Py_None;
-        if( !bUseExceptions )
+        if( !GetUseExceptions() )
         {
             PyErr_Clear();
         }
@@ -1013,9 +1043,10 @@ public:
   }
 
 %newobject Transpose;
-  GDALMDArrayHS* Transpose(int nList, int* pList)
+%apply (int nList, int* pList) { (int axisMap, int* mapInts) };
+  GDALMDArrayHS* Transpose(int axisMap, int* mapInts)
   {
-    return GDALMDArrayTranspose(self, nList, pList);
+    return GDALMDArrayTranspose(self, axisMap, mapInts);
   }
 
 %newobject GetUnscaled;
@@ -1032,10 +1063,23 @@ public:
   }
 %clear char **;
 
-%newobject AsClassicDataset;
-  GDALDatasetShadow* AsClassicDataset(size_t iXDim, size_t iYDim)
+%newobject GetGridded;
+%feature ("kwargs") GetGridded;
+%apply Pointer NONNULL {const char* pszGridOptions};
+  GDALMDArrayHS* GetGridded(const char* pszGridOptions,
+                            GDALMDArrayHS* xArray = NULL,
+                            GDALMDArrayHS* yArray = NULL,
+                            char** options = 0)
   {
-    return (GDALDatasetShadow*)GDALMDArrayAsClassicDataset(self, iXDim, iYDim);
+    return GDALMDArrayGetGridded(self, pszGridOptions, xArray, yArray, options);
+  }
+
+%newobject AsClassicDataset;
+  GDALDatasetShadow* AsClassicDataset(size_t iXDim, size_t iYDim,
+                                      GDALGroupHS* hRootGroup = NULL,
+                                      char** options = 0)
+  {
+    return (GDALDatasetShadow*)GDALMDArrayAsClassicDatasetEx(self, iXDim, iYDim, hRootGroup, options);
   }
 
 #ifndef SWIGCSHARP
@@ -1066,17 +1110,18 @@ public:
 %feature ("kwargs") ComputeStatistics;
   Statistics* ComputeStatistics( bool approx_ok = FALSE,
                                  GDALProgressFunc callback = NULL,
-                                 void* callback_data=NULL)
+                                 void* callback_data=NULL,
+                                 char** options = 0)
   {
         GUInt64 nValidCount = 0;
         Statistics* psStatisticsOut = (Statistics*)CPLMalloc(sizeof(Statistics));
-        int nSuccess = GDALMDArrayComputeStatistics(self, NULL, approx_ok,
+        int nSuccess = GDALMDArrayComputeStatisticsEx(self, NULL, approx_ok,
                                  &(psStatisticsOut->min),
                                  &(psStatisticsOut->max),
                                  &(psStatisticsOut->mean),
                                  &(psStatisticsOut->std_dev),
                                  &nValidCount,
-                                 callback, callback_data);
+                                 callback, callback_data, options);
         psStatisticsOut->valid_count = static_cast<GIntBig>(nValidCount);
         if( nSuccess )
             return psStatisticsOut;
@@ -1102,9 +1147,25 @@ public:
 %clear OSRSpatialReferenceShadow**;
 #endif
 
+
+#if defined(SWIGPYTHON)
+%newobject GetMeshGrid;
+%apply (int object_list_count, GDALMDArrayHS **poObjects) {(int nInputArrays, GDALMDArrayHS **ahInputArrays)};
+%apply (GDALMDArrayHS*** parrays, size_t* pnCount) {(GDALMDArrayHS*** outputArrays, size_t* pnCountOutputArrays)};
+  static void GetMeshGrid(int nInputArrays, GDALMDArrayHS **ahInputArrays,
+                          GDALMDArrayHS*** outputArrays, size_t* pnCountOutputArrays, char **options = 0)
+  {
+    *outputArrays = GDALMDArrayGetMeshGrid(ahInputArrays, nInputArrays, pnCountOutputArrays, options);
+  }
+#endif
+
   bool Cache( char** options = NULL )
   {
       return GDALMDArrayCache(self, options);
+  }
+
+  CPLErr Rename( const char* newName ) {
+    return GDALMDArrayRename( self, newName ) ? CE_None : CE_Failure;
   }
 
 } /* extend */
@@ -1137,7 +1198,7 @@ public:
     return GDALAttributeGetFullName(self);
   }
 
-  unsigned long long GetTotalElementsCount() {
+  GUIntBig GetTotalElementsCount() {
     return GDALAttributeGetTotalElementsCount(self);
   }
 
@@ -1182,7 +1243,7 @@ public:
     if (*buf == NULL)
     {
         *buf = Py_None;
-        if( !bUseExceptions )
+        if( !GetUseExceptions() )
         {
             PyErr_Clear();
         }
@@ -1210,6 +1271,10 @@ public:
     return GDALAttributeReadAsInt(self);
   }
 
+  long long ReadAsInt64() {
+    return GDALAttributeReadAsInt64(self);
+  }
+
   double ReadAsDouble() {
     return GDALAttributeReadAsDouble(self);
   }
@@ -1223,6 +1288,12 @@ public:
 #if defined(SWIGPYTHON)
   void ReadAsIntArray( int** pvals, size_t* pnCount ) {
     *pvals = GDALAttributeReadAsIntArray(self, pnCount);
+  }
+#endif
+
+#if defined(SWIGPYTHON)
+  void ReadAsInt64Array( long long** pvals, size_t* pnCount ) {
+    *pvals = (long long*)GDALAttributeReadAsInt64Array(self, pnCount);
   }
 #endif
 
@@ -1265,10 +1336,29 @@ public:
     return GDALAttributeWriteInt(self, val) ? CE_None : CE_Failure;
   }
 
+  CPLErr WriteInt64(long long val)
+  {
+    return GDALAttributeWriteInt64(self, val) ? CE_None : CE_Failure;
+  }
+
   CPLErr WriteDouble(double val)
   {
     return GDALAttributeWriteDouble(self, val) ? CE_None : CE_Failure;
   }
+
+#if defined(SWIGPYTHON)
+  CPLErr WriteIntArray(int nList, int* pList)
+  {
+    return GDALAttributeWriteIntArray(self, pList, nList) ? CE_None : CE_Failure;
+  }
+#endif
+
+#if defined(SWIGPYTHON)
+  CPLErr WriteInt64Array(int nList, long long* pList)
+  {
+    return GDALAttributeWriteInt64Array(self, (int64_t*)pList, nList) ? CE_None : CE_Failure;
+  }
+#endif
 
 #if defined(SWIGPYTHON)
   CPLErr WriteDoubleArray(int nList, double* pList)
@@ -1276,6 +1366,10 @@ public:
     return GDALAttributeWriteDoubleArray(self, pList, nList) ? CE_None : CE_Failure;
   }
 #endif
+
+  CPLErr Rename( const char* newName ) {
+    return GDALAttributeRename( self, newName ) ? CE_None : CE_Failure;
+  }
 
 } /* extend */
 }; /* GDALAttributeH */
@@ -1320,7 +1414,7 @@ public:
     return GDALDimensionGetDirection(self);
   }
 
-  unsigned long long GetSize() {
+  GUIntBig GetSize() {
     return GDALDimensionGetSize(self);
   }
 
@@ -1331,6 +1425,10 @@ public:
 
   bool SetIndexingVariable(GDALMDArrayHS* array) {
     return GDALDimensionSetIndexingVariable(self, array);
+  }
+
+  CPLErr Rename( const char* newName ) {
+    return GDALDimensionRename( self, newName ) ? CE_None : CE_Failure;
   }
 
 } /* extend */
@@ -1496,3 +1594,22 @@ public:
 } /* extend */
 }; /* GDALEDTComponentHS */
 
+
+#if defined(SWIGPYTHON)
+%apply (int object_list_count, GDALMDArrayHS **poObjects) {(int nArrays, GDALMDArrayHS **ahArrays)};
+%apply (int nUsages, GDALRATFieldUsage *paeUsages) {(int nUsages, GDALRATFieldUsage *paeUsages)};
+%newobject CreateRasterAttributeTableFromMDArrays;
+%inline %{
+GDALRasterAttributeTableShadow* CreateRasterAttributeTableFromMDArrays(
+    GDALRATTableType eTableType, int nArrays, GDALMDArrayHS **ahArrays,
+    int nUsages = 0, GDALRATFieldUsage *paeUsages = NULL )
+{
+  if( nUsages != 0 && nUsages != nArrays )
+  {
+      CPLError(CE_Failure, CPLE_AppDefined, "nUsages != nArrays");
+      return NULL;
+  }
+  return GDALCreateRasterAttributeTableFromMDArrays( eTableType, nArrays, (const GDALMDArrayH *)ahArrays, paeUsages );
+}
+%}
+#endif

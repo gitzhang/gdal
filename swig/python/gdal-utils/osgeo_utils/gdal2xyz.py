@@ -11,27 +11,11 @@
 # Copyright (c) 2002, Frank Warmerdam <warmerdam@pobox.com>
 # Copyright (c) 2020-2021, Idan Miara <idan@miara.com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 import sys
 import textwrap
-from numbers import Number, Real
+from numbers import Number
 from typing import Optional, Sequence, Tuple, Union
 
 import numpy as np
@@ -44,9 +28,15 @@ from osgeo_utils.auxiliary.progress import (
     OptionalProgressCallback,
     get_progress_callback,
 )
-from osgeo_utils.auxiliary.util import PathOrDS, get_bands, open_ds
+from osgeo_utils.auxiliary.util import (
+    PathOrDS,
+    enable_gdal_exceptions,
+    get_bands,
+    open_ds,
+)
 
 
+@enable_gdal_exceptions
 def gdal2xyz(
     srcfile: PathOrDS,
     dstfile: PathLikeOrStr = None,
@@ -259,7 +249,7 @@ class GDAL2XYZ(GDALScript):
             "-srcwin",
             metavar=("xoff", "yoff", "xsize", "ysize"),
             dest="srcwin",
-            type=float,
+            type=int,
             nargs=4,
             help="Selects a subwindow from the source image for copying based on pixel/line location",
         )
@@ -308,7 +298,7 @@ class GDAL2XYZ(GDALScript):
             "-srcnodata",
             "-nodatavalue",
             dest="src_nodata",
-            type=Real,
+            type=float,
             nargs="*",
             help="The nodata value of the dataset (for skipping or replacing) "
             "Default (None) - Use the dataset nodata value; "
@@ -318,7 +308,7 @@ class GDAL2XYZ(GDALScript):
         parser.add_argument(
             "-dstnodata",
             dest="dst_nodata",
-            type=Real,
+            type=float,
             nargs="*",
             help="Replace source nodata with a given nodata. "
             "Has an effect only if not setting -skipnodata. "
@@ -352,6 +342,13 @@ class GDAL2XYZ(GDALScript):
             except ValueError:
                 return False
 
+        def checkFloat(s):
+            try:
+                float(s)
+                return True
+            except ValueError:
+                return False
+
         # We allowed "-b band_number_1 [... band_number_X] srcfile dstfile" syntax
         # before switching to ArgParse. But ArgParse doesn't like that.
         # So manually parse -b argument and strip it before ArgParse.
@@ -359,6 +356,8 @@ class GDAL2XYZ(GDALScript):
         new_argv = []
         i = 0
         band_nums = []
+        src_nodata = []
+        dst_nodata = []
         while i < count:
             arg = argv[i]
             if arg in ("-b", "-band", "--band"):
@@ -370,6 +369,24 @@ class GDAL2XYZ(GDALScript):
                 while i < count and checkInt(argv[i]):
                     band_nums.append(int(argv[i]))
                     i += 1
+            elif arg in ("-srcnodata", "-nodatavalue"):
+                if i == count - 1:
+                    raise Exception(f"Missing argument following {arg}: ")
+                i += 1
+                if not checkFloat(argv[i]):
+                    raise Exception(f"Argument following {arg} should be a float")
+                while i < count and checkFloat(argv[i]):
+                    src_nodata.append(float(argv[i]))
+                    i += 1
+            elif arg in ("-dstnodata"):
+                if i == count - 1:
+                    raise Exception(f"Missing argument following {arg}: ")
+                i += 1
+                if not checkFloat(argv[i]):
+                    raise Exception(f"Argument following {arg} should be a float")
+                while i < count and checkFloat(argv[i]):
+                    dst_nodata.append(float(argv[i]))
+                    i += 1
             else:
                 i += 1
                 new_argv.append(arg)
@@ -377,6 +394,10 @@ class GDAL2XYZ(GDALScript):
         kwargs = super(GDAL2XYZ, self).parse(new_argv)
         if band_nums:
             kwargs["band_nums"] = band_nums
+        if src_nodata:
+            kwargs["src_nodata"] = src_nodata
+        if dst_nodata:
+            kwargs["dst_nodata"] = dst_nodata
         return kwargs
 
     def augment_kwargs(self, kwargs) -> dict:

@@ -17,20 +17,16 @@ Raster drivers
     The following drivers have been retired and moved to the
     https://github.com/OSGeo/gdal-extra-drivers repository: BPG, E00GRID, EPSILON, IGNFHeightASCIIGrid, NTv1
 
-..
-    Developer comment: make html includes a hack to hide the table from
-    the index.html file. We need to keep it visible so that the top-level
-    index.html lists those pages.
-
 .. toctree::
    :maxdepth: 1
+   :hidden:
 
    aaigrid
    ace2
    adrg
    aig
    airsar
-   arg
+   avif
    bag
    basisu
    blx
@@ -82,6 +78,7 @@ Raster drivers
    gsbg
    gsc
    gta
+   gti
    gtiff
    gxf
    hdf4
@@ -129,9 +126,11 @@ Raster drivers
    ngw
    nitf
    noaa_b
+   nsidcbin
    ntv2
    nwtgrd
    ogcapi
+   openfilegdb
    ozi
    palsar
    paux
@@ -145,17 +144,20 @@ Raster drivers
    pnm
    postgisraster
    prf
-   rasdaman
    rasterlite
    rasterlite2
    r
    rdb
+   rcm
    rik
    rmf
    roi_pac
    rpftoc
    rraster
    rs2
+   s102
+   s104
+   s111
    safe
    sar_ceos
    sdat
@@ -163,6 +165,7 @@ Raster drivers
    sentinel2
    sgi
    sigdem
+   snap_tiff
    snodas
    srp
    srtmhgt

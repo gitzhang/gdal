@@ -9,23 +9,7 @@
  * Copyright (c) 1999, Frank Warmerdam
  * Copyright (c) 2008-2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_port.h"
@@ -370,6 +354,7 @@ int HFARasterAttributeTable::GetColOfUsage(GDALRATFieldUsage eUsage) const
 
     return -1;
 }
+
 /************************************************************************/
 /*                          GetRowCount()                               */
 /************************************************************************/
@@ -1402,6 +1387,7 @@ int HFARasterAttributeTable::GetRowOfValue(double dfValue) const
     }
     return -1;
 }
+
 /************************************************************************/
 /*                          GetRowOfValue()                             */
 /*                                                                      */
@@ -1651,7 +1637,7 @@ void HFARasterAttributeTable::RemoveStatistics()
                 }
         }
     }
-    aoFields = aoNewFields;
+    aoFields = std::move(aoNewFields);
 }
 
 /************************************************************************/
@@ -2056,7 +2042,7 @@ void HFARasterBand::ReadHistogramMetadata()
                     static_cast<double>(std::numeric_limits<GUIntBig>::max()) ||
                 dfNumber <
                     static_cast<double>(std::numeric_limits<GUIntBig>::min()) ||
-                CPLIsNan(dfNumber))
+                std::isnan(dfNumber))
             {
                 CPLError(CE_Failure, CPLE_FileIO, "Out of range hist vals.");
                 CPLFree(panHistValues);
@@ -3061,12 +3047,9 @@ CPLErr HFARasterBand::WriteNamedRAT(const char * /*pszName*/,
 /************************************************************************/
 
 HFADataset::HFADataset()
-    : hHFA(nullptr), bMetadataDirty(false), bGeoDirty(false), bIgnoreUTM(false),
-      bForceToPEString(false), nGCPCount(0)
 {
     m_oSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
 
-    memset(asGCPList, 0, sizeof(asGCPList));
     memset(adfGeoTransform, 0, sizeof(adfGeoTransform));
 }
 
@@ -3100,9 +3083,6 @@ HFADataset::~HFADataset()
         }
         hHFA = nullptr;
     }
-
-    if (nGCPCount > 0)
-        GDALDeinitGCPs(36, asGCPList);
 }
 
 /************************************************************************/
@@ -3188,16 +3168,18 @@ CPLErr HFADataset::WriteProjection()
 
         if (nGCS == 4326)
             sDatum.datumname = const_cast<char *>("WGS 84");
-        if (nGCS == 4322)
+        else if (nGCS == 4322)
             sDatum.datumname = const_cast<char *>("WGS 1972");
-        if (nGCS == 4267)
+        else if (nGCS == 4267)
             sDatum.datumname = const_cast<char *>("NAD27");
-        if (nGCS == 4269)
+        else if (nGCS == 4269)
             sDatum.datumname = const_cast<char *>("NAD83");
-        if (nGCS == 4283)
+        else if (nGCS == 4283)
             sDatum.datumname = const_cast<char *>("GDA94");
-        if (nGCS == 6284)
+        else if (nGCS == 4284)
             sDatum.datumname = const_cast<char *>("Pulkovo 1942");
+        else if (nGCS == 4272)
+            sDatum.datumname = const_cast<char *>("Geodetic Datum 1949");
 
         if (poGeogSRS->GetTOWGS84(sDatum.params) == OGRERR_NONE)
         {
@@ -3219,7 +3201,8 @@ CPLErr HFADataset::WriteProjection()
         }
 
         // Verify if we need to write a ESRI PE string.
-        bPEStringStored = CPL_TO_BOOL(WritePeStringIfNeeded(&oSRS, hHFA));
+        if (!bDisablePEString)
+            bPEStringStored = CPL_TO_BOOL(WritePeStringIfNeeded(&oSRS, hHFA));
 
         sPro.proSpheroid.sphereName =
             (char *)poGeogSRS->GetAttrValue("GEOGCS|DATUM|SPHEROID");
@@ -4219,7 +4202,7 @@ CPLErr HFADataset::ReadProjection()
                          "configuration option to NO.",
                          pszProjName);
             }
-            m_oSRS = oSRSFromPE;
+            m_oSRS = std::move(oSRSFromPE);
         }
         CPLFree(pszPE_COORDSYS);
         return m_oSRS.IsEmpty() ? CE_Failure : CE_None;
@@ -4246,7 +4229,7 @@ CPLErr HFADataset::ReadProjection()
         CPLTestBool(CPLGetConfigOption("HFA_USE_ESRI_PE_STRING", "YES")) &&
         oSRSFromPE.importFromWkt(pszPE_COORDSYS) == OGRERR_NONE)
     {
-        m_oSRS = oSRSFromPE;
+        m_oSRS = std::move(oSRSFromPE);
 
         // Copy TOWGS84 clause from HFA SRS to PE SRS.
         if (poSRS != nullptr)
@@ -4591,7 +4574,7 @@ CPLErr HFADataset::SetGeoTransform(double *padfTransform)
 CPLErr HFADataset::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
                              int nXSize, int nYSize, void *pData, int nBufXSize,
                              int nBufYSize, GDALDataType eBufType,
-                             int nBandCount, int *panBandMap,
+                             int nBandCount, BANDMAP_TYPE panBandMap,
                              GSpacing nPixelSpace, GSpacing nLineSpace,
                              GSpacing nBandSpace,
                              GDALRasterIOExtraArg *psExtraArg)
@@ -4619,28 +4602,21 @@ void HFADataset::UseXFormStack(int nStepCount, Efga_Polynomial *pasPLForward,
 
 {
     // Generate GCPs using the transform.
-    nGCPCount = 0;
-    GDALInitGCPs(36, asGCPList);
-
     for (double dfYRatio = 0.0; dfYRatio < 1.001; dfYRatio += 0.2)
     {
         for (double dfXRatio = 0.0; dfXRatio < 1.001; dfXRatio += 0.2)
         {
             const double dfLine = 0.5 + (GetRasterYSize() - 1) * dfYRatio;
             const double dfPixel = 0.5 + (GetRasterXSize() - 1) * dfXRatio;
-            const int iGCP = nGCPCount;
 
-            asGCPList[iGCP].dfGCPPixel = dfPixel;
-            asGCPList[iGCP].dfGCPLine = dfLine;
-
-            asGCPList[iGCP].dfGCPX = dfPixel;
-            asGCPList[iGCP].dfGCPY = dfLine;
-            asGCPList[iGCP].dfGCPZ = 0.0;
-
+            gdal::GCP gcp("", "", dfPixel, dfLine,
+                          /* X = */ dfPixel,
+                          /* Y = */ dfLine);
             if (HFAEvaluateXFormStack(nStepCount, FALSE, pasPLReverse,
-                                      &(asGCPList[iGCP].dfGCPX),
-                                      &(asGCPList[iGCP].dfGCPY)))
-                nGCPCount++;
+                                      &(gcp.X()), &(gcp.Y())))
+            {
+                m_aoGCPs.emplace_back(std::move(gcp));
+            }
         }
     }
 
@@ -4716,7 +4692,7 @@ void HFADataset::UseXFormStack(int nStepCount, Efga_Polynomial *pasPLForward,
 int HFADataset::GetGCPCount()
 {
     const int nPAMCount = GDALPamDataset::GetGCPCount();
-    return nPAMCount > 0 ? nPAMCount : nGCPCount;
+    return nPAMCount > 0 ? nPAMCount : static_cast<int>(m_aoGCPs.size());
 }
 
 /************************************************************************/
@@ -4729,7 +4705,7 @@ const OGRSpatialReference *HFADataset::GetGCPSpatialRef() const
     const OGRSpatialReference *poSRS = GDALPamDataset::GetGCPSpatialRef();
     if (poSRS)
         return poSRS;
-    return nGCPCount > 0 && !m_oSRS.IsEmpty() ? &m_oSRS : nullptr;
+    return !m_aoGCPs.empty() && !m_oSRS.IsEmpty() ? &m_oSRS : nullptr;
 }
 
 /************************************************************************/
@@ -4741,7 +4717,7 @@ const GDAL_GCP *HFADataset::GetGCPs()
     const GDAL_GCP *psPAMGCPs = GDALPamDataset::GetGCPs();
     if (psPAMGCPs)
         return psPAMGCPs;
-    return asGCPList;
+    return gdal::GCP::c_ptr(m_aoGCPs);
 }
 
 /************************************************************************/
@@ -4856,6 +4832,17 @@ GDALDataset *HFADataset::Create(const char *pszFilenameIn, int nXSize,
             return nullptr;
     }
 
+    const bool bForceToPEString =
+        CPLFetchBool(papszParamList, "FORCETOPESTRING", false);
+    const bool bDisablePEString =
+        CPLFetchBool(papszParamList, "DISABLEPESTRING", false);
+    if (bForceToPEString && bDisablePEString)
+    {
+        CPLError(CE_Failure, CPLE_AppDefined,
+                 "FORCETOPESTRING and DISABLEPESTRING are mutually exclusive");
+        return nullptr;
+    }
+
     // Create the new file.
     HFAHandle hHFA = HFACreate(pszFilenameIn, nXSize, nYSize, nBandsIn,
                                eHfaDataType, papszParamList);
@@ -4884,8 +4871,8 @@ GDALDataset *HFADataset::Create(const char *pszFilenameIn, int nXSize,
     // coordinate system descriptions.
     if (poDS != nullptr)
     {
-        poDS->bForceToPEString =
-            CPLFetchBool(papszParamList, "FORCETOPESTRING", false);
+        poDS->bForceToPEString = bForceToPEString;
+        poDS->bDisablePEString = bDisablePEString;
     }
 
     return poDS;
@@ -5239,7 +5226,9 @@ void GDALRegister_HFA()
         "dependent file (must not have absolute path)'/>"
         "   <Option name='FORCETOPESTRING' type='boolean' description='Force "
         "use of ArcGIS PE String in file instead of Imagine coordinate system "
-        "format'/>"
+        "format' default='NO'/>"
+        "   <Option name='DISABLEPESTRING' type='boolean' description='Disable "
+        "use of ArcGIS PE String' default='NO'/>"
         "</CreationOptionList>");
 
     poDriver->SetMetadataItem(GDAL_DCAP_VIRTUALIO, "YES");

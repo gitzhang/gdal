@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2015-2018, Planet Labs
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_http.h"
@@ -34,8 +18,7 @@
 #include "ogr_spatialref.h"
 #include "ogrsf_frmts.h"
 #include "../vrt/gdal_vrt.h"
-
-#include "ogrgeojsonreader.h"
+#include "ogrlibjsonutils.h"
 
 #include <algorithm>
 
@@ -50,6 +33,7 @@
 /************************************************************************/
 
 class PLLinkedDataset;
+
 class PLLinkedDataset
 {
   public:
@@ -108,9 +92,9 @@ class PLMosaicDataset final : public GDALPamDataset
     std::vector<CPLString> ListSubdatasets();
 
     static CPLString formatTileName(int tile_x, int tile_y);
-    void InsertNewDataset(CPLString osKey, GDALDataset *poDS);
-    GDALDataset *OpenAndInsertNewDataset(CPLString osTmpFilename,
-                                         CPLString osTilename);
+    void InsertNewDataset(const CPLString &osKey, GDALDataset *poDS);
+    GDALDataset *OpenAndInsertNewDataset(const CPLString &osTmpFilename,
+                                         const CPLString &osTilename);
 
   public:
     PLMosaicDataset();
@@ -122,7 +106,7 @@ class PLMosaicDataset final : public GDALPamDataset
     virtual CPLErr IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
                              int nXSize, int nYSize, void *pData, int nBufXSize,
                              int nBufYSize, GDALDataType eBufType,
-                             int nBandCount, int *panBandMap,
+                             int nBandCount, BANDMAP_TYPE panBandMap,
                              GSpacing nPixelSpace, GSpacing nLineSpace,
                              GSpacing nBandSpace,
                              GDALRasterIOExtraArg *psExtraArg) override;
@@ -219,8 +203,8 @@ CPLErr PLMosaicRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff,
     if (poMetaTileDS == nullptr)
     {
         memset(pImage, 0,
-               nBlockXSize * nBlockYSize *
-                   (GDALGetDataTypeSize(eDataType) / 8));
+               static_cast<size_t>(nBlockXSize) * nBlockYSize *
+                   GDALGetDataTypeSizeBytes(eDataType));
         return CE_None;
     }
 
@@ -449,7 +433,7 @@ CPLHTTPResult *PLMosaicDataset::Download(const char *pszURL, int bQuiet404Error)
         vsi_l_offset nDataLength = 0;
         CPLString osURL(pszURL);
         if (osURL.back() == '/')
-            osURL.resize(osURL.size() - 1);
+            osURL.pop_back();
         GByte *pabyBuf = VSIGetMemFileBuffer(osURL, &nDataLength, FALSE);
         if (pabyBuf)
         {
@@ -664,7 +648,7 @@ GDALDataset *PLMosaicDataset::Open(GDALOpenInfo *poOpenInfo)
     }
 
     if (poDS)
-        poDS->SetPamFlags(0);
+        poDS->SetPamFlags(poDS->GetPamFlags() & ~GPF_DIRTY);
 
     return poDS;
 }
@@ -984,7 +968,7 @@ int PLMosaicDataset::OpenMosaic()
                     GM_ORIGIN, 256 << nZoomLevel, 256 << nZoomLevel, nZoomLevel,
                     pszSRS, osCacheStr.c_str());
 
-                GDALDataset *poTMSDS = reinterpret_cast<GDALDataset *>(
+                GDALDataset *poTMSDS = GDALDataset::FromHandle(
                     GDALOpenEx(osTMS, GDAL_OF_RASTER | GDAL_OF_INTERNAL,
                                nullptr, nullptr, nullptr));
                 if (poTMSDS)
@@ -1022,7 +1006,7 @@ int PLMosaicDataset::OpenMosaic()
                     }
                     poTMSDS->Dereference();
 
-                    apoTMSDS.push_back(reinterpret_cast<GDALDataset *>(hVRTDS));
+                    apoTMSDS.push_back(GDALDataset::FromHandle(hVRTDS));
                 }
 
                 if (nOvrXSize < 256 && nOvrYSize < 256)
@@ -1196,7 +1180,8 @@ CPLString PLMosaicDataset::formatTileName(int tile_x, int tile_y)
 /*                          InsertNewDataset()                          */
 /************************************************************************/
 
-void PLMosaicDataset::InsertNewDataset(CPLString osKey, GDALDataset *poDS)
+void PLMosaicDataset::InsertNewDataset(const CPLString &osKey,
+                                       GDALDataset *poDS)
 {
     if (static_cast<int>(oMapLinkedDatasets.size()) == nCacheMaxSize)
     {
@@ -1227,11 +1212,12 @@ void PLMosaicDataset::InsertNewDataset(CPLString osKey, GDALDataset *poDS)
 /*                         OpenAndInsertNewDataset()                    */
 /************************************************************************/
 
-GDALDataset *PLMosaicDataset::OpenAndInsertNewDataset(CPLString osTmpFilename,
-                                                      CPLString osTilename)
+GDALDataset *
+PLMosaicDataset::OpenAndInsertNewDataset(const CPLString &osTmpFilename,
+                                         const CPLString &osTilename)
 {
     const char *const apszAllowedDrivers[2] = {"GTiff", nullptr};
-    GDALDataset *poDS = reinterpret_cast<GDALDataset *>(
+    GDALDataset *poDS = GDALDataset::FromHandle(
         GDALOpenEx(osTmpFilename, GDAL_OF_RASTER | GDAL_OF_INTERNAL,
                    apszAllowedDrivers, nullptr, nullptr));
     if (poDS != nullptr)
@@ -1326,6 +1312,7 @@ GDALDataset *PLMosaicDataset::GetMetaTile(int tile_x, int tile_y)
 
         CreateMosaicCachePathIfNecessary();
 
+        bool bUnlink = false;
         VSILFILE *fp =
             osCachePathRoot.size() ? VSIFOpenL(osTmpFilename, "wb") : nullptr;
         if (fp)
@@ -1346,9 +1333,10 @@ GDALDataset *PLMosaicDataset::GetMetaTile(int tile_x, int tile_y)
                 FlushDatasetsCache();
                 nCacheMaxSize = 1;
             }
-            osTmpFilename =
-                CPLSPrintf("/vsimem/single_tile_plmosaic_cache/%s/%d_%d.tif",
-                           osMosaic.c_str(), tile_x, tile_y);
+            bUnlink = true;
+            osTmpFilename = VSIMemGenerateHiddenFilename(
+                CPLSPrintf("single_tile_plmosaic_cache_%s_%d_%d.tif",
+                           osMosaic.c_str(), tile_x, tile_y));
             fp = VSIFOpenL(osTmpFilename, "wb");
             if (fp)
             {
@@ -1359,7 +1347,7 @@ GDALDataset *PLMosaicDataset::GetMetaTile(int tile_x, int tile_y)
         CPLHTTPDestroyResult(psResult);
         GDALDataset *poDS = OpenAndInsertNewDataset(osTmpFilename, osTilename);
 
-        if (STARTS_WITH(osTmpFilename, "/vsimem/single_tile_plmosaic_cache/"))
+        if (bUnlink)
             VSIUnlink(osTilename);
 
         return poDS;
@@ -1470,7 +1458,7 @@ CPLErr PLMosaicDataset::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
                                   int nXSize, int nYSize, void *pData,
                                   int nBufXSize, int nBufYSize,
                                   GDALDataType eBufType, int nBandCount,
-                                  int *panBandMap, GSpacing nPixelSpace,
+                                  BANDMAP_TYPE panBandMap, GSpacing nPixelSpace,
                                   GSpacing nLineSpace, GSpacing nBandSpace,
                                   GDALRasterIOExtraArg *psExtraArg)
 {

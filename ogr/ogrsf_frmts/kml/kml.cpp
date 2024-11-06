@@ -8,23 +8,7 @@
  * Copyright (c) 2007, Jens Oberender
  * Copyright (c) 2008-2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 #include "kmlnode.h"
 #include "kml.h"
@@ -40,6 +24,8 @@
 #ifdef HAVE_EXPAT
 #include "expat.h"
 #endif
+
+constexpr int PARSER_BUF_SIZE = 8192;
 
 KML::KML()
     : poTrunk_(nullptr), nNumLayers_(-1), papoLayers_(nullptr), nDepth_(0),
@@ -94,16 +80,16 @@ bool KML::parse()
     nWithoutEventCounter = 0;
 
     int nDone = 0;
-    int nLen = 0;
-    char aBuf[BUFSIZ] = {0};
+    unsigned nLen = 0;
+    std::vector<char> aBuf(PARSER_BUF_SIZE);
     bool bError = false;
 
     do
     {
         nDataHandlerCounter = 0;
-        nLen = (int)VSIFReadL(aBuf, 1, sizeof(aBuf), pKMLFile_);
-        nDone = VSIFEofL(pKMLFile_);
-        if (XML_Parse(oParser, aBuf, nLen, nDone) == XML_STATUS_ERROR)
+        nLen = (unsigned)VSIFReadL(aBuf.data(), 1, aBuf.size(), pKMLFile_);
+        nDone = nLen < aBuf.size();
+        if (XML_Parse(oParser, aBuf.data(), nLen, nDone) == XML_STATUS_ERROR)
         {
             CPLError(CE_Failure, CPLE_AppDefined,
                      "XML parsing of KML file failed : %s at line %d, "
@@ -183,24 +169,26 @@ void KML::checkValidity()
     oCurrentParser = oParser;
 
     int nDone = 0;
-    int nLen = 0;
-    char aBuf[BUFSIZ] = {0};
+    unsigned nLen = 0;
+    std::vector<char> aBuf(PARSER_BUF_SIZE);
 
     // Parses the file until we find the first element.
     do
     {
         nDataHandlerCounter = 0;
-        nLen = static_cast<int>(VSIFReadL(aBuf, 1, sizeof(aBuf), pKMLFile_));
-        nDone = VSIFEofL(pKMLFile_);
-        if (XML_Parse(oParser, aBuf, nLen, nDone) == XML_STATUS_ERROR)
+        nLen = static_cast<unsigned>(
+            VSIFReadL(aBuf.data(), 1, aBuf.size(), pKMLFile_));
+        nDone = nLen < aBuf.size();
+        if (XML_Parse(oParser, aBuf.data(), nLen, nDone) == XML_STATUS_ERROR)
         {
-            if (nLen <= BUFSIZ - 1)
+            if (nLen <= PARSER_BUF_SIZE - 1)
                 aBuf[nLen] = 0;
             else
-                aBuf[BUFSIZ - 1] = 0;
-            if (strstr(aBuf, "<?xml") &&
-                (strstr(aBuf, "<kml") ||
-                 (strstr(aBuf, "<Document") && strstr(aBuf, "/kml/2."))))
+                aBuf[PARSER_BUF_SIZE - 1] = 0;
+            if (strstr(aBuf.data(), "<?xml") &&
+                (strstr(aBuf.data(), "<kml") ||
+                 (strstr(aBuf.data(), "<Document") &&
+                  strstr(aBuf.data(), "/kml/2."))))
             {
                 CPLError(
                     CE_Failure, CPLE_AppDefined,
@@ -217,7 +205,7 @@ void KML::checkValidity()
         }
 
         nCount++;
-        /* After reading 50 * BUFSIZE bytes, and not finding whether the file */
+        /* After reading 50 * PARSER_BUF_SIZE bytes, and not finding whether the file */
         /* is KML or not, we give up and fail silently */
     } while (!nDone && nLen > 0 && validity == KML_VALIDITY_UNKNOWN &&
              nCount < 50);
@@ -370,7 +358,7 @@ void XMLCALL KML::dataHandlerValidate(void *pUserData,
     KML *poKML = static_cast<KML *>(pUserData);
 
     poKML->nDataHandlerCounter++;
-    if (poKML->nDataHandlerCounter >= BUFSIZ)
+    if (poKML->nDataHandlerCounter >= PARSER_BUF_SIZE)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "File probably corrupted (million laugh pattern)");
@@ -535,7 +523,7 @@ void XMLCALL KML::dataHandler(void *pUserData, const char *pszData, int nLen)
         return;
 
     poKML->nDataHandlerCounter++;
-    if (poKML->nDataHandlerCounter >= BUFSIZ)
+    if (poKML->nDataHandlerCounter >= PARSER_BUF_SIZE)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "File probably corrupted (million laugh pattern)");
@@ -564,8 +552,7 @@ bool KML::isValid()
     checkValidity();
 
     if (validity == KML_VALIDITY_VALID)
-        CPLDebug("KML", "Valid: %d Version: %s", validity == KML_VALIDITY_VALID,
-                 sVersion_.c_str());
+        CPLDebug("KML", "Valid: 1 Version: %s", sVersion_.c_str());
 
     return validity == KML_VALIDITY_VALID;
 }

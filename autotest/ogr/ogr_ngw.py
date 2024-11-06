@@ -10,23 +10,7 @@
 #
 #  Copyright (c) 2018-2021, NextGIS <info@nextgis.com>
 #
-#  Permission is hereby granted, free of charge, to any person obtaining a copy
-#  of this software and associated documentation files (the "Software"), to deal
-#  in the Software without restriction, including without limitation the rights
-#  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-#  copies of the Software, and to permit persons to whom the Software is
-#  furnished to do so, subject to the following conditions:
-#
-#  The above copyright notice and this permission notice shall be included in all
-#  copies or substantial portions of the Software.
-#
-#  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-#  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-#  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-#  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-#  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-#  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-#  SOFTWARE.
+# SPDX-License-Identifier: MIT
 ################################################################################
 
 import os
@@ -116,21 +100,21 @@ def startup_and_cleanup():
 # Check create datasource.
 
 
+@pytest.mark.slow()
 def test_ogr_ngw_2():
 
     create_url = "NGW:" + gdaltest.ngw_test_server + "/resource/0/" + get_new_name()
-    gdal.PushErrorHandler()
-    gdaltest.ngw_ds = gdal.GetDriverByName("NGW").Create(
-        create_url,
-        0,
-        0,
-        0,
-        gdal.GDT_Unknown,
-        options=[
-            "DESCRIPTION=GDAL Test group",
-        ],
-    )
-    gdal.PopErrorHandler()
+    with gdal.quiet_errors():
+        gdaltest.ngw_ds = gdal.GetDriverByName("NGW").Create(
+            create_url,
+            0,
+            0,
+            0,
+            gdal.GDT_Unknown,
+            options=[
+                "DESCRIPTION=GDAL Test group",
+            ],
+        )
 
     assert gdaltest.ngw_ds is not None, "Create datasource failed."
     assert (
@@ -148,6 +132,7 @@ def test_ogr_ngw_2():
 # Check rename datasource.
 
 
+@pytest.mark.slow()
 def test_ogr_ngw_3():
     # FIXME: depends on previous test
     if gdaltest.ngw_ds is None:
@@ -166,6 +151,7 @@ def test_ogr_ngw_3():
 # Check datasource metadata.
 
 
+@pytest.mark.slow()
 def test_ogr_ngw_4():
     # FIXME: depends on previous test
     if gdaltest.ngw_ds is None:
@@ -260,6 +246,7 @@ def add_metadata(lyr):
 # Check create vector layers.
 
 
+@pytest.mark.slow()  # 12s
 def test_ogr_ngw_5():
     # FIXME: depends on previous test
     if gdaltest.ngw_ds is None:
@@ -283,10 +270,9 @@ def test_ogr_ngw_5():
 
     # Test forbidden field names.
     gdal.ErrorReset()
-    gdal.PushErrorHandler("CPLQuietErrorHandler")
-    fld_defn = ogr.FieldDefn("id", ogr.OFTInteger)
-    lyr.CreateField(fld_defn)
-    gdal.PopErrorHandler()
+    with gdal.quiet_errors():
+        fld_defn = ogr.FieldDefn("id", ogr.OFTInteger)
+        lyr.CreateField(fld_defn)
     assert gdal.GetLastErrorMsg() != "", "Expecting a warning"
 
     add_metadata(lyr)
@@ -427,6 +413,7 @@ def test_ogr_ngw_5():
 # Check open single vector layer.
 
 
+@pytest.mark.slow()
 def test_ogr_ngw_6():
     # FIXME: depends on previous test
     if gdaltest.ngw_ds is None:
@@ -445,6 +432,7 @@ def test_ogr_ngw_6():
 # Check insert, update and delete features.
 
 
+@pytest.mark.slow()
 def test_ogr_ngw_7():
     # FIXME: depends on previous test
     if gdaltest.ngw_ds is None:
@@ -470,9 +458,8 @@ def test_ogr_ngw_7():
     lyr.DeleteFeature(f.GetFID())
 
     # Expected fail to get feature
-    gdal.PushErrorHandler()
-    f = lyr.GetFeature(f.GetFID())
-    gdal.PopErrorHandler()
+    with gdal.quiet_errors():
+        f = lyr.GetFeature(f.GetFID())
     assert f is None, "Failed to delete feature #{}.".format(f.GetFID())
 
 
@@ -480,6 +467,7 @@ def test_ogr_ngw_7():
 # Check insert, update features in batch mode.
 
 
+@pytest.mark.slow()
 def test_ogr_ngw_8():
     # FIXME: depends on previous test
     if gdaltest.ngw_ds is None:
@@ -531,6 +519,7 @@ def test_ogr_ngw_8():
 # Check paging while GetNextFeature.
 
 
+@pytest.mark.slow()
 def test_ogr_ngw_9():
     # FIXME: depends on previous test
     if gdaltest.ngw_ds is None:
@@ -562,8 +551,9 @@ def test_ogr_ngw_9():
 # Check native data.
 
 
+@pytest.mark.slow()  # 6s
 def test_ogr_ngw_10():
-    if gdal.GetDriverByName("NGW") is None or gdaltest.ngw_ds is None:
+    if gdaltest.ngw_ds is None:
         pytest.skip()
 
     ds_resource_id = gdaltest.ngw_ds.GetMetadataItem("id", "")
@@ -605,6 +595,7 @@ def test_ogr_ngw_10():
 # Check ignored fields works ok
 
 
+@pytest.mark.slow()
 def test_ogr_ngw_11():
     # FIXME: depends on previous test
     if gdaltest.ngw_ds is None:
@@ -638,6 +629,7 @@ def test_ogr_ngw_11():
 # Check attribute filter.
 
 
+@pytest.mark.slow()
 def test_ogr_ngw_12():
     # FIXME: depends on previous test
     if gdaltest.ngw_ds is None:
@@ -673,6 +665,7 @@ def test_ogr_ngw_12():
 # Check spatial filter.
 
 
+@pytest.mark.slow()
 def test_ogr_ngw_13():
     # FIXME: depends on previous test
     if gdaltest.ngw_ds is None:
@@ -695,6 +688,7 @@ def test_ogr_ngw_13():
 # Check ignore geometry.
 
 
+@pytest.mark.slow()
 def test_ogr_ngw_14():
     # FIXME: depends on previous test
     if gdaltest.ngw_ds is None:
@@ -722,6 +716,7 @@ def test_ogr_ngw_14():
 # Check ExecuteSQL.
 
 
+@pytest.mark.slow()  # 10s
 def test_ogr_ngw_15():
     # FIXME: depends on previous test
     if gdaltest.ngw_ds is None:
@@ -782,13 +777,13 @@ def test_ogr_ngw_15():
 #  Run test_ogrsf
 
 
+@pytest.mark.slow()  # 460 s
 def test_ogr_ngw_test_ogrsf():
     # FIXME: depends on previous test
     if gdaltest.ngw_ds is None:
         pytest.skip()
 
-    if gdaltest.skip_on_travis():
-        pytest.skip("skip on travis")
+    gdaltest.skip_on_travis()
 
     url = "NGW:" + gdaltest.ngw_test_server + "/resource/" + gdaltest.group_id
 

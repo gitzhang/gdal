@@ -8,23 +8,7 @@
  * Copyright (c) 2010, Brian Case
  * Copyright (c) 2011-2014, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  *****************************************************************************/
 
 #include "libkml_headers.h"
@@ -604,7 +588,7 @@ void kml2stylestring(StylePtr poKmlStyle, OGRStyleMgr *poOgrSM)
         }
 
         OGRStylePen *poOgrStylePen =
-            kml2pen(poKmlLineStyle, (OGRStylePen *)poOgrTmpST);
+            kml2pen(std::move(poKmlLineStyle), (OGRStylePen *)poOgrTmpST);
 
         poOgrNewSM->AddPart(poOgrStylePen);
 
@@ -639,7 +623,7 @@ void kml2stylestring(StylePtr poKmlStyle, OGRStyleMgr *poOgrSM)
         }
 
         OGRStyleBrush *poOgrStyleBrush =
-            kml2brush(poKmlPolyStyle, (OGRStyleBrush *)poOgrTmpST);
+            kml2brush(std::move(poKmlPolyStyle), (OGRStyleBrush *)poOgrTmpST);
 
         poOgrNewSM->AddPart(poOgrStyleBrush);
 
@@ -674,7 +658,7 @@ void kml2stylestring(StylePtr poKmlStyle, OGRStyleMgr *poOgrSM)
         }
 
         OGRStyleSymbol *poOgrStyleSymbol =
-            kml2symbol(poKmlIconStyle, (OGRStyleSymbol *)poOgrTmpST);
+            kml2symbol(std::move(poKmlIconStyle), (OGRStyleSymbol *)poOgrTmpST);
 
         poOgrNewSM->AddPart(poOgrStyleSymbol);
 
@@ -709,7 +693,7 @@ void kml2stylestring(StylePtr poKmlStyle, OGRStyleMgr *poOgrSM)
         }
 
         OGRStyleLabel *poOgrStyleLabel =
-            kml2label(poKmlLabelStyle, (OGRStyleLabel *)poOgrTmpST);
+            kml2label(std::move(poKmlLabelStyle), (OGRStyleLabel *)poOgrTmpST);
 
         poOgrNewSM->AddPart(poOgrStyleLabel);
 
@@ -730,7 +714,7 @@ void kml2stylestring(StylePtr poKmlStyle, OGRStyleMgr *poOgrSM)
 
 ******************************************************************************/
 
-static ContainerPtr MyGetContainerFromRoot(KmlFactory *m_poKmlFactory,
+static ContainerPtr MyGetContainerFromRoot(KmlFactory *poKmlFactory,
                                            ElementPtr poKmlRoot)
 {
     ContainerPtr poKmlContainer = nullptr;
@@ -752,7 +736,7 @@ static ContainerPtr MyGetContainerFromRoot(KmlFactory *m_poKmlFactory,
                 }
                 else if (poKmlFeat->IsA(kmldom::Type_Placemark))
                 {
-                    poKmlContainer = m_poKmlFactory->CreateDocument();
+                    poKmlContainer = poKmlFactory->CreateDocument();
                     poKmlContainer->add_feature(
                         kmldom::AsFeature(kmlengine::Clone(poKmlFeat)));
                 }
@@ -760,7 +744,7 @@ static ContainerPtr MyGetContainerFromRoot(KmlFactory *m_poKmlFactory,
         }
         else if (poKmlRoot->IsA(kmldom::Type_Container))
         {
-            poKmlContainer = AsContainer(poKmlRoot);
+            poKmlContainer = AsContainer(std::move(poKmlRoot));
         }
     }
 
@@ -827,7 +811,7 @@ static StyleSelectorPtr StyleFromStyleURL(const StyleMapPtr &stylemap,
                     /***** copy buf to the string *****/
                     szbuf[nRead] = '\0';
                     oStyle.append(szbuf);
-                } while (!VSIFEofL(fp));
+                } while (!VSIFEofL(fp) && !VSIFErrorL(fp));
 
                 VSIFCloseL(fp);
 
@@ -851,8 +835,8 @@ static StyleSelectorPtr StyleFromStyleURL(const StyleMapPtr &stylemap,
                 kmldom::KmlFactory *poKmlFactory =
                     kmldom::KmlFactory::GetFactory();
                 ContainerPtr poKmlContainer;
-                if (!(poKmlContainer =
-                          MyGetContainerFromRoot(poKmlFactory, poKmlRoot)))
+                if (!(poKmlContainer = MyGetContainerFromRoot(
+                          poKmlFactory, std::move(poKmlRoot))))
                 {
                     CPLFree(pszUrlTmp);
                     CPLFree(pszUrl);
@@ -943,10 +927,7 @@ void ParseStyles(DocumentPtr poKmlDocument, OGRStyleTable **poStyleTable)
         if (!*poStyleTable)
             *poStyleTable = new OGRStyleTable();
 
-        /***** TODO:: Not sure we need to do this as we seem *****/
-        /***** to cast to element and then back to style.    *****/
-        ElementPtr poKmlElement = AsElement(poKmlStyle);
-        kml2styletable(*poStyleTable, AsStyle(poKmlElement));
+        kml2styletable(*poStyleTable, AsStyle(AsElement(poKmlStyle)));
     }
 
     /***** Now we have to loop back around and get the style maps. We    *****/
@@ -980,10 +961,7 @@ void ParseStyles(DocumentPtr poKmlDocument, OGRStyleTable **poStyleTable)
         }
         char *pszStyleId = CPLStrdup(poKmlStyle->get_id().c_str());
 
-        /***** TODO:: Not sure we need to do this as we seem *****/
-        /***** to cast to element and then back to style.    *****/
-        ElementPtr poKmlElement = AsElement(poKmlStyle);
-        kml2styletable(*poStyleTable, AsStyle(poKmlElement));
+        kml2styletable(*poStyleTable, AsStyle(AsElement(poKmlStyle)));
 
         // Change the name of the new style in the style table
 

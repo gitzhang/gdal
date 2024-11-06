@@ -7,27 +7,11 @@
  ******************************************************************************
  * Copyright (c) 2019, Hobu Inc
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "pds4dataset.h"
-#include "ogr_vrt.h"
+#include "ogrvrtgeometrytypes.h"
 
 #include "ogr_p.h"
 
@@ -430,13 +414,14 @@ CPLXMLNode *PDS4TableBaseLayer::RefreshFileAreaObservationalBeginningCommon(
     {
         // Make a valid NCName
         osLocalIdentifier = GetName();
-        if (isdigit(osLocalIdentifier[0]))
+        if (isdigit(static_cast<unsigned char>(osLocalIdentifier[0])))
         {
             osLocalIdentifier = '_' + osLocalIdentifier;
         }
         for (char &ch : osLocalIdentifier)
         {
-            if (!isalnum(ch) && static_cast<unsigned>(ch) <= 127)
+            if (!isalnum(static_cast<unsigned char>(ch)) &&
+                static_cast<unsigned>(ch) <= 127)
                 ch = '_';
         }
     }
@@ -473,6 +458,15 @@ void PDS4TableBaseLayer::ParseLineEndingOption(CSLConstList papszOptions)
         CPLError(CE_Warning, CPLE_AppDefined,
                  "Unhandled value for LINE_ENDING");
     }
+}
+
+/************************************************************************/
+/*                             GetDataset()                             */
+/************************************************************************/
+
+GDALDataset *PDS4TableBaseLayer::GetDataset()
+{
+    return m_poDS;
 }
 
 /************************************************************************/
@@ -1462,7 +1456,7 @@ void PDS4FixedWidthTable::RefreshFileAreaObservational(CPLXMLNode *psFAO)
 /*                            CreateField()                             */
 /************************************************************************/
 
-OGRErr PDS4FixedWidthTable::CreateField(OGRFieldDefn *poFieldIn, int)
+OGRErr PDS4FixedWidthTable::CreateField(const OGRFieldDefn *poFieldIn, int)
 
 {
     if (m_poDS->GetAccess() != GA_Update)
@@ -1502,7 +1496,7 @@ OGRErr PDS4FixedWidthTable::CreateField(OGRFieldDefn *poFieldIn, int)
 /*                          InitializeNewLayer()                        */
 /************************************************************************/
 
-bool PDS4FixedWidthTable::InitializeNewLayer(OGRSpatialReference *poSRS,
+bool PDS4FixedWidthTable::InitializeNewLayer(const OGRSpatialReference *poSRS,
                                              bool bForceGeographic,
                                              OGRwkbGeometryType eGType,
                                              const char *const *papszOptions)
@@ -1551,9 +1545,8 @@ bool PDS4FixedWidthTable::InitializeNewLayer(OGRSpatialReference *poSRS,
             m_poRawFeatureDefn->AddFieldDefn(&oFieldDefn);
             m_iLongField = m_poRawFeatureDefn->GetFieldCount() - 1;
             Field f;
-            f.m_nOffset = m_aoFields.empty() ? 0
-                                             : m_aoFields.back().m_nOffset +
-                                                   m_aoFields.back().m_nLength;
+            f.m_nOffset =
+                m_aoFields.back().m_nOffset + m_aoFields.back().m_nLength;
             CreateFieldInternal(OFTReal, OFSTNone, 0, f);
             m_aoFields.push_back(f);
             m_nRecordSize += f.m_nLength;
@@ -1565,9 +1558,8 @@ bool PDS4FixedWidthTable::InitializeNewLayer(OGRSpatialReference *poSRS,
             m_poRawFeatureDefn->AddFieldDefn(&oFieldDefn);
             m_iAltField = m_poRawFeatureDefn->GetFieldCount() - 1;
             Field f;
-            f.m_nOffset = m_aoFields.empty() ? 0
-                                             : m_aoFields.back().m_nOffset +
-                                                   m_aoFields.back().m_nLength;
+            f.m_nOffset =
+                m_aoFields.back().m_nOffset + m_aoFields.back().m_nLength;
             CreateFieldInternal(OFTReal, OFSTNone, 0, f);
             m_aoFields.push_back(f);
             m_nRecordSize += f.m_nLength;
@@ -2106,7 +2098,7 @@ OGRErr PDS4DelimitedTable::ICreateFeature(OGRFeature *poFeature)
 /*                            CreateField()                             */
 /************************************************************************/
 
-OGRErr PDS4DelimitedTable::CreateField(OGRFieldDefn *poFieldIn, int)
+OGRErr PDS4DelimitedTable::CreateField(const OGRFieldDefn *poFieldIn, int)
 
 {
     if (m_poDS->GetAccess() != GA_Update)
@@ -2487,7 +2479,7 @@ char **PDS4DelimitedTable::GetFileList() const
 /*                          InitializeNewLayer()                        */
 /************************************************************************/
 
-bool PDS4DelimitedTable::InitializeNewLayer(OGRSpatialReference *poSRS,
+bool PDS4DelimitedTable::InitializeNewLayer(const OGRSpatialReference *poSRS,
                                             bool bForceGeographic,
                                             OGRwkbGeometryType eGType,
                                             const char *const *papszOptions)
@@ -2574,6 +2566,16 @@ bool PDS4DelimitedTable::InitializeNewLayer(OGRSpatialReference *poSRS,
 /*                           PDS4EditableSynchronizer                   */
 /* ==================================================================== */
 /************************************************************************/
+
+template <class T>
+class PDS4EditableSynchronizer final : public IOGREditableLayerSynchronizer
+{
+  public:
+    PDS4EditableSynchronizer() = default;
+
+    OGRErr EditableSyncToDisk(OGRLayer *poEditableLayer,
+                              OGRLayer **ppoDecoratedLayer) override;
+};
 
 template <class T>
 OGRErr

@@ -12,23 +12,7 @@
  * Portions Copyright (c) Her majesty the Queen in right of Canada as
  * represented by the Minister of National Defence, 2006.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_port.h"
@@ -85,16 +69,16 @@ typedef struct
 #pragma warning(disable : 4611)
 #endif
 
-typedef struct
+struct JPGDatasetOpenArgs
 {
-    const char *pszFilename;
-    VSILFILE *fpLin;
-    char **papszSiblingFiles;
-    int nScaleFactor;
-    bool bDoPAMInitialize;
-    bool bUseInternalOverviews;
-    bool bIsLossless;
-} JPGDatasetOpenArgs;
+    const char *pszFilename = nullptr;
+    VSILFILE *fpLin = nullptr;
+    CSLConstList papszSiblingFiles = nullptr;
+    int nScaleFactor = 1;
+    bool bDoPAMInitialize = false;
+    bool bUseInternalOverviews = false;
+    bool bIsLossless = false;
+};
 
 class JPGDatasetCommon;
 
@@ -170,11 +154,10 @@ class JPGDatasetCommon CPL_NON_FINAL : public GDALPamDataset
     void InitInternalOverviews();
     GDALDataset *InitEXIFOverview();
 
-    OGRSpatialReference m_oSRS{};
+    mutable OGRSpatialReference m_oSRS{};
     bool bGeoTransformValid;
     double adfGeoTransform[6];
-    int nGCPCount;
-    GDAL_GCP *pasGCPList;
+    std::vector<gdal::GCP> m_aoGCPs{};
 
     VSILFILE *m_fpImage;
     GUIntBig nSubfileOffset;
@@ -255,8 +238,9 @@ class JPGDatasetCommon CPL_NON_FINAL : public GDALPamDataset
     virtual ~JPGDatasetCommon();
 
     virtual CPLErr IRasterIO(GDALRWFlag, int, int, int, int, void *, int, int,
-                             GDALDataType, int, int *, GSpacing nPixelSpace,
-                             GSpacing nLineSpace, GSpacing nBandSpace,
+                             GDALDataType, int, BANDMAP_TYPE,
+                             GSpacing nPixelSpace, GSpacing nLineSpace,
+                             GSpacing nBandSpace,
                              GDALRasterIOExtraArg *psExtraArg) override;
 
     virtual CPLErr GetGeoTransform(double *) override;
@@ -264,6 +248,8 @@ class JPGDatasetCommon CPL_NON_FINAL : public GDALPamDataset
     virtual int GetGCPCount() override;
     const OGRSpatialReference *GetGCPSpatialRef() const override;
     virtual const GDAL_GCP *GetGCPs() override;
+
+    const OGRSpatialReference *GetSpatialRef() const override;
 
     virtual char **GetMetadataDomainList() override;
     virtual char **GetMetadata(const char *pszDomain = "") override;
@@ -283,7 +269,6 @@ class JPGDatasetCommon CPL_NON_FINAL : public GDALPamDataset
                               size_t *pnBufferSize,
                               char **ppszDetailedFormat) override;
 
-    static int Identify(GDALOpenInfo *);
     static GDALDataset *Open(GDALOpenInfo *);
 };
 
@@ -310,14 +295,17 @@ class JPGDataset final : public JPGDatasetCommon
     CPLErr StartDecompress();
     virtual void StopDecompress() override;
     virtual CPLErr Restart() override;
+
     virtual int GetDataPrecision() override
     {
         return sDInfo.data_precision;
     }
+
     virtual int GetOutColorSpace() override
     {
         return sDInfo.out_color_space;
     }
+
     virtual int GetJPEGColorSpace() override
     {
         return sDInfo.jpeg_color_space;
@@ -349,6 +337,7 @@ class JPGDataset final : public JPGDatasetCommon
         GDALJPEGUserData &sUserData, struct jpeg_compress_struct &sCInfo,
         struct jpeg_error_mgr &sJErr, GByte *&pabyScanline);
     static void ErrorExit(j_common_ptr cinfo);
+    static void OutputMessage(j_common_ptr cinfo);
 };
 
 /************************************************************************/
@@ -370,6 +359,7 @@ class JPGRasterBand final : public GDALPamRasterBand
 
   public:
     JPGRasterBand(JPGDatasetCommon *, int);
+
     virtual ~JPGRasterBand()
     {
     }
@@ -405,6 +395,7 @@ class JPGMaskBand final : public GDALRasterBand
 
   public:
     explicit JPGMaskBand(JPGDatasetCommon *poDS);
+
     virtual ~JPGMaskBand()
     {
     }

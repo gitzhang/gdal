@@ -18,26 +18,10 @@ the health of the project:
 
     .. container:: horizontal-logo
 
-        .. note: Given the square shape of th AWS logo compared to the other ones, we have to reduce its width a bit so it doesn't look bigger overall
-
-        .. image:: ../../images/sponsors/logo-aws.png
-           :class: img-logos
-           :width: 225 px
-           :target: https://aws.amazon.com
-
-    .. container:: horizontal-logo
-
         .. image:: ../../images/sponsors/logo-esri.png
            :class: img-logos
            :width: 250 px
            :target: https://www.esri.com
-
-    .. container:: horizontal-logo
-
-        .. image:: ../../images/sponsors/logo-maxar.png
-           :class: img-logos
-           :width: 250 px
-           :target: https://www.maxar.com
 
     .. container:: horizontal-logo
 
@@ -53,6 +37,12 @@ the health of the project:
            :width: 250 px
            :target: https://www.planet.com
 
+    .. container:: horizontal-logo
+
+        .. image:: ../../images/sponsors/logo-nasa.png
+           :class: img-logos
+           :width: 250 px
+           :target: https://www.nasa.gov
 
 - Silver level:
 
@@ -72,7 +62,7 @@ the health of the project:
 
         .. image:: ../../images/sponsors/logo-safe.png
            :class: img-logos
-           :width: 200 px
+           :width: 240 px
            :target: https://www.safe.com
 
 
@@ -83,20 +73,6 @@ the health of the project:
   .. container:: horizontal-logos
 
     .. Note: they will appear in randomized order in HTML
-
-    .. container:: horizontal-logo
-
-        .. image:: ../../images/sponsors/logo-aerometrex.png
-           :class: img-logos
-           :width: 150 px
-           :target: https://aerometrex.com.au
-
-    .. container:: horizontal-logo
-
-        .. image:: ../../images/sponsors/logo-frontiersi.png
-           :class: img-logos
-           :width: 150 px
-           :target: https://frontiersi.com.au
 
     .. container:: horizontal-logo
 
@@ -114,10 +90,10 @@ the health of the project:
 
     .. container:: horizontal-logo
 
-        .. image:: ../../images/sponsors/logo-l3harris.png
+        .. image:: ../../images/sponsors/logo-linz.png
            :class: img-logos
            :width: 150 px
-           :target: https://www.l3harrisgeospatial.com
+           :target: https://www.linz.govt.nz
 
     .. container:: horizontal-logo
 
@@ -133,6 +109,13 @@ the health of the project:
            :width: 150 px
            :target: https://www.sparkgeo.com
 
+    .. container:: horizontal-logo
+
+        .. image:: ../../images/sponsors/logo-maxar.png
+           :class: img-logos
+           :width: 150 px
+           :target: https://www.maxar.com
+
 
 - Supporter level:
 
@@ -145,7 +128,15 @@ the health of the project:
 
     .. container:: horizontal-logo
 
+        `Dynamic Graphics, Inc. <https://www.dgi.com/>`__
+
+    .. container:: horizontal-logo
+
         `Kaplan Open Source Consulting <https://kaplanopensource.co.il/>`__
+
+    .. container:: horizontal-logo
+
+        `Phoenix LiDAR Systems, LLC <https://phoenixlidar.com/>`__
 
     .. container:: horizontal-logo
 
@@ -157,11 +148,27 @@ the health of the project:
 
     .. container:: horizontal-logo
 
+        `Route4Me, Inc. <https://route4me.com>`__
+
+    .. container:: horizontal-logo
+
+        `Satelligence <https://satelligence.com/>`__
+
+    .. container:: horizontal-logo
+
         `Space Intelligence <https://www.space-intelligence.com>`__
 
     .. container:: horizontal-logo
 
+        `T-Kartor USA <https://www.t-kartorusa.com/>`__
+
+    .. container:: horizontal-logo
+
         `Umbra <https://umbra.space/>`__
+
+    .. container:: horizontal-logo
+
+        `Vortex f.d.c. <https://vortexfdc.com/>`__
 
 .. raw:: html
 
@@ -244,10 +251,12 @@ Related resources
 
 - `Sustainable GDAL Sponsorship Prospectus`_.
 - :ref:`Sponsoring frequently asked questions (FAQ) <sponsoring-faq>`.
+- :ref:`rfc-80`
+- :ref:`rfc-83`
 
 .. Source of the PDF is at https://docs.google.com/document/d/1yhMWeI_LgEXPUkngqOitqcKfp7ov6WsS41v5ulz-kd0/edit#
 
-.. _Sustainable GDAL Sponsorship Prospectus: https://gdal.org/sponsors/Sustainable%20GDAL%20Sponsorship%20Prospectus.pdf
+.. _Sustainable GDAL Sponsorship Prospectus: ../_static/Sustainable%20GDAL%20Sponsorship%20Prospectus.pdf
 
 ..
     Developer comment: make html includes a hack to hide the table from
@@ -256,5 +265,6 @@ Related resources
 
 .. toctree::
    :maxdepth: 0
+   :hidden:
 
    faq

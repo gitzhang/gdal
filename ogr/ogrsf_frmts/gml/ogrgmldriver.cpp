@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2002, Frank Warmerdam <warmerdam@pobox.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "ogr_gml.h"
@@ -55,11 +39,12 @@ static int OGRGMLDriverIdentify(GDALOpenInfo *poOpenInfo)
     }
     else
     {
-        const char *szPtr = (const char *)poOpenInfo->pabyHeader;
+        const char *szPtr =
+            reinterpret_cast<const char *>(poOpenInfo->pabyHeader);
 
-        if (((unsigned char)szPtr[0] == 0xEF) &&
-            ((unsigned char)szPtr[1] == 0xBB) &&
-            ((unsigned char)szPtr[2] == 0xBF))
+        if ((static_cast<unsigned char>(szPtr[0]) == 0xEF) &&
+            (static_cast<unsigned char>(szPtr[1]) == 0xBB) &&
+            (static_cast<unsigned char>(szPtr[2]) == 0xBF))
         {
             szPtr += 3;
         }
@@ -74,8 +59,11 @@ static int OGRGMLDriverIdentify(GDALOpenInfo *poOpenInfo)
         if (!poOpenInfo->TryToIngest(4096))
             return FALSE;
 
+        if (poOpenInfo->IsSingleAllowedDriver("GML"))
+            return TRUE;
+
         return OGRGMLDataSource::CheckHeader(
-            (const char *)poOpenInfo->pabyHeader);
+            reinterpret_cast<const char *>(poOpenInfo->pabyHeader));
     }
 }
 
@@ -213,6 +201,12 @@ void RegisterOGRGML()
         "currently)' default='YES'/>"
         "  <Option name='REGISTRY' type='string' description='Filename of the "
         "registry with application schemas.'/>"
+        "  <Option name='USE_BBOX' type='boolean' description='Whether "
+        "to use gml:boundedBy at feature level as feature geometry, "
+        "if there are no other geometry' default='NO'/>"
+        "  <Option name='USE_SCHEMA_IMPORT' type='boolean' "
+        "description='Whether "
+        "to read schema for imports along with includes or not' default='NO'/>"
         "</OpenOptionList>");
 
     poDriver->SetMetadataItem(
@@ -283,11 +277,15 @@ void RegisterOGRGML()
                               "IntegerList Integer64List RealList StringList");
     poDriver->SetMetadataItem(GDAL_DMD_CREATIONFIELDDATASUBTYPES,
                               "Boolean Int16 Float32");
+    poDriver->SetMetadataItem(GDAL_DMD_CREATION_FIELD_DEFN_FLAGS,
+                              "WidthPrecision Nullable Unique Comment");
+
     poDriver->SetMetadataItem(GDAL_DCAP_NOTNULL_FIELDS, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_UNIQUE_FIELDS, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_NOTNULL_GEOMFIELDS, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_VIRTUALIO, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_MULTIPLE_VECTOR_LAYERS, "YES");
+    poDriver->SetMetadataItem(GDAL_DCAP_HONOR_GEOM_COORDINATE_PRECISION, "YES");
 
     poDriver->pfnOpen = OGRGMLDriverOpen;
     poDriver->pfnIdentify = OGRGMLDriverIdentify;

@@ -9,23 +9,7 @@
 ###############################################################################
 # Copyright (c) 2017 Even Rouault <even dot rouault at spatialys dot com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 import stat
@@ -36,6 +20,14 @@ import pytest
 import webserver
 
 from osgeo import gdal
+
+pytestmark = pytest.mark.require_curl()
+
+###############################################################################
+@pytest.fixture(autouse=True, scope="module")
+def module_disable_exceptions():
+    with gdaltest.disable_exceptions():
+        yield
 
 
 def open_for_read(uri):
@@ -65,8 +57,6 @@ def gs_test_config():
 
 @pytest.fixture(scope="module")
 def webserver_port():
-    if not gdaltest.built_against_curl():
-        pytest.skip()
 
     webserver_process, webserver_port = webserver.launch(
         handler=webserver.DispatcherHttpHandler
@@ -102,9 +92,6 @@ def test_vsigs_init(gs_test_config):
 
 def test_vsigs_1(gs_test_config):
 
-    if not gdaltest.built_against_curl():
-        pytest.skip()
-
     gdal.VSICurlClearCache()
 
     with gdaltest.config_options(
@@ -115,7 +102,7 @@ def test_vsigs_1(gs_test_config):
         with gdaltest.config_option(
             "GDAL_HTTP_HEADER_FILE", "/i_dont/exist.py", thread_local=False
         ):
-            with gdaltest.error_handler():
+            with gdal.quiet_errors():
                 f = open_for_read("/vsigs/foo/bar")
         if f is not None:
             gdal.VSIFCloseL(f)
@@ -134,12 +121,12 @@ def test_vsigs_1(gs_test_config):
 
         # Missing GS_SECRET_ACCESS_KEY
         gdal.ErrorReset()
-        with gdaltest.error_handler():
+        with gdal.quiet_errors():
             f = open_for_read("/vsigs/foo/bar")
         assert f is None and gdal.VSIGetLastErrorMsg().find("GS_SECRET_ACCESS_KEY") >= 0
 
         gdal.ErrorReset()
-        with gdaltest.error_handler():
+        with gdal.quiet_errors():
             f = open_for_read("/vsigs_streaming/foo/bar")
         assert f is None and gdal.VSIGetLastErrorMsg().find("GS_SECRET_ACCESS_KEY") >= 0
 
@@ -149,7 +136,7 @@ def test_vsigs_1(gs_test_config):
 
             # Missing GS_ACCESS_KEY_ID
             gdal.ErrorReset()
-            with gdaltest.error_handler():
+            with gdal.quiet_errors():
                 f = open_for_read("/vsigs/foo/bar")
             assert f is None and gdal.VSIGetLastErrorMsg().find("GS_ACCESS_KEY_ID") >= 0
 
@@ -159,7 +146,7 @@ def test_vsigs_1(gs_test_config):
 
                 # ERROR 1: The User Id you provided does not exist in our records.
                 gdal.ErrorReset()
-                with gdaltest.error_handler():
+                with gdal.quiet_errors():
                     f = open_for_read("/vsigs/foo/bar.baz")
                 if f is not None or gdal.VSIGetLastErrorMsg() == "":
                     if f is not None:
@@ -169,7 +156,7 @@ def test_vsigs_1(gs_test_config):
                     pytest.fail(gdal.VSIGetLastErrorMsg())
 
                 gdal.ErrorReset()
-                with gdaltest.error_handler():
+                with gdal.quiet_errors():
                     f = open_for_read("/vsigs_streaming/foo/bar.baz")
                 assert f is None and gdal.VSIGetLastErrorMsg() != ""
 
@@ -179,9 +166,6 @@ def test_vsigs_1(gs_test_config):
 
 
 def test_vsigs_no_sign_request(gs_test_config):
-
-    if not gdaltest.built_against_curl():
-        pytest.skip()
 
     with gdaltest.config_options({"CPL_GS_ENDPOINT": ""}, thread_local=False):
 
@@ -254,9 +238,9 @@ def test_vsigs_2(gs_test_config, webserver_port, use_config_options):
         signed_url = gdal.GetSignedURL(
             "/vsigs/gs_fake_bucket/resource", ["START_DATE=20180212T123456Z"]
         )
-        assert signed_url in (
-            "http://127.0.0.1:8080/gs_fake_bucket/resource?Expires=1518442496&GoogleAccessId=GS_ACCESS_KEY_ID&Signature=xTphUyMqtKA6UmAX3PEr5VL3EOg%3D",
-            "http://127.0.0.1:8081/gs_fake_bucket/resource?Expires=1518442496&GoogleAccessId=GS_ACCESS_KEY_ID&Signature=xTphUyMqtKA6UmAX3PEr5VL3EOg%3D",
+        assert (
+            signed_url
+            == f"http://127.0.0.1:{webserver_port}/gs_fake_bucket/resource?Expires=1518442496&GoogleAccessId=GS_ACCESS_KEY_ID&Signature=xTphUyMqtKA6UmAX3PEr5VL3EOg%3D"
         )
 
         handler = webserver.SequentialHandler()
@@ -632,7 +616,7 @@ def test_vsigs_acl(gs_test_config, webserver_port):
         assert "XML" in md and md["XML"] == "<foo/>"
 
         # Error cases
-        with gdaltest.error_handler():
+        with gdal.quiet_errors():
             assert (
                 gdal.GetFileMetadata("/vsigs/test_metadata/foo.txt", "UNSUPPORTED")
                 == {}
@@ -641,7 +625,7 @@ def test_vsigs_acl(gs_test_config, webserver_port):
         handler = webserver.SequentialHandler()
         handler.add("GET", "/test_metadata/foo.txt?acl", 400)
         with webserver.install_http_handler(handler):
-            with gdaltest.error_handler():
+            with gdal.quiet_errors():
                 assert not gdal.GetFileMetadata("/vsigs/test_metadata/foo.txt", "ACL")
 
         handler = webserver.SequentialHandler()
@@ -652,7 +636,7 @@ def test_vsigs_acl(gs_test_config, webserver_port):
             )
 
         # Error cases
-        with gdaltest.error_handler():
+        with gdal.quiet_errors():
             assert not gdal.SetFileMetadata(
                 "/vsigs/test_metadata/foo.txt", {}, "UNSUPPORTED"
             )
@@ -661,7 +645,7 @@ def test_vsigs_acl(gs_test_config, webserver_port):
         handler = webserver.SequentialHandler()
         handler.add("PUT", "/test_metadata/foo.txt?acl", 400)
         with webserver.install_http_handler(handler):
-            with gdaltest.error_handler():
+            with gdal.quiet_errors():
                 assert not gdal.SetFileMetadata(
                     "/vsigs/test_metadata/foo.txt", {"XML": "<foo/>"}, "ACL"
                 )
@@ -709,6 +693,107 @@ def test_vsigs_headers(gs_test_config, webserver_port):
 
 
 ###############################################################################
+# Test GetFileMetadata() on root of bucket with OAuth2
+
+
+@gdaltest.enable_exceptions()
+def test_vsigs_GetFileMetadatabucket_root_oauth2(
+    gs_test_config, webserver_port, tmp_vsimem
+):
+
+    gdal.VSICurlClearCache()
+
+    service_account_filename = str(tmp_vsimem / "service_account.json")
+    gdal.FileFromMemBuffer(
+        service_account_filename,
+        """{
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIICeAIBADANBgkqhkiG9w0BAQEFAASCAmIwggJeAgEAAoGBAOlwJQLLDG1HeLrk\nVNcFR5Qptto/rJE5emRuy0YmkVINT4uHb1be7OOo44C2Ev8QPVtNHHS2XwCY5gTm\ni2RfIBLv+VDMoVQPqqE0LHb0WeqGmM5V1tHbmVnIkCcKMn3HpK30grccuBc472LQ\nDVkkGqIiGu0qLAQ89JP/r0LWWySRAgMBAAECgYAWjsS00WRBByAOh1P/dz4kfidy\nTabiXbiLDf3MqJtwX2Lpa8wBjAc+NKrPXEjXpv0W3ou6Z4kkqKHJpXGg4GRb4N5I\n2FA+7T1lA0FCXa7dT2jvgJLgpBepJu5b//tqFqORb4A4gMZw0CiPN3sUsWsSw5Hd\nDrRXwp6sarzG77kvZQJBAPgysAmmXIIp9j1hrFSkctk4GPkOzZ3bxKt2Nl4GFrb+\nbpKSon6OIhP1edrxTz1SMD1k5FiAAVUrMDKSarbh5osCQQDwxq4Tvf/HiYz79JBg\nWz5D51ySkbg01dOVgFW3eaYAdB6ta/o4vpHhnbrfl6VO9oUb3QR4hcrruwnDHsw3\n4mDTAkEA9FPZjbZSTOSH/cbgAXbdhE4/7zWOXj7Q7UVyob52r+/p46osAk9i5qj5\nKvnv2lrFGDrwutpP9YqNaMtP9/aLnwJBALLWf9n+GAv3qRZD0zEe1KLPKD1dqvrj\nj+LNjd1Xp+tSVK7vMs4PDoAMDg+hrZF3HetSQM3cYpqxNFEPgRRJOy0CQQDQlZHI\nyzpSgEiyx8O3EK1iTidvnLXbtWabvjZFfIE/0OhfBmN225MtKG3YLV2HoUvpajLq\ngwE6fxOLyJDxuWRf\n-----END PRIVATE KEY-----\n",
+  "client_email": "CLIENT_EMAIL",
+  "type": "service_account"
+                           }""",
+    )
+
+    gdal.SetPathSpecificOption(
+        "/vsigs/gs_fake_bucket",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        service_account_filename,
+    )
+
+    try:
+        with gdaltest.config_options(
+            {
+                "GO2A_AUD": "http://localhost:%d/oauth2/v4/token" % webserver_port,
+                "GOA2_NOW": "123456",
+            },
+            thread_local=False,
+        ):
+
+            gdal.VSICurlClearCache()
+
+            handler = webserver.SequentialHandler()
+
+            def method(request):
+                request.send_response(200)
+                request.send_header("Content-type", "text/plain")
+                content = """{
+                        "access_token" : "ACCESS_TOKEN",
+                        "token_type" : "Bearer",
+                        "expires_in" : 3600,
+                        }"""
+                request.send_header("Content-Length", len(content))
+                request.end_headers()
+                request.wfile.write(content.encode("ascii"))
+
+            handler.add("POST", "/oauth2/v4/token", custom_method=method)
+
+            handler.add(
+                "GET",
+                "/storage/v1/b/gs_fake_bucket",
+                200,
+                {"Content-type": "application/json"},
+                '{"foo":"bar"}',
+            )
+            try:
+                with webserver.install_http_handler(handler):
+                    md = gdal.GetFileMetadata("/vsigs/gs_fake_bucket/", None)
+
+            except Exception:
+                if (
+                    gdal.GetLastErrorMsg().find("CPLRSASHA256Sign() not implemented")
+                    >= 0
+                ):
+                    pytest.skip("CPLRSASHA256Sign() not implemented")
+
+            assert md == {"foo": "bar"}
+    finally:
+        gdal.SetPathSpecificOption(
+            "/vsigs/gs_fake_bucket", "GOOGLE_APPLICATION_CREDENTIALS", None
+        )
+
+
+###############################################################################
+# Test GetFileMetadata() on root of bucket with non-OAuth2 (does not work)
+
+
+def test_vsigs_GetFileMetadatabucket_root_not_oauth2(gs_test_config, webserver_port):
+
+    gdal.VSICurlClearCache()
+
+    with gdaltest.config_options(
+        {
+            "GS_SECRET_ACCESS_KEY": "GS_SECRET_ACCESS_KEY",
+            "GS_ACCESS_KEY_ID": "GS_ACCESS_KEY_ID",
+        },
+        thread_local=False,
+    ):
+
+        handler = webserver.SequentialHandler()
+        with webserver.install_http_handler(handler):
+            md = gdal.GetFileMetadata("/vsigs/gs_fake_bucket/", None)
+        assert md == {}
+
+
+###############################################################################
 # Read credentials with OAuth2 refresh_token
 
 
@@ -725,7 +810,7 @@ def test_vsigs_read_credentials_refresh_token_default_gdal_app(
         thread_local=False,
     ):
 
-        with gdaltest.error_handler():
+        with gdal.quiet_errors():
             assert gdal.GetSignedURL("/vsigs/foo/bar") is None
 
         gdal.VSICurlClearCache()
@@ -942,7 +1027,8 @@ gwE6fxOLyJDxuWRf
                     ).decode("ascii")
                     content_8080 = "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiAiQ0xJRU5UX0VNQUlMIiwgInNjb3BlIjogImh0dHBzOi8vd3d3Lmdvb2dsZWFwaXMuY29tL2F1dGgvZGV2c3RvcmFnZS5yZWFkX3dyaXRlIiwgImF1ZCI6ICJodHRwOi8vbG9jYWxob3N0OjgwODAvb2F1dGgyL3Y0L3Rva2VuIiwgImlhdCI6IDEyMzQ1NiwgImV4cCI6IDEyNzA1Nn0%3D.DAhqWtBgKpObxZ%2BGiXqwF%2Fa4SS%2FNWQRhLCI7DYZCuOTuf2w7dL8j4CdpiwwzQg1diIus7dyViRfzpsFmuZKAXwL%2B84iBoVVqnJJZ4TgwH49NdfMAnc4Rgm%2Bo2a2nEcMjX%2FbQ3jRY%2B9WNVl96hzULGvLrVeyego2f06wivqmvxHA%3D"
                     content_8081 = "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiAiQ0xJRU5UX0VNQUlMIiwgInNjb3BlIjogImh0dHBzOi8vd3d3Lmdvb2dsZWFwaXMuY29tL2F1dGgvZGV2c3RvcmFnZS5yZWFkX3dyaXRlIiwgImF1ZCI6ICJodHRwOi8vbG9jYWxob3N0OjgwODEvb2F1dGgyL3Y0L3Rva2VuIiwgImlhdCI6IDEyMzQ1NiwgImV4cCI6IDEyNzA1Nn0%3D.0abOEg4%2FRApWTSeAs6YTHaNzdwOgZLm8DTMO2MKlOA%2Fiagyb4cBJxDpkD5gECPvi7qhkg7LsyFuj0a%2BK48Bsuj%2FgLHOU4MpB0dHwYnDO2UXzH%2FUPdgFCVak1P1V%2ByiDA%2B%2Ft4aDI5fD9qefKQiu3wsMDHzP71MNLzayrjqaqKKS4%3D"
-                    if content not in [content_8080, content_8081]:
+                    content_8082 = "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiAiQ0xJRU5UX0VNQUlMIiwgInNjb3BlIjogImh0dHBzOi8vd3d3Lmdvb2dsZWFwaXMuY29tL2F1dGgvZGV2c3RvcmFnZS5yZWFkX3dyaXRlIiwgImF1ZCI6ICJodHRwOi8vbG9jYWxob3N0OjgwODIvb2F1dGgyL3Y0L3Rva2VuIiwgImlhdCI6IDEyMzQ1NiwgImV4cCI6IDEyNzA1Nn0%3D.5d2T5%2B7qgRADXy5MEQUyuTjUlF7%2FPlQNHYauvqq58QCTMNOtM1Whh1q0FtNcS8uOK%2FHw2K9TTEuKpjbSLHM4l3Xq5x4dys5sx5kHDUYFT0uV5W7E2xLNK510R7NnSAcGlFsZ5UUHqdLu%2FtL2%2Fb5%2BRxGaRP3xJIFAVBg%2FoRMJzL8%3D"
+                    if content not in [content_8080, content_8081, content_8082]:
                         sys.stderr.write("Bad POST content: %s\n" % content)
                         request.send_response(403)
                         return
@@ -1037,7 +1123,8 @@ def test_vsigs_read_credentials_oauth2_service_account_json_file(
             )
             content_8080 = "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiAiQ0xJRU5UX0VNQUlMIiwgInNjb3BlIjogImh0dHBzOi8vd3d3Lmdvb2dsZWFwaXMuY29tL2F1dGgvZGV2c3RvcmFnZS5yZWFkX3dyaXRlIiwgImF1ZCI6ICJodHRwOi8vbG9jYWxob3N0OjgwODAvb2F1dGgyL3Y0L3Rva2VuIiwgImlhdCI6IDEyMzQ1NiwgImV4cCI6IDEyNzA1Nn0%3D.DAhqWtBgKpObxZ%2BGiXqwF%2Fa4SS%2FNWQRhLCI7DYZCuOTuf2w7dL8j4CdpiwwzQg1diIus7dyViRfzpsFmuZKAXwL%2B84iBoVVqnJJZ4TgwH49NdfMAnc4Rgm%2Bo2a2nEcMjX%2FbQ3jRY%2B9WNVl96hzULGvLrVeyego2f06wivqmvxHA%3D"
             content_8081 = "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiAiQ0xJRU5UX0VNQUlMIiwgInNjb3BlIjogImh0dHBzOi8vd3d3Lmdvb2dsZWFwaXMuY29tL2F1dGgvZGV2c3RvcmFnZS5yZWFkX3dyaXRlIiwgImF1ZCI6ICJodHRwOi8vbG9jYWxob3N0OjgwODEvb2F1dGgyL3Y0L3Rva2VuIiwgImlhdCI6IDEyMzQ1NiwgImV4cCI6IDEyNzA1Nn0%3D.0abOEg4%2FRApWTSeAs6YTHaNzdwOgZLm8DTMO2MKlOA%2Fiagyb4cBJxDpkD5gECPvi7qhkg7LsyFuj0a%2BK48Bsuj%2FgLHOU4MpB0dHwYnDO2UXzH%2FUPdgFCVak1P1V%2ByiDA%2B%2Ft4aDI5fD9qefKQiu3wsMDHzP71MNLzayrjqaqKKS4%3D"
-            if content not in [content_8080, content_8081]:
+            content_8082 = "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiAiQ0xJRU5UX0VNQUlMIiwgInNjb3BlIjogImh0dHBzOi8vd3d3Lmdvb2dsZWFwaXMuY29tL2F1dGgvZGV2c3RvcmFnZS5yZWFkX3dyaXRlIiwgImF1ZCI6ICJodHRwOi8vbG9jYWxob3N0OjgwODIvb2F1dGgyL3Y0L3Rva2VuIiwgImlhdCI6IDEyMzQ1NiwgImV4cCI6IDEyNzA1Nn0%3D.5d2T5%2B7qgRADXy5MEQUyuTjUlF7%2FPlQNHYauvqq58QCTMNOtM1Whh1q0FtNcS8uOK%2FHw2K9TTEuKpjbSLHM4l3Xq5x4dys5sx5kHDUYFT0uV5W7E2xLNK510R7NnSAcGlFsZ5UUHqdLu%2FtL2%2Fb5%2BRxGaRP3xJIFAVBg%2FoRMJzL8%3D"
+            if content not in [content_8080, content_8081, content_8082]:
                 sys.stderr.write("Bad POST content: %s\n" % content)
                 request.send_response(403)
                 return
@@ -1087,16 +1174,15 @@ def test_vsigs_read_credentials_oauth2_service_account_json_file(
                 signed_url = gdal.GetSignedURL(
                     "/vsigs/gs_fake_bucket/resource", ["START_DATE=20180212T123456Z"]
                 )
-                if signed_url not in (
-                    "http://127.0.0.1:8080/gs_fake_bucket/resource?Expires=1518442496&GoogleAccessId=CLIENT_EMAIL&Signature=b19I62KdqV51DpWGxhxGXLGJIA8MHvSJofwOygoeQuIxkM6PmmQFvJYTNWRt9zUVTUoVC0UHVB7ee5Z35NqDC8K4i0quu1hb8Js2B4h0W6OAupvyF3nSQ5D0OJmiSbomGMq0Ehyro5cqJ%2FU%2Fd8oAaKrGKVQScKfXoFrSJBbWkNs%3D",
-                    "http://127.0.0.1:8081/gs_fake_bucket/resource?Expires=1518442496&GoogleAccessId=CLIENT_EMAIL&Signature=b19I62KdqV51DpWGxhxGXLGJIA8MHvSJofwOygoeQuIxkM6PmmQFvJYTNWRt9zUVTUoVC0UHVB7ee5Z35NqDC8K4i0quu1hb8Js2B4h0W6OAupvyF3nSQ5D0OJmiSbomGMq0Ehyro5cqJ%2FU%2Fd8oAaKrGKVQScKfXoFrSJBbWkNs%3D",
-                ):
-                    gdal.Unlink("/vsimem/service_account.json")
-                    pytest.fail(signed_url)
 
         except Exception:
             if gdal.GetLastErrorMsg().find("CPLRSASHA256Sign() not implemented") >= 0:
-                pytest.skip()
+                pytest.skip("CPLRSASHA256Sign() not implemented")
+
+        assert (
+            signed_url
+            == f"http://127.0.0.1:{webserver_port}/gs_fake_bucket/resource?Expires=1518442496&GoogleAccessId=CLIENT_EMAIL&Signature=b19I62KdqV51DpWGxhxGXLGJIA8MHvSJofwOygoeQuIxkM6PmmQFvJYTNWRt9zUVTUoVC0UHVB7ee5Z35NqDC8K4i0quu1hb8Js2B4h0W6OAupvyF3nSQ5D0OJmiSbomGMq0Ehyro5cqJ%2FU%2Fd8oAaKrGKVQScKfXoFrSJBbWkNs%3D"
+        )
 
         gdal.Unlink("/vsimem/service_account.json")
 
@@ -1185,6 +1271,15 @@ def test_vsigs_read_credentials_oauth2_authorized_user_json_file(
             data = gdal.VSIFReadL(1, 4, f).decode("ascii")
             gdal.VSIFCloseL(f)
 
+        assert data == "foo"
+
+        handler = webserver.SequentialHandler()
+        handler.add("GET", "/gs_fake_bucket/resource2", custom_method=method)
+        with webserver.install_http_handler(handler):
+            f = open_for_read("/vsigs/gs_fake_bucket/resource2")
+            assert f is not None
+            data = gdal.VSIFReadL(1, 4, f).decode("ascii")
+            gdal.VSIFCloseL(f)
         assert data == "foo"
 
         gdal.Unlink("/vsimem/service_account.json")
@@ -1473,7 +1568,7 @@ def test_vsigs_read_credentials_gce(gs_test_config, webserver_port):
 
             assert data == "bar"
 
-            with gdaltest.error_handler():
+            with gdal.quiet_errors():
                 assert gdal.GetSignedURL("/vsigs/foo/bar") is None
 
 
@@ -1551,13 +1646,89 @@ def test_vsigs_read_credentials_gce_expiration(gs_test_config, webserver_port):
 
 
 ###############################################################################
+# Test RmdirRecursive() with an empty directory
+
+
+def test_vsigs_rmdirrecursive_empty_dir(gs_test_config, webserver_port):
+
+    handler = webserver.SequentialHandler()
+    handler.add(
+        "GET",
+        "/test_vsigs_rmdirrecursive_empty_dir/?prefix=empty_dir%2F",
+        200,
+        {"Content-type": "application/xml"},
+        """<?xml version="1.0" encoding="UTF-8"?>
+        <ListBucketResult>
+            <Prefix>empty_dir/</Prefix>
+            <Marker/>
+            <Contents>
+                <Key>empty_dir/</Key>
+                <LastModified>1970-01-01T00:00:01.000Z</LastModified>
+                <Size>0</Size>
+            </Contents>
+        </ListBucketResult>
+        """,
+    )
+    handler.add(
+        "DELETE",
+        "/test_vsigs_rmdirrecursive_empty_dir/empty_dir/",
+        204,
+    )
+
+    gdal.SetPathSpecificOption(
+        "/vsigs/test_vsigs_rmdirrecursive_empty_dir",
+        "GS_SECRET_ACCESS_KEY",
+        "GS_SECRET_ACCESS_KEY",
+    )
+    gdal.SetPathSpecificOption(
+        "/vsigs/test_vsigs_rmdirrecursive_empty_dir",
+        "GS_ACCESS_KEY_ID",
+        "GS_ACCESS_KEY_ID",
+    )
+
+    error = [False]
+
+    def my_error_handler(errclass, errno, errmsg):
+        error[0] = True
+        print(errmsg)
+
+    try:
+        with webserver.install_http_handler(handler), gdaltest.error_handler(
+            my_error_handler
+        ):
+            assert (
+                gdal.RmdirRecursive(
+                    "/vsigs/test_vsigs_rmdirrecursive_empty_dir/empty_dir"
+                )
+                == 0
+            )
+    finally:
+        gdal.ClearPathSpecificOptions("/vsigs/test_vsigs_rmdirrecursive_empty_dir")
+
+    assert not error[0]
+
+
+###############################################################################
+# Test VSIMultipartUploadXXXX()
+
+
+def test_vsigs_MultipartUpload(gs_test_config, webserver_port):
+
+    # Test MultipartUploadGetCapabilities()
+    info = gdal.MultipartUploadGetCapabilities("/vsigs/")
+    assert info.non_sequential_upload_supported
+    assert info.parallel_upload_supported
+    assert info.abort_supported
+    assert info.min_part_size == 5
+    assert info.max_part_size >= 1024
+    assert info.max_part_count == 10000
+
+
+###############################################################################
 # Nominal cases (require valid credentials)
 
 
 def test_vsigs_extra_1():
-
-    if not gdaltest.built_against_curl():
-        pytest.skip()
 
     gs_resource = gdal.GetConfigOption("GS_RESOURCE")
     if gs_resource is None:
@@ -1671,7 +1842,7 @@ def test_vsigs_extra_1():
         # Invalid bucket : "The specified bucket does not exist"
         gdal.ErrorReset()
         f = open_for_read("/vsigs/not_existing_bucket/foo")
-        with gdaltest.error_handler():
+        with gdal.quiet_errors():
             gdal.VSIFReadL(1, 1, f)
         gdal.VSIFCloseL(f)
         assert gdal.VSIGetLastErrorMsg() != ""

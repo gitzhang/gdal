@@ -12,23 +12,7 @@
 # Copyright (c) 2014, Mikhail Gusev
 # Copyright (c) 2014-2015, NextGIS <info@nextgis.com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 import os
@@ -37,6 +21,8 @@ import shutil
 import pytest
 
 from osgeo import gdal, gnm
+
+pytestmark = pytest.mark.require_driver("GNMFile")
 
 ###############################################################################
 # Create file base network
@@ -49,15 +35,8 @@ def test_gnm_filenetwork_create():
     except OSError:
         pass
 
-    ogrtest.drv = None
-    ogrtest.have_gnm = 0
-
-    ogrtest.drv = gdal.GetDriverByName("GNMFile")
-
-    if ogrtest.drv is None:
-        pytest.skip()
-
-    ds = ogrtest.drv.Create(
+    drv = gdal.GetDriverByName("GNMFile")
+    ds = drv.Create(
         "tmp/",
         0,
         0,
@@ -79,7 +58,6 @@ def test_gnm_filenetwork_create():
     ), "GNM: Check GNM description failed"
 
     dn = None
-    ogrtest.have_gnm = 1
 
 
 ###############################################################################
@@ -87,9 +65,6 @@ def test_gnm_filenetwork_create():
 
 
 def test_gnm_filenetwork_open():
-
-    if not ogrtest.have_gnm:
-        pytest.skip()
 
     ds = gdal.OpenEx("tmp/test_gnm")
     # cast to GNM
@@ -109,9 +84,6 @@ def test_gnm_filenetwork_open():
 
 
 def test_gnm_import():
-
-    if not ogrtest.have_gnm:
-        pytest.skip()
 
     ds = gdal.OpenEx("tmp/test_gnm")
 
@@ -142,9 +114,6 @@ def test_gnm_import():
 
 def test_gnm_autoconnect():
 
-    if not ogrtest.have_gnm:
-        pytest.skip()
-
     ds = gdal.OpenEx("tmp/test_gnm")
     dgn = gnm.CastToGenericNetwork(ds)
     assert dgn is not None, "cast to GNMGenericNetwork failed"
@@ -163,9 +132,6 @@ def test_gnm_autoconnect():
 
 def test_gnm_graph_dijkstra():
 
-    if not ogrtest.have_gnm:
-        pytest.skip()
-
     ds = gdal.OpenEx("tmp/test_gnm")
     dn = gnm.CastToNetwork(ds)
     assert dn is not None, "cast to GNMNetwork failed"
@@ -181,16 +147,11 @@ def test_gnm_graph_dijkstra():
     dn = None
 
 
-import ogrtest
-
 ###############################################################################
 # KShortest Paths
 
 
 def test_gnm_graph_kshortest():
-
-    if not ogrtest.have_gnm:
-        pytest.skip()
 
     ds = gdal.OpenEx("tmp/test_gnm")
     dn = gnm.CastToNetwork(ds)
@@ -213,9 +174,6 @@ def test_gnm_graph_kshortest():
 
 def test_gnm_graph_connectedcomponents():
 
-    if not ogrtest.have_gnm:
-        pytest.skip()
-
     ds = gdal.OpenEx("tmp/test_gnm")
     dn = gnm.CastToNetwork(ds)
     assert dn is not None, "cast to GNMNetwork failed"
@@ -236,9 +194,6 @@ def test_gnm_graph_connectedcomponents():
 
 
 def test_gnm_delete():
-
-    if not ogrtest.have_gnm:
-        pytest.skip()
 
     gdal.GetDriverByName("GNMFile").Delete("tmp/test_gnm")
 

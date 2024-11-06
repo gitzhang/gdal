@@ -9,42 +9,32 @@
 ###############################################################################
 # Copyright (c) 2010, Even Rouault <even dot rouault at spatialys.com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 import os
 import shutil
 
+import gdaltest
 import pytest
 import test_py_scripts
 
-from osgeo import gdal
+pytestmark = pytest.mark.skipif(
+    test_py_scripts.get_py_script("gdalinfo") is None,
+    reason="gdalinfo.py not available",
+)
+
+
+@pytest.fixture()
+def script_path():
+    return test_py_scripts.get_py_script("gdalinfo")
+
 
 ###############################################################################
 # Simple test
 
 
-def test_gdalinfo_py_1():
-
-    script_path = test_py_scripts.get_py_script("gdalinfo")
-    if script_path is None:
-        pytest.skip()
+def test_gdalinfo_py_1(script_path):
 
     ret = test_py_scripts.run_py_script(
         script_path, "gdalinfo", test_py_scripts.get_data_path("gcore") + "byte.tif"
@@ -56,10 +46,7 @@ def test_gdalinfo_py_1():
 # Test -checksum option
 
 
-def test_gdalinfo_py_2():
-    script_path = test_py_scripts.get_py_script("gdalinfo")
-    if script_path is None:
-        pytest.skip()
+def test_gdalinfo_py_2(script_path):
 
     ret = test_py_scripts.run_py_script(
         script_path,
@@ -73,10 +60,7 @@ def test_gdalinfo_py_2():
 # Test -nomd option
 
 
-def test_gdalinfo_py_3():
-    script_path = test_py_scripts.get_py_script("gdalinfo")
-    if script_path is None:
-        pytest.skip()
+def test_gdalinfo_py_3(script_path):
 
     ret = test_py_scripts.run_py_script(
         script_path, "gdalinfo", test_py_scripts.get_data_path("gcore") + "byte.tif"
@@ -95,13 +79,8 @@ def test_gdalinfo_py_3():
 # Test -noct option
 
 
-def test_gdalinfo_py_4():
-    script_path = test_py_scripts.get_py_script("gdalinfo")
-    if script_path is None:
-        pytest.skip()
-
-    if gdal.GetDriverByName("GIF") is None:
-        pytest.skip("GIF driver is missing")
+@pytest.mark.require_driver("GIF")
+def test_gdalinfo_py_4(script_path):
 
     ret = test_py_scripts.run_py_script(
         script_path,
@@ -122,10 +101,7 @@ def test_gdalinfo_py_4():
 # Test -stats option
 
 
-def test_gdalinfo_py_5():
-    script_path = test_py_scripts.get_py_script("gdalinfo")
-    if script_path is None:
-        pytest.skip()
+def test_gdalinfo_py_5(script_path):
 
     tmpfilename = "tmp/test_gdalinfo_py_5.tif"
     if os.path.exists(tmpfilename + ".aux.xml"):
@@ -149,10 +125,8 @@ def test_gdalinfo_py_5():
 # Test a dataset with overviews and RAT
 
 
-def test_gdalinfo_py_6():
-    script_path = test_py_scripts.get_py_script("gdalinfo")
-    if script_path is None:
-        pytest.skip()
+@pytest.mark.require_driver("HFA")
+def test_gdalinfo_py_6(script_path):
 
     ret = test_py_scripts.run_py_script(
         script_path,
@@ -166,10 +140,11 @@ def test_gdalinfo_py_6():
 # Test a dataset with GCPs
 
 
-def test_gdalinfo_py_7():
-    script_path = test_py_scripts.get_py_script("gdalinfo")
-    if script_path is None:
-        pytest.skip()
+@pytest.mark.skipif(
+    not gdaltest.vrt_has_open_support(),
+    reason="VRT driver open missing",
+)
+def test_gdalinfo_py_7(script_path):
 
     ret = test_py_scripts.run_py_script(
         script_path, "gdalinfo", test_py_scripts.get_data_path("gcore") + "gcps.vrt"
@@ -193,10 +168,7 @@ def test_gdalinfo_py_7():
 # Test -hist option
 
 
-def test_gdalinfo_py_8():
-    script_path = test_py_scripts.get_py_script("gdalinfo")
-    if script_path is None:
-        pytest.skip()
+def test_gdalinfo_py_8(script_path):
 
     tmpfilename = "tmp/test_gdalinfo_py_8.tif"
     if os.path.exists(tmpfilename + ".aux.xml"):
@@ -228,13 +200,8 @@ def test_gdalinfo_py_8():
 # Test -mdd option
 
 
-def test_gdalinfo_py_9():
-    script_path = test_py_scripts.get_py_script("gdalinfo")
-    if script_path is None:
-        pytest.skip()
-
-    if gdal.GetDriverByName("NITF") is None:
-        pytest.skip("NITF driver is missing")
+@pytest.mark.require_driver("NITF")
+def test_gdalinfo_py_9(script_path):
 
     ret = test_py_scripts.run_py_script(
         script_path,
@@ -255,10 +222,7 @@ def test_gdalinfo_py_9():
 # Test -mm option
 
 
-def test_gdalinfo_py_10():
-    script_path = test_py_scripts.get_py_script("gdalinfo")
-    if script_path is None:
-        pytest.skip()
+def test_gdalinfo_py_10(script_path):
 
     ret = test_py_scripts.run_py_script(
         script_path, "gdalinfo", test_py_scripts.get_data_path("gcore") + "byte.tif"

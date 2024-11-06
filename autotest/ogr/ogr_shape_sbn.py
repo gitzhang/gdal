@@ -10,23 +10,7 @@
 ###############################################################################
 # Copyright (c) 2012, Even Rouault <even dot rouault at spatialys.com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 import os
@@ -110,11 +94,10 @@ def search_all_features(lyr):
 
 def test_ogr_shape_sbn_1():
 
-    if not gdaltest.download_file(
+    gdaltest.download_or_skip(
         "http://pubs.usgs.gov/sim/3194/contents/Cochiti_shapefiles.zip",
         "Cochiti_shapefiles.zip",
-    ):
-        pytest.skip()
+    )
 
     try:
         os.stat("tmp/cache/CochitiDamShapeFiles/CochitiBoundary.shp")
@@ -143,3 +126,22 @@ def test_ogr_shape_sbn_2():
     ds = ogr.Open("data/shp/CoHI_GCS12.shp")
     lyr = ds.GetLayer(0)
     return search_all_features(lyr)
+
+
+###############################################################################
+# Test bugfix for https://github.com/OSGeo/gdal/issues/9430
+
+
+@pytest.mark.require_curl()
+def test_ogr_shape_sbn_out_of_order_bin_start():
+
+    srv = "https://github.com/OSGeo/gdal-test-datasets/raw/master/shapefile/65sv5l285i_GLWD_level2/README.TXT"
+    if gdaltest.gdalurlopen(srv, timeout=5) is None:
+        pytest.skip(reason=f"{srv} is down")
+
+    ds = ogr.Open(
+        "/vsizip//vsicurl/https://github.com/OSGeo/gdal-test-datasets/raw/master/shapefile/65sv5l285i_GLWD_level2/65sv5l285i_GLWD_level2_sozip.zip"
+    )
+    lyr = ds.GetLayer(0)
+    lyr.SetSpatialFilterRect(5, 5, 6, 6)
+    assert lyr.GetFeatureCount() == 13

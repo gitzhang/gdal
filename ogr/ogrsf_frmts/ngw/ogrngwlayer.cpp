@@ -8,23 +8,7 @@
  *
  *  Copyright (c) 2018-2020, NextGIS <info@nextgis.com>
  *
- *  Permission is hereby granted, free of charge, to any person obtaining a copy
- *  of this software and associated documentation files (the "Software"), to
- *deal in the Software without restriction, including without limitation the
- *rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- *sell copies of the Software, and to permit persons to whom the Software is
- *  furnished to do so, subject to the following conditions:
- *
- *  The above copyright notice and this permission notice shall be included in
- *all copies or substantial portions of the Software.
- *
- *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- *FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- *IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  *******************************************************************************/
 
 #include "ogr_ngw.h"
@@ -155,7 +139,7 @@ static OGRFeature *JSONToFeature(const CPLJSONObject &featureJson,
                                           nullptr, &poGeometry);
         if (poGeometry != nullptr)
         {
-            OGRSpatialReference *poSpatialRef =
+            const OGRSpatialReference *poSpatialRef =
                 poFeatureDefn->GetGeomFieldDefn(0)->GetSpatialRef();
             if (poSpatialRef != nullptr)
             {
@@ -301,6 +285,7 @@ static std::string FeatureToJsonString(OGRFeature *poFeature)
  */
 static void FreeMap(std::map<GIntBig, OGRFeature *> &moFeatures)
 {
+    // cppcheck-suppress constVariableReference
     for (auto &oPair : moFeatures)
     {
         OGRFeature::DestroyFeature(oPair.second);
@@ -1153,7 +1138,8 @@ void OGRNGWLayer::FetchPermissions()
 /*
  * CreateField()
  */
-OGRErr OGRNGWLayer::CreateField(OGRFieldDefn *poField, CPL_UNUSED int bApproxOK)
+OGRErr OGRNGWLayer::CreateField(const OGRFieldDefn *poField,
+                                CPL_UNUSED int bApproxOK)
 {
     CPLAssert(nullptr != poField);
 
@@ -1420,7 +1406,7 @@ OGRErr OGRNGWLayer::SyncToDisk()
             // Error message should set in CreateResource.
             return OGRERR_FAILURE;
         }
-        osResourceId = osResourceIdInt;
+        osResourceId = std::move(osResourceIdInt);
         OGRLayer::SetMetadataItem("id", osResourceId.c_str());
         FetchPermissions();
         bNeedSyncStructure = false;
@@ -1652,7 +1638,7 @@ OGRErr OGRNGWLayer::ICreateFeature(OGRFeature *poFeature)
 /*
  * SetIgnoredFields()
  */
-OGRErr OGRNGWLayer::SetIgnoredFields(const char **papszFields)
+OGRErr OGRNGWLayer::SetIgnoredFields(CSLConstList papszFields)
 {
     OGRErr eResult = OGRLayer::SetIgnoredFields(papszFields);
     if (eResult != OGRERR_NONE)
@@ -1790,10 +1776,9 @@ OGRErr OGRNGWLayer::SetAttributeFilter(const char *pszQuery)
         {
             swq_expr_node *poNode =
                 reinterpret_cast<swq_expr_node *>(m_poAttrQuery->GetSWQExpr());
-            std::string osWhereIn = TranslateSQLToFilter(poNode);
-            if (osWhereIn.empty())
+            osWhere = TranslateSQLToFilter(poNode);
+            if (osWhere.empty())
             {
-                osWhere.clear();
                 bClientSideAttributeFilter = true;
                 CPLDebug(
                     "NGW",
@@ -1803,8 +1788,7 @@ OGRErr OGRNGWLayer::SetAttributeFilter(const char *pszQuery)
             else
             {
                 bClientSideAttributeFilter = false;
-                CPLDebug("NGW", "Attribute filter: %s", osWhereIn.c_str());
-                osWhere = osWhereIn;
+                CPLDebug("NGW", "Attribute filter: %s", osWhere.c_str());
             }
         }
     }
@@ -1832,7 +1816,7 @@ OGRErr OGRNGWLayer::SetSelectedFields(const std::set<std::string> &aosFields)
         }
         aosIgnoreFields.AddString(poFieldDefn->GetNameRef());
     }
-    return SetIgnoredFields(const_cast<const char **>(aosIgnoreFields.List()));
+    return SetIgnoredFields(aosIgnoreFields.List());
 }
 
 /*

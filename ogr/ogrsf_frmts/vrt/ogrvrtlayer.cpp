@@ -8,29 +8,14 @@
  * Copyright (c) 2003, Frank Warmerdam <warmerdam@pobox.com>
  * Copyright (c) 2009-2014, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_port.h"
 #include "ogr_vrt.h"
 
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
@@ -51,8 +36,8 @@
 #include "ogr_geometry.h"
 #include "ogr_spatialref.h"
 #include "ogrpgeogeometry.h"
-#include "ogrsf_frmts/ogrsf_frmts.h"
-#include "ogrsf_frmts/vrt/ogr_vrt.h"
+#include "ogrsf_frmts.h"
+#include "ogrvrtgeometrytypes.h"
 
 #define UNSUPPORTED_OP_READ_ONLY                                               \
     "%s : unsupported operation on a read-only datasource."
@@ -89,7 +74,7 @@ OGRVRTGeomFieldProps::OGRVRTGeomFieldProps()
 OGRVRTGeomFieldProps::~OGRVRTGeomFieldProps()
 {
     if (poSRS != nullptr)
-        poSRS->Release();
+        const_cast<OGRSpatialReference *>(poSRS)->Release();
     if (poSrcRegion != nullptr)
         delete poSrcRegion;
 }
@@ -440,7 +425,7 @@ bool OGRVRTLayer::ParseGeometryField(CPLXMLNode *psNode,
         pszSRS = CPLGetXMLValue(psNodeParent, "LayerSRS", nullptr);
     if (pszSRS == nullptr)
     {
-        OGRSpatialReference *poSRS = nullptr;
+        const OGRSpatialReference *poSRS = nullptr;
         if (GetSrcLayerDefn()->GetGeomFieldCount() == 1)
         {
             poSRS = poSrcLayer->GetSpatialRef();
@@ -512,6 +497,34 @@ bool OGRVRTLayer::ParseGeometryField(CPLXMLNode *psNode,
 
     poProps->bNullable =
         CPLTestBool(CPLGetXMLValue(psNode, "nullable", "TRUE"));
+
+    if (GetSrcLayerDefn()->GetGeomFieldCount() == 1)
+    {
+        poProps->sCoordinatePrecision =
+            GetSrcLayerDefn()->GetGeomFieldDefn(0)->GetCoordinatePrecision();
+    }
+    else if (poProps->eGeometryStyle == VGS_Direct && poProps->iGeomField >= 0)
+    {
+        poProps->sCoordinatePrecision =
+            GetSrcLayerDefn()
+                ->GetGeomFieldDefn(poProps->iGeomField)
+                ->GetCoordinatePrecision();
+    }
+    if (const char *pszXYResolution =
+            CPLGetXMLValue(psNode, "XYResolution", nullptr))
+    {
+        poProps->sCoordinatePrecision.dfXYResolution = CPLAtof(pszXYResolution);
+    }
+    if (const char *pszZResolution =
+            CPLGetXMLValue(psNode, "ZResolution", nullptr))
+    {
+        poProps->sCoordinatePrecision.dfZResolution = CPLAtof(pszZResolution);
+    }
+    if (const char *pszMResolution =
+            CPLGetXMLValue(psNode, "MResolution", nullptr))
+    {
+        poProps->sCoordinatePrecision.dfMResolution = CPLAtof(pszMResolution);
+    }
 
     return true;
 }
@@ -639,8 +652,9 @@ try_again:
             // Is it a VRT datasource?
             if (poSrcDS != nullptr && poSrcDS->GetDriver() == poDS->GetDriver())
             {
-                OGRVRTDataSource *poVRTSrcDS = (OGRVRTDataSource *)poSrcDS;
-                poVRTSrcDS->AddForbiddenNames(poDS->GetName());
+                OGRVRTDataSource *poVRTSrcDS =
+                    cpl::down_cast<OGRVRTDataSource *>(poSrcDS);
+                poVRTSrcDS->AddForbiddenNames(poDS->GetDescription());
             }
         }
     }
@@ -811,6 +825,8 @@ try_again:
                                     apoGeomFieldProps[i]->eGeomType);
         oFieldDefn.SetSpatialRef(apoGeomFieldProps[i]->poSRS);
         oFieldDefn.SetNullable(apoGeomFieldProps[i]->bNullable);
+        oFieldDefn.SetCoordinatePrecision(
+            apoGeomFieldProps[i]->sCoordinatePrecision);
         poFeatureDefn->AddGeomFieldDefn(&oFieldDefn);
     }
 
@@ -981,6 +997,16 @@ try_again:
             // Default attribute.
             oFieldDefn.SetDefault(CPLGetXMLValue(psChild, "default", nullptr));
 
+            const char *pszAlternativeName =
+                CPLGetXMLValue(psChild, "alternativeName", nullptr);
+            if (pszAlternativeName)
+                oFieldDefn.SetAlternativeName(pszAlternativeName);
+
+            const char *pszComment =
+                CPLGetXMLValue(psChild, "comment", nullptr);
+            if (pszComment)
+                oFieldDefn.SetComment(pszComment);
+
             // Create the field.
             poFeatureDefn->AddFieldDefn(&oFieldDefn);
 
@@ -1083,11 +1109,15 @@ try_again:
             for (int i = 0; i < poFeatureDefn->GetGeomFieldCount(); i++)
             {
                 if (apoGeomFieldProps[i]->poSRS != nullptr)
-                    apoGeomFieldProps[i]->poSRS->Release();
+                    const_cast<OGRSpatialReference *>(
+                        apoGeomFieldProps[i]->poSRS)
+                        ->Release();
                 apoGeomFieldProps[i]->poSRS =
                     poFeatureDefn->GetGeomFieldDefn(i)->GetSpatialRef();
                 if (apoGeomFieldProps[i]->poSRS != nullptr)
-                    apoGeomFieldProps[i]->poSRS->Reference();
+                    const_cast<OGRSpatialReference *>(
+                        apoGeomFieldProps[i]->poSRS)
+                        ->Reference();
             }
         }
     }
@@ -1203,13 +1233,13 @@ bool OGRVRTLayer::ResetSourceReading()
                     m_poFilterGeom->getEnvelope(&sEnvelope);
                 }
 
-                if (!CPLIsInf(sEnvelope.MinX))
+                if (!std::isinf(sEnvelope.MinX))
                     osFilter +=
                         CPLSPrintf("\"%s\" > %.15g", pszXField, sEnvelope.MinX);
                 else if (sEnvelope.MinX > 0)
                     osFilter += "0 = 1";
 
-                if (!CPLIsInf(sEnvelope.MaxX))
+                if (!std::isinf(sEnvelope.MaxX))
                 {
                     if (!osFilter.empty())
                         osFilter += " AND ";
@@ -1223,7 +1253,7 @@ bool OGRVRTLayer::ResetSourceReading()
                     osFilter += "0 = 1";
                 }
 
-                if (!CPLIsInf(sEnvelope.MinY))
+                if (!std::isinf(sEnvelope.MinY))
                 {
                     if (!osFilter.empty())
                         osFilter += " AND ";
@@ -1237,7 +1267,7 @@ bool OGRVRTLayer::ResetSourceReading()
                     osFilter += "0 = 1";
                 }
 
-                if (!CPLIsInf(sEnvelope.MaxY))
+                if (!std::isinf(sEnvelope.MaxY))
                 {
                     if (!osFilter.empty())
                         osFilter += " AND ";
@@ -1323,10 +1353,12 @@ bool OGRVRTLayer::ResetSourceReading()
                 {
                     OGREnvelope sEnvelope;
                     m_poFilterGeom->getEnvelope(&sEnvelope);
-                    if (CPLIsInf(sEnvelope.MinX) && CPLIsInf(sEnvelope.MinY) &&
-                        CPLIsInf(sEnvelope.MaxX) && CPLIsInf(sEnvelope.MaxY) &&
-                        sEnvelope.MinX < 0 && sEnvelope.MinY < 0 &&
-                        sEnvelope.MaxX > 0 && sEnvelope.MaxY > 0)
+                    if (std::isinf(sEnvelope.MinX) &&
+                        std::isinf(sEnvelope.MinY) &&
+                        std::isinf(sEnvelope.MaxX) &&
+                        std::isinf(sEnvelope.MaxY) && sEnvelope.MinX < 0 &&
+                        sEnvelope.MinY < 0 && sEnvelope.MaxX > 0 &&
+                        sEnvelope.MaxY > 0)
                     {
                         poSpatialGeom = poSrcRegion;
                         bDoIntersection = false;
@@ -2346,7 +2378,7 @@ OGRErr OGRVRTLayer::RollbackTransaction()
 /*                          SetIgnoredFields()                          */
 /************************************************************************/
 
-OGRErr OGRVRTLayer::SetIgnoredFields(const char **papszFields)
+OGRErr OGRVRTLayer::SetIgnoredFields(CSLConstList papszFields)
 {
     if (!bHasFullInitialized)
         FullInitialize();
@@ -2360,18 +2392,16 @@ OGRErr OGRVRTLayer::SetIgnoredFields(const char **papszFields)
     if (eErr != OGRERR_NONE)
         return eErr;
 
-    const char **papszIter = papszFields;
-    char **papszFieldsSrc = nullptr;
+    CPLStringList aosFieldsSrc;
 
     // Translate explicitly ignored fields of VRT layers to their equivalent
     // source fields.
-    while (papszIter != nullptr && *papszIter != nullptr)
+    for (const char *pszFieldName : cpl::Iterate(papszFields))
     {
-        const char *pszFieldName = *papszIter;
         if (EQUAL(pszFieldName, "OGR_GEOMETRY") ||
             EQUAL(pszFieldName, "OGR_STYLE"))
         {
-            papszFieldsSrc = CSLAddString(papszFieldsSrc, pszFieldName);
+            aosFieldsSrc.AddString(pszFieldName);
         }
         else
         {
@@ -2405,10 +2435,9 @@ OGRErr OGRVRTLayer::SetIgnoredFields(const char **papszFields)
                     }
                     if (bOKToIgnore)
                     {
-                        OGRFieldDefn *poSrcDefn =
+                        const OGRFieldDefn *poSrcDefn =
                             GetSrcLayerDefn()->GetFieldDefn(iSrcField);
-                        papszFieldsSrc = CSLAddString(papszFieldsSrc,
-                                                      poSrcDefn->GetNameRef());
+                        aosFieldsSrc.AddString(poSrcDefn->GetNameRef());
                     }
                 }
             }
@@ -2421,26 +2450,23 @@ OGRErr OGRVRTLayer::SetIgnoredFields(const char **papszFields)
                     int iSrcField = apoGeomFieldProps[iVRTField]->iGeomField;
                     if (iSrcField >= 0)
                     {
-                        OGRGeomFieldDefn *poSrcDefn =
+                        const OGRGeomFieldDefn *poSrcDefn =
                             GetSrcLayerDefn()->GetGeomFieldDefn(iSrcField);
-                        papszFieldsSrc = CSLAddString(papszFieldsSrc,
-                                                      poSrcDefn->GetNameRef());
+                        aosFieldsSrc.AddString(poSrcDefn->GetNameRef());
                     }
                 }
             }
         }
-        papszIter++;
     }
 
     // Add source fields that are not referenced by VRT layer.
-    int *panSrcFieldsUsed = static_cast<int *>(
-        CPLCalloc(sizeof(int), GetSrcLayerDefn()->GetFieldCount()));
+    std::vector<bool> abSrcFieldUsed(GetSrcLayerDefn()->GetFieldCount());
     for (int iVRTField = 0; iVRTField < GetLayerDefn()->GetFieldCount();
          iVRTField++)
     {
         const int iSrcField = anSrcField[iVRTField];
         if (iSrcField >= 0)
-            panSrcFieldsUsed[iSrcField] = TRUE;
+            abSrcFieldUsed[iSrcField] = true;
     }
     for (int iVRTField = 0; iVRTField < GetLayerDefn()->GetGeomFieldCount();
          iVRTField++)
@@ -2453,16 +2479,16 @@ OGRErr OGRVRTLayer::SetIgnoredFields(const char **papszFields)
         {
             int iSrcField = apoGeomFieldProps[iVRTField]->iGeomXField;
             if (iSrcField >= 0)
-                panSrcFieldsUsed[iSrcField] = TRUE;
+                abSrcFieldUsed[iSrcField] = true;
             iSrcField = apoGeomFieldProps[iVRTField]->iGeomYField;
             if (iSrcField >= 0)
-                panSrcFieldsUsed[iSrcField] = TRUE;
+                abSrcFieldUsed[iSrcField] = true;
             iSrcField = apoGeomFieldProps[iVRTField]->iGeomZField;
             if (iSrcField >= 0)
-                panSrcFieldsUsed[iSrcField] = TRUE;
+                abSrcFieldUsed[iSrcField] = true;
             iSrcField = apoGeomFieldProps[iVRTField]->iGeomMField;
             if (iSrcField >= 0)
-                panSrcFieldsUsed[iSrcField] = TRUE;
+                abSrcFieldUsed[iSrcField] = true;
         }
         // Similarly for other kinds of geometry fields.
         else if (eGeometryStyle == VGS_WKT || eGeometryStyle == VGS_WKB ||
@@ -2470,29 +2496,27 @@ OGRErr OGRVRTLayer::SetIgnoredFields(const char **papszFields)
         {
             int iSrcField = apoGeomFieldProps[iVRTField]->iGeomField;
             if (iSrcField >= 0)
-                panSrcFieldsUsed[iSrcField] = TRUE;
+                abSrcFieldUsed[iSrcField] = true;
         }
     }
     if (iStyleField >= 0)
-        panSrcFieldsUsed[iStyleField] = TRUE;
+        abSrcFieldUsed[iStyleField] = true;
     if (iFIDField >= 0)
-        panSrcFieldsUsed[iFIDField] = TRUE;
+        abSrcFieldUsed[iFIDField] = true;
     for (int iSrcField = 0; iSrcField < GetSrcLayerDefn()->GetFieldCount();
          iSrcField++)
     {
-        if (!panSrcFieldsUsed[iSrcField])
+        if (!abSrcFieldUsed[iSrcField])
         {
-            OGRFieldDefn *poSrcDefn =
+            const OGRFieldDefn *poSrcDefn =
                 GetSrcLayerDefn()->GetFieldDefn(iSrcField);
-            papszFieldsSrc =
-                CSLAddString(papszFieldsSrc, poSrcDefn->GetNameRef());
+            aosFieldsSrc.AddString(poSrcDefn->GetNameRef());
         }
     }
-    CPLFree(panSrcFieldsUsed);
 
     // Add source geometry fields that are not referenced by VRT layer.
-    panSrcFieldsUsed = static_cast<int *>(
-        CPLCalloc(sizeof(int), GetSrcLayerDefn()->GetGeomFieldCount()));
+    abSrcFieldUsed.clear();
+    abSrcFieldUsed.resize(GetSrcLayerDefn()->GetGeomFieldCount());
     for (int iVRTField = 0; iVRTField < GetLayerDefn()->GetGeomFieldCount();
          iVRTField++)
     {
@@ -2500,27 +2524,21 @@ OGRErr OGRVRTLayer::SetIgnoredFields(const char **papszFields)
         {
             const int iSrcField = apoGeomFieldProps[iVRTField]->iGeomField;
             if (iSrcField >= 0)
-                panSrcFieldsUsed[iSrcField] = TRUE;
+                abSrcFieldUsed[iSrcField] = true;
         }
     }
     for (int iSrcField = 0; iSrcField < GetSrcLayerDefn()->GetGeomFieldCount();
          iSrcField++)
     {
-        if (!panSrcFieldsUsed[iSrcField])
+        if (!abSrcFieldUsed[iSrcField])
         {
-            OGRGeomFieldDefn *poSrcDefn =
+            const OGRGeomFieldDefn *poSrcDefn =
                 GetSrcLayerDefn()->GetGeomFieldDefn(iSrcField);
-            papszFieldsSrc =
-                CSLAddString(papszFieldsSrc, poSrcDefn->GetNameRef());
+            aosFieldsSrc.AddString(poSrcDefn->GetNameRef());
         }
     }
-    CPLFree(panSrcFieldsUsed);
 
-    eErr = poSrcLayer->SetIgnoredFields((const char **)papszFieldsSrc);
-
-    CSLDestroy(papszFieldsSrc);
-
-    return eErr;
+    return poSrcLayer->SetIgnoredFields(aosFieldsSrc.List());
 }
 
 /************************************************************************/

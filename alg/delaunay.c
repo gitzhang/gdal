@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2015, Even Rouault <even.rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #if defined(__MINGW32__) || defined(__MINGW64__)
@@ -50,8 +34,6 @@
 #include <ctype.h>
 #include <math.h>
 
-CPL_CVSID("$Id$")
-
 #if defined(INTERNAL_QHULL) || defined(EXTERNAL_QHULL)
 #define HAVE_INTERNAL_OR_EXTERNAL_QHULL 1
 #endif
@@ -69,8 +51,17 @@ CPL_CVSID("$Id$")
     disable : 4324)  // 'qhT': structure was padded due to alignment specifier
 #endif
 
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdocumentation"
+#endif
+
 #include "libqhull_r/libqhull_r.h"
 #include "libqhull_r/qset_r.h"
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -627,7 +618,16 @@ int GDALTriangulationFindFacetDirected(const GDALTriangulation *psDT,
         }
     }
 
-    CPLDebug("GDAL", "Using brute force lookup");
+    static int nDebugMsgCount = 0;
+    if (nDebugMsgCount <= 20)
+    {
+        CPLDebug("GDAL", "Using brute force lookup%s",
+                 (nDebugMsgCount == 20)
+                     ? " (this debug message will no longer be emitted)"
+                     : "");
+        nDebugMsgCount++;
+    }
+
     return GDALTriangulationFindFacetBruteForce(psDT, dfX, dfY,
                                                 panOutputFacetIdx);
 }

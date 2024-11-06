@@ -8,23 +8,7 @@
  ******************************************************************************
  * Copyright (c) 2007, Frank Warmerdam <warmerdam@pobox.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #ifndef OGRGMT_H_INCLUDED
@@ -41,6 +25,7 @@
 class OGRGmtLayer final : public OGRLayer,
                           public OGRGetNextFeatureThroughRaw<OGRGmtLayer>
 {
+    GDALDataset *m_poDS = nullptr;
     OGRSpatialReference *m_poSRS = nullptr;
     OGRFeatureDefn *poFeatureDefn;
 
@@ -70,7 +55,7 @@ class OGRGmtLayer final : public OGRLayer,
   public:
     bool bValidFile;
 
-    OGRGmtLayer(const char *pszFilename, VSILFILE *fp,
+    OGRGmtLayer(GDALDataset *poDS, const char *pszFilename, VSILFILE *fp,
                 const OGRSpatialReference *poSRS, int bUpdate);
     virtual ~OGRGmtLayer();
 
@@ -83,6 +68,7 @@ class OGRGmtLayer final : public OGRLayer,
     }
 
     OGRErr GetExtent(OGREnvelope *psExtent, int bForce) override;
+
     virtual OGRErr GetExtent(int iGeomField, OGREnvelope *psExtent,
                              int bForce) override
     {
@@ -91,22 +77,25 @@ class OGRGmtLayer final : public OGRLayer,
 
     OGRErr ICreateFeature(OGRFeature *poFeature) override;
 
-    virtual OGRErr CreateField(OGRFieldDefn *poField,
+    virtual OGRErr CreateField(const OGRFieldDefn *poField,
                                int bApproxOK = TRUE) override;
 
     int TestCapability(const char *) override;
+
+    GDALDataset *GetDataset() override
+    {
+        return m_poDS;
+    }
 };
 
 /************************************************************************/
 /*                           OGRGmtDataSource                           */
 /************************************************************************/
 
-class OGRGmtDataSource final : public OGRDataSource
+class OGRGmtDataSource final : public GDALDataset
 {
     OGRGmtLayer **papoLayers;
     int nLayers;
-
-    char *pszName;
 
     bool bUpdate;
 
@@ -116,22 +105,17 @@ class OGRGmtDataSource final : public OGRDataSource
 
     int Open(const char *pszFilename, VSILFILE *fp,
              const OGRSpatialReference *poSRS, int bUpdate);
-    int Create(const char *pszFilename, char **papszOptions);
 
-    const char *GetName() override
-    {
-        return pszName;
-    }
     int GetLayerCount() override
     {
         return nLayers;
     }
+
     OGRLayer *GetLayer(int) override;
 
-    virtual OGRLayer *ICreateLayer(const char *,
-                                   OGRSpatialReference * = nullptr,
-                                   OGRwkbGeometryType = wkbUnknown,
-                                   char ** = nullptr) override;
+    OGRLayer *ICreateLayer(const char *pszName,
+                           const OGRGeomFieldDefn *poGeomFieldDefn,
+                           CSLConstList papszOptions) override;
     int TestCapability(const char *) override;
 };
 

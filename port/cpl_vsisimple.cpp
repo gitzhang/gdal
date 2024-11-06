@@ -8,23 +8,7 @@
  * Copyright (c) 1998, Frank Warmerdam
  * Copyright (c) 2008-2012, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************
  *
  * NB: Note that in wrappers we are always saving the error state (errno
@@ -33,6 +17,17 @@
  * a call).
  *
  ****************************************************************************/
+
+// Must be done before including cpl_port.h
+// We need __MSVCRT_VERSION__ >= 0x0700 to have "_aligned_malloc"
+// Latest versions of mingw32 define it, but with older ones,
+// we need to define it manually.
+#if defined(__MINGW32__)
+#include <windows.h>
+#ifndef __MSVCRT_VERSION__
+#define __MSVCRT_VERSION__ 0x0700
+#endif
+#endif
 
 #include "cpl_port.h"
 #include "cpl_vsi.h"
@@ -45,6 +40,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <limits>
 #if HAVE_SYS_STAT_H
 #include <sys/stat.h>
 #endif
@@ -94,7 +90,7 @@ extern "C" GIntBig CPL_DLL CPL_STDCALL GDALGetCacheUsed64(void);
 #endif
 
 /* Unix or Windows NT/2000/XP */
-#if !defined(WIN32)
+#if !defined(_WIN32)
 #include <unistd.h>
 #else
 #include <io.h>
@@ -109,7 +105,7 @@ extern "C" GIntBig CPL_DLL CPL_STDCALL GDALGetCacheUsed64(void);
 FILE *VSIFOpen(const char *pszFilename, const char *pszAccess)
 
 {
-#if defined(WIN32)
+#if defined(_WIN32)
     FILE *fp = nullptr;
     if (CPLTestBool(CPLGetConfigOption("GDAL_FILENAME_IS_UTF8", "YES")))
     {
@@ -896,6 +892,11 @@ void VSIFree(void *pData)
 
 void *VSIMallocAligned(size_t nAlignment, size_t nSize)
 {
+    // In particular for posix_memalign() where behavior when passing
+    // nSize == 0 is technically implementation defined (Valgrind complains),
+    // so let's always return NULL.
+    if (nSize == 0)
+        return nullptr;
 #if defined(HAVE_POSIX_MEMALIGN) && !defined(DEBUG_VSIMALLOC)
     void *pRet = nullptr;
     if (posix_memalign(&pRet, nAlignment, nSize) != 0)
@@ -913,7 +914,6 @@ void *VSIMallocAligned(size_t nAlignment, size_t nSize)
     // Detect overflow.
     if (nSize + nAlignment < nSize)
         return nullptr;
-    // TODO(schwehr): C++11 has std::aligned_storage, alignas, and related.
     GByte *pabyData = static_cast<GByte *>(VSIMalloc(nSize + nAlignment));
     if (pabyData == nullptr)
         return nullptr;
@@ -1194,6 +1194,7 @@ void *VSIMalloc3Verbose(size_t nSize1, size_t nSize2, size_t nSize3,
     }
     return pRet;
 }
+
 /************************************************************************/
 /*                          VSICallocVerbose()                          */
 /************************************************************************/
@@ -1255,7 +1256,7 @@ char *VSIStrdupVerbose(const char *pszStr, const char *pszFile, int nLine)
 int VSIStat(const char *pszFilename, VSIStatBuf *pStatBuf)
 
 {
-#if defined(WIN32)
+#if defined(_WIN32)
     if (CPLTestBool(CPLGetConfigOption("GDAL_FILENAME_IS_UTF8", "YES")))
     {
         wchar_t *pwszFilename =
@@ -1298,8 +1299,21 @@ const char *VSICTime(unsigned long nTime)
 
 {
     time_t tTime = static_cast<time_t>(nTime);
-
+#if HAVE_CTIME_R
+    // Cf https://linux.die.net/man/3/ctime_r:
+    // "The reentrant version ctime_r() does the same, but stores the string in
+    // a user-supplied buffer which should have room for at least 26 bytes"
+    char buffer[26];
+    char *ret = ctime_r(&tTime, buffer);
+    return ret ? CPLSPrintf("%s", ret) : nullptr;
+#elif defined(_WIN32)
+    char buffer[26];
+    return ctime_s(buffer, sizeof(buffer), &tTime) == 0
+               ? CPLSPrintf("%s", buffer)
+               : nullptr;
+#else
     return reinterpret_cast<const char *>(ctime(&tTime));
+#endif
 }
 
 /************************************************************************/
@@ -1311,12 +1325,14 @@ struct tm *VSIGMTime(const time_t *pnTime, struct tm *poBrokenTime)
 
 #if HAVE_GMTIME_R
     gmtime_r(pnTime, poBrokenTime);
+    return poBrokenTime;
+#elif defined(_WIN32)
+    return gmtime_s(poBrokenTime, pnTime) == 0 ? poBrokenTime : nullptr;
 #else
     struct tm *poTime = gmtime(pnTime);
     memcpy(poBrokenTime, poTime, sizeof(tm));
-#endif
-
     return poBrokenTime;
+#endif
 }
 
 /************************************************************************/
@@ -1328,12 +1344,14 @@ struct tm *VSILocalTime(const time_t *pnTime, struct tm *poBrokenTime)
 
 #if HAVE_LOCALTIME_R
     localtime_r(pnTime, poBrokenTime);
+    return poBrokenTime;
+#elif defined(_WIN32)
+    return localtime_s(poBrokenTime, pnTime) == 0 ? poBrokenTime : nullptr;
 #else
     struct tm *poTime = localtime(pnTime);
     memcpy(poBrokenTime, poTime, sizeof(tm));
-#endif
-
     return poBrokenTime;
+#endif
 }
 
 /************************************************************************/
@@ -1368,8 +1386,11 @@ GIntBig CPLGetPhysicalRAM(void)
 {
     const long nPhysPages = sysconf(_SC_PHYS_PAGES);
     const long nPageSize = sysconf(_SC_PAGESIZE);
-    if (nPhysPages < 0 || nPageSize < 0)
+    if (nPhysPages <= 0 || nPageSize <= 0 ||
+        nPhysPages > std::numeric_limits<GIntBig>::max() / nPageSize)
+    {
         return 0;
+    }
     GIntBig nVal = static_cast<GIntBig>(nPhysPages) * nPageSize;
 
 #ifdef __linux
@@ -1447,6 +1468,9 @@ GIntBig CPLGetPhysicalRAM(void)
         {
             // cgroup V1
             // Read memory.limit_in_byte in the whole szGroupName hierarchy
+            // Make sure to end up by reading
+            // /sys/fs/cgroup/memory/memory.limit_in_bytes itself, for
+            // scenarios like https://github.com/OSGeo/gdal/issues/8968
             while (true)
             {
                 snprintf(szFilename, sizeof(szFilename),
@@ -1466,7 +1490,7 @@ GIntBig CPLGetPhysicalRAM(void)
                         std::min(static_cast<GUIntBig>(nVal), nLimit));
                 }
                 char *pszLastSlash = strrchr(szGroupName, '/');
-                if (!pszLastSlash || pszLastSlash == szGroupName)
+                if (!pszLastSlash)
                     break;
                 *pszLastSlash = '\0';
             }
@@ -1528,7 +1552,7 @@ GIntBig CPLGetPhysicalRAM(void)
     return nPhysMem;
 }
 
-#elif defined(WIN32)
+#elif defined(_WIN32)
 
 // GlobalMemoryStatusEx requires _WIN32_WINNT >= 0x0500.
 #ifndef _WIN32_WINNT

@@ -33,20 +33,62 @@ STACIT datasets/subdatasets can be accessed with one of the following syntaxes:
 
 * ``STACIT:"filename.json":collection=my_collect,asset=my_asset,crs=my_crs``: specify a collection, asset, and limit to items in a given CRS
 
+Starting with GDAL 3.10, specifying the ``-if STACIT`` option to command line utilities
+accepting it, or ``STACIT`` as the only value of the ``papszAllowedDrivers`` of
+:cpp:func:`GDALOpenEx`, also forces the driver to recognize the passed
+filename or URL.
+
 Open options
 ------------
 
+|about-open-options|
 The following open options are supported:
 
-* ``MAX_ITEMS`` = number. Maximum number of items fetched. 0=unlimited. Default is 1000.
+-  .. oo:: MAX_ITEMS
+      :choices: <integer>
+      :default: 1000
 
-* ``COLLECTION`` = string. Name of collection to filter items.
+      Maximum number of items fetched. 0=unlimited.
 
-* ``CRS`` = string. Name of CRS to filter items.
+-  .. oo:: COLLECTION
 
-* ``ASSET`` = string. Name of asset to read.
+      Name of collection to filter items.
 
-* ``RESOLUTION`` = AVERAGE/HIGHEST/LOWEST. Strategy to use to determine dataset resolution. Default is AVERAGE.
+-  .. oo:: CRS
+
+      Name of CRS to filter items.
+
+-  .. oo:: ASSET
+
+      Name of asset to read.
+
+-  .. oo:: RESOLUTION
+      :choices: AVERAGE, HIGHEST, LOWEST
+      :default: AVERAGE
+
+      Strategy to use to determine dataset resolution.
+
+-  .. oo:: OVERLAP_STRATEGY
+      :choices: REMOVE_IF_NO_NODATA, USE_ALL, USE_MOST_RECENT
+      :default: REMOVE_IF_NO_NODATA
+      :since: 3.9.1
+
+      Strategy to use when the ItemCollections contains overlapping items, and
+      that some items are fully covered by other items that are more recent.
+
+      Starting with GDAL 3.9.1, the ``REMOVE_IF_NO_NODATA`` strategy is applied
+      by default. The STACIT virtual mosaic will omit fully covered items,
+      only if no band declares a nodata value.
+      (Note that the determination whether a band has a nodata value of not is
+      done by opening one of the items, and assuming it is representative of
+      the characteristics of the others in the collection).
+
+      This strategy can be forced in all cases by selecting the ``USE_MOST_RECENT``
+      strategy (this was the strategy applied prior to 3.9.1)
+
+      The ``USE_ALL`` strategy always causes all items to be listed in the virtual
+      mosaic, with the most recent ones being rendered on top of the less recent ones.
+
 
 Subdatasets
 -----------

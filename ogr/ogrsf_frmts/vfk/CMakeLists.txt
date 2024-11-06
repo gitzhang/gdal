@@ -14,7 +14,15 @@ add_gdal_driver(
           vfkreadersqlite.cpp
           vfkfeature.cpp
           vfkfeaturesqlite.cpp
-          PLUGIN_CAPABLE)
+  CORE_SOURCES
+          ogrvfkdrivercore.cpp
+  PLUGIN_CAPABLE
+  NO_SHARED_SYMBOL_WITH_CORE)
+
+if(NOT TARGET ogr_VFK)
+    return()
+endif()
+
 gdal_standard_includes(ogr_VFK)
 if (GDAL_USE_SQLITE3)
   target_include_directories(ogr_VFK PRIVATE ${SQLite3_INCLUDE_DIR})

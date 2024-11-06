@@ -13,25 +13,7 @@
  * Copyright (c) 2009 - 2013, Jorge Arevalo, David Zwarg
  * Copyright (c) 2013, Even Rouault
  *
- * Permission is hereby granted, free of charge, to any person obtaining
- * a copy of this software and associated documentation files (the
- * "Software"),to deal in the Software without restriction, including
- * without limitation the rights to use, copy, modify, merge, publish,
- * distribute, sublicense, and/or sell copies of the Software, and to
- * permit persons to whom the Software is furnished to do so, subject to
- * the following conditions:
- *
- * The above copyright notice and this permission notice shall be
- * included in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
- * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
- * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
+ * SPDX-License-Identifier: MIT
  **********************************************************************/
 
 #ifndef POSTGISRASTER_H_INCLUDED
@@ -162,8 +144,6 @@ typedef struct
 
 // Some tools definitions
 char *ReplaceQuotes(const char *, int);
-char *ReplaceSingleQuotes(const char *, int);
-char **ParseConnectionString(const char *);
 GBool TranslateDataType(const char *, GDALDataType *, int *);
 
 class PostGISRasterRasterBand;
@@ -177,7 +157,7 @@ class PostGISRasterDriver final : public GDALDriver
 {
 
   private:
-    CPLMutex *hMutex;
+    CPLMutex *hMutex = nullptr;
     std::map<CPLString, PGconn *> oMapConnection{};
 
     CPL_DISALLOW_COPY_ASSIGN(PostGISRasterDriver)
@@ -188,6 +168,8 @@ class PostGISRasterDriver final : public GDALDriver
                           const char *pszServiceIn, const char *pszDbnameIn,
                           const char *pszHostIn, const char *pszPortIn,
                           const char *pszUserIn);
+
+    static PostGISRasterDriver *gpoPostGISRasterDriver;
 };
 
 /***********************************************************************
@@ -275,8 +257,8 @@ class PostGISRasterDataset final : public VRTDataset
     GBool YieldSubdatasets(PGresult *, const char *);
     GBool SetRasterProperties(const char *);
     GBool BrowseDatabase(const char *, const char *);
-    GBool AddComplexSource(PostGISRasterTileDataset *poRTDS);
-    GBool GetDstWin(PostGISRasterTileDataset *, int *, int *, int *, int *);
+    void AddComplexSource(PostGISRasterTileDataset *poRTDS);
+    void GetDstWin(PostGISRasterTileDataset *, int *, int *, int *, int *);
     BandMetadata *GetBandsMetadata(int *);
     PROverview *GetOverviewTables(int *);
 
@@ -292,6 +274,7 @@ class PostGISRasterDataset final : public VRTDataset
     {
         return oMapPKIDToRTDS[pszPKID];
     }
+
     PostGISRasterTileDataset *GetMatchingSourceRef(double dfUpperLeftX,
                                                    double dfUpperLeftY);
 
@@ -314,7 +297,6 @@ class PostGISRasterDataset final : public VRTDataset
     PostGISRasterDataset();
     virtual ~PostGISRasterDataset();
     static GDALDataset *Open(GDALOpenInfo *);
-    static int Identify(GDALOpenInfo *);
     static GDALDataset *CreateCopy(const char *, GDALDataset *, int, char **,
                                    GDALProgressFunc, void *);
     static GBool InsertRaster(PGconn *, PostGISRasterDataset *, const char *,
@@ -410,6 +392,7 @@ class PostGISRasterTileDataset final : public GDALDataset
     CPLErr GetGeoTransform(double *) override;
     void GetExtent(double *pdfMinX, double *pdfMinY, double *pdfMaxX,
                    double *pdfMaxY) const;
+
     const char *GetPKID() const
     {
         return pszPKID;

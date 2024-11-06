@@ -10,22 +10,7 @@
  * Copyright (c) 2007-2012, Even Rouault <even dot rouault at spatialys.com>
  * Copyright (c) 2023, NextGIS <info@nextgis.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 #include <algorithm>
 #include <limits>
@@ -132,8 +117,7 @@ static GUInt32 RMFStrToUnitType(const char *pszUnit, int *pbSuccess = nullptr)
 
 RMFRasterBand::RMFRasterBand(RMFDataset *poDSIn, int nBandIn,
                              GDALDataType eType)
-    : nBytesPerPixel(poDSIn->sHeader.nBitDepth / 8),
-      nLastTileWidth(poDSIn->GetRasterXSize() % poDSIn->sHeader.nTileWidth),
+    : nLastTileWidth(poDSIn->GetRasterXSize() % poDSIn->sHeader.nTileWidth),
       nLastTileHeight(poDSIn->GetRasterYSize() % poDSIn->sHeader.nTileHeight),
       nDataSize(GDALGetDataTypeSizeBytes(eType))
 {
@@ -152,7 +136,7 @@ RMFRasterBand::RMFRasterBand(RMFDataset *poDSIn, int nBandIn,
              " last tile width %u, last tile height %u, "
              "bytes per pixel is %d, data type size is %d",
              nBand, nBlockXSize, nBlockYSize, nLastTileWidth, nLastTileHeight,
-             nBytesPerPixel, nDataSize);
+             poDSIn->sHeader.nBitDepth / 8, nDataSize);
 #endif
 }
 
@@ -278,9 +262,10 @@ CPLErr RMFRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff, void *pImage)
                poGDS->sHeader.nBitDepth == 32)) ||
              (poGDS->eRMFType == RMFT_MTW))
     {
-        size_t nTilePixelSize = poGDS->sHeader.nBitDepth / 8;
-        size_t nTileLineSize = nTilePixelSize * nRawXSize;
-        size_t nBlockLineSize = nDataSize * nBlockXSize;
+        const size_t nTilePixelSize = poGDS->sHeader.nBitDepth / 8;
+        const size_t nTileLineSize = nTilePixelSize * nRawXSize;
+        const size_t nBlockLineSize =
+            static_cast<size_t>(nDataSize) * nBlockXSize;
         int iDstBand = (poGDS->nBands - nBand);
         for (GUInt32 iLine = 0; iLine != nRawYSize; ++iLine)
         {
@@ -299,9 +284,10 @@ CPLErr RMFRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff, void *pImage)
     else if (poGDS->eRMFType == RMFT_RSW && poGDS->sHeader.nBitDepth == 16 &&
              poGDS->nBands == 3)
     {
-        size_t nTilePixelBits = poGDS->sHeader.nBitDepth;
-        size_t nTileLineSize = nTilePixelBits * nRawXSize / 8;
-        size_t nBlockLineSize = nDataSize * nBlockXSize;
+        const size_t nTilePixelBits = poGDS->sHeader.nBitDepth;
+        const size_t nTileLineSize = nTilePixelBits * nRawXSize / 8;
+        const size_t nBlockLineSize =
+            static_cast<size_t>(nDataSize) * nBlockXSize;
 
         for (GUInt32 iLine = 0; iLine != nRawYSize; ++iLine)
         {
@@ -346,9 +332,10 @@ CPLErr RMFRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff, void *pImage)
             return CE_Failure;
         }
 
-        size_t nTilePixelBits = poGDS->sHeader.nBitDepth;
-        size_t nTileLineSize = nTilePixelBits * nRawXSize / 8;
-        size_t nBlockLineSize = nDataSize * nBlockXSize;
+        const size_t nTilePixelBits = poGDS->sHeader.nBitDepth;
+        const size_t nTileLineSize = nTilePixelBits * nRawXSize / 8;
+        const size_t nBlockLineSize =
+            static_cast<size_t>(nDataSize) * nBlockXSize;
 
         for (GUInt32 iLine = 0; iLine != nRawYSize; ++iLine)
         {
@@ -378,9 +365,10 @@ CPLErr RMFRasterBand::IReadBlock(int nBlockXOff, int nBlockYOff, void *pImage)
             return CE_Failure;
         }
 
-        size_t nTilePixelBits = poGDS->sHeader.nBitDepth;
-        size_t nTileLineSize = nTilePixelBits * nRawXSize / 8;
-        size_t nBlockLineSize = nDataSize * nBlockXSize;
+        const size_t nTilePixelBits = poGDS->sHeader.nBitDepth;
+        const size_t nTileLineSize = nTilePixelBits * nRawXSize / 8;
+        const size_t nBlockLineSize =
+            static_cast<size_t>(nDataSize) * nBlockXSize;
 
         for (GUInt32 iLine = 0; iLine != nRawYSize; ++iLine)
         {
@@ -458,10 +446,11 @@ CPLErr RMFRasterBand::IWriteBlock(int nBlockXOff, int nBlockYOff, void *pImage)
         static_cast<GUInt32>(nBlockYOff) == poGDS->nYTiles - 1)
         nRawYSize = nLastTileHeight;
 
-    size_t nTilePixelSize = nDataSize * poGDS->nBands;
-    size_t nTileLineSize = nTilePixelSize * nRawXSize;
-    size_t nTileSize = nTileLineSize * nRawYSize;
-    size_t nBlockLineSize = nDataSize * nBlockXSize;
+    const size_t nTilePixelSize =
+        static_cast<size_t>(nDataSize) * poGDS->nBands;
+    const size_t nTileLineSize = nTilePixelSize * nRawXSize;
+    const size_t nTileSize = nTileLineSize * nRawYSize;
+    const size_t nBlockLineSize = static_cast<size_t>(nDataSize) * nBlockXSize;
 
 #ifdef DEBUG
     CPLDebug(
@@ -476,7 +465,8 @@ CPLErr RMFRasterBand::IWriteBlock(int nBlockXOff, int nBlockYOff, void *pImage)
     {  // Immediate write
         return poGDS->WriteTile(
             nBlockXOff, nBlockYOff, reinterpret_cast<GByte *>(pImage),
-            nRawXSize * nRawYSize * nDataSize, nRawXSize, nRawYSize);
+            static_cast<size_t>(nRawXSize) * nRawYSize * nDataSize, nRawXSize,
+            nRawYSize);
     }
     else
     {  // Try to construct full tile in memory and write later
@@ -1192,8 +1182,7 @@ CPLErr RMFDataset::FlushCache(bool bAtClosing)
         {
             // ComputeRasterMinMax can setup error in case of dataset full
             // from NoData values, but it  makes no sense here.
-            CPLErrorStateBackuper oErrorStateBackuper;
-            CPLErrorHandlerPusher oErrorHandler(CPLQuietErrorHandler);
+            CPLErrorStateBackuper oErrorStateBackuper(CPLQuietErrorHandler);
             poBand->ComputeRasterMinMax(FALSE, sHeader.adfElevMinMax);
             bHeaderDirty = true;
         }
@@ -2296,13 +2285,13 @@ GDALDataset *RMFDataset::Create(const char *pszFilename, int nXSize, int nYSize,
     // Add blocks flags
     poDS->sHeader.nFlagsTblOffset = poDS->GetRMFOffset(nCurPtr, &nCurPtr);
     poDS->sHeader.nFlagsTblSize =
-        poDS->sHeader.nXTiles * poDS->sHeader.nYTiles * sizeof(GByte);
+        sizeof(GByte) * poDS->sHeader.nXTiles * poDS->sHeader.nYTiles;
     nCurPtr += poDS->sHeader.nFlagsTblSize;
 
     // Blocks table
     poDS->sHeader.nTileTblOffset = poDS->GetRMFOffset(nCurPtr, &nCurPtr);
     poDS->sHeader.nTileTblSize =
-        poDS->sHeader.nXTiles * poDS->sHeader.nYTiles * 4 * 2;
+        2 * sizeof(GUInt32) * poDS->sHeader.nXTiles * poDS->sHeader.nYTiles;
     poDS->paiTiles =
         reinterpret_cast<GUInt32 *>(CPLCalloc(poDS->sHeader.nTileTblSize, 1));
     // nCurPtr += poDS->sHeader.nTileTblSize;
@@ -2411,7 +2400,7 @@ GDALDataset *RMFDataset::Create(const char *pszFilename, int nXSize, int nYSize,
 
     poDS->SetupNBits();
 
-    return reinterpret_cast<GDALDataset *>(poDS);
+    return GDALDataset::FromHandle(poDS);
 }
 
 // GIS Panorama 11 was introduced new format for huge files (greater than 3 Gb)
@@ -2661,7 +2650,7 @@ CPLErr RMFDataset::IBuildOverviews(const char *pszResampling, int nOverviews,
 CPLErr RMFDataset::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
                              int nXSize, int nYSize, void *pData, int nBufXSize,
                              int nBufYSize, GDALDataType eBufType,
-                             int nBandCount, int *panBandMap,
+                             int nBandCount, BANDMAP_TYPE panBandMap,
                              GSpacing nPixelSpace, GSpacing nLineSpace,
                              GSpacing nBandSpace,
                              GDALRasterIOExtraArg *psExtraArg)

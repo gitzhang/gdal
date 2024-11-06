@@ -10,23 +10,7 @@
  * Copyright (c) 2017, Dmitry Baryshnikov, <polimax@mail.ru>
  * Copyright (c) 2017, NextGIS, <info@nextgis.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "wmsdriver.h"
@@ -85,7 +69,8 @@ CPLErr GDALWMSRasterBand::ReadBlocks(int x, int y, void *buffer, int bx0,
     CPLErr ret = CE_None;
 
     // Get a vector of requests large enough for this call
-    std::vector<WMSHTTPRequest> requests((bx1 - bx0 + 1) * (by1 - by0 + 1));
+    std::vector<WMSHTTPRequest> requests(static_cast<size_t>(bx1 - bx0 + 1) *
+                                         (by1 - by0 + 1));
 
     size_t count = 0;  // How many requests are valid
     GDALWMSCache *cache = m_parent_dataset->m_cache;
@@ -953,7 +938,7 @@ CPLErr GDALWMSRasterBand::ReadBlockFromFile(const CPLString &soFileName, int x,
                                             int y, int to_buffer_band,
                                             void *buffer, int advise_read)
 {
-    GDALDataset *ds = reinterpret_cast<GDALDataset *>(GDALOpenEx(
+    GDALDataset *ds = GDALDataset::FromHandle(GDALOpenEx(
         soFileName, GDAL_OF_RASTER | GDAL_OF_READONLY | GDAL_OF_VERBOSE_ERROR,
         nullptr, m_parent_dataset->m_tileOO, nullptr));
     if (ds == nullptr)
@@ -1184,7 +1169,7 @@ CPLErr GDALWMSRasterBand::SetColorInterpretation(GDALColorInterp eNewInterp)
 
 // Utility function, returns a value from a vector corresponding to the band
 // index or the first entry
-static double getBandValue(std::vector<double> &v, size_t idx)
+static double getBandValue(const std::vector<double> &v, size_t idx)
 {
     idx--;
     if (v.size() > idx)

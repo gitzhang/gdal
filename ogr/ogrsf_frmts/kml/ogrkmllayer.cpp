@@ -9,23 +9,7 @@
  * Copyright (c) 2006, Christopher Condit
  * Copyright (c) 2007-2014, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_port.h"
@@ -55,14 +39,14 @@ char *OGR_G_ExportToKML(OGRGeometryH hGeometry, const char *pszAltitudeMode);
 /*                           OGRKMLLayer()                              */
 /************************************************************************/
 
-OGRKMLLayer::OGRKMLLayer(const char *pszName, OGRSpatialReference *poSRSIn,
-                         bool bWriterIn, OGRwkbGeometryType eReqType,
-                         OGRKMLDataSource *poDSIn)
+OGRKMLLayer::OGRKMLLayer(const char *pszName,
+                         const OGRSpatialReference *poSRSIn, bool bWriterIn,
+                         OGRwkbGeometryType eReqType, OGRKMLDataSource *poDSIn)
     : poDS_(poDSIn),
       poSRS_(poSRSIn ? new OGRSpatialReference(nullptr) : nullptr),
       poCT_(nullptr), poFeatureDefn_(new OGRFeatureDefn(pszName)),
-      iNextKMLId_(0), nTotalKMLCount_(-1), bWriter_(bWriterIn),
-      nLayerNumber_(0), nWroteFeatureCount_(0), bSchemaWritten_(false),
+      iNextKMLId_(0), bWriter_(bWriterIn), nLayerNumber_(0),
+      nWroteFeatureCount_(0), bSchemaWritten_(false),
       pszName_(CPLStrdup(pszName)), nLastAsked(-1), nLastCount(-1)
 {
     // KML should be created as WGS84.
@@ -355,7 +339,11 @@ OGRErr OGRKMLLayer::ICreateFeature(OGRFeature *poFeature)
         VSIFPrintfL(fp, "<Folder><name>%s</name>\n", pszName_);
     }
 
-    VSIFPrintfL(fp, "  <Placemark>\n");
+    ++nWroteFeatureCount_;
+    char *pszEscapedLayerName = OGRGetXML_UTF8_EscapedString(GetDescription());
+    VSIFPrintfL(fp, "  <Placemark id=\"%s." CPL_FRMT_GIB "\">\n",
+                pszEscapedLayerName, nWroteFeatureCount_);
+    CPLFree(pszEscapedLayerName);
 
     if (poFeature->GetFID() == OGRNullFID)
         poFeature->SetFID(iNextKMLId_++);
@@ -577,7 +565,6 @@ OGRErr OGRKMLLayer::ICreateFeature(OGRFeature *poFeature)
     }
 
     VSIFPrintfL(fp, "  </Placemark>\n");
-    nWroteFeatureCount_++;
     return OGRERR_NONE;
 }
 
@@ -617,7 +604,8 @@ int OGRKMLLayer::TestCapability(const char *pszCap)
 /*                            CreateField()                             */
 /************************************************************************/
 
-OGRErr OGRKMLLayer::CreateField(OGRFieldDefn *poField, CPL_UNUSED int bApproxOK)
+OGRErr OGRKMLLayer::CreateField(const OGRFieldDefn *poField,
+                                CPL_UNUSED int bApproxOK)
 {
     if (!bWriter_ || iNextKMLId_ != 0)
         return OGRERR_FAILURE;
@@ -635,4 +623,13 @@ OGRErr OGRKMLLayer::CreateField(OGRFieldDefn *poField, CPL_UNUSED int bApproxOK)
 void OGRKMLLayer::SetLayerNumber(int nLayer)
 {
     nLayerNumber_ = nLayer;
+}
+
+/************************************************************************/
+/*                             GetDataset()                             */
+/************************************************************************/
+
+GDALDataset *OGRKMLLayer::GetDataset()
+{
+    return poDS_;
 }

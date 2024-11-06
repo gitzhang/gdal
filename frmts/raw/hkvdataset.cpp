@@ -8,23 +8,7 @@
  * Copyright (c) 2000, Frank Warmerdam
  * Copyright (c) 2008-2012, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include <ctype.h>
@@ -55,6 +39,7 @@ class HKVRasterBand final : public RawRasterBand
     HKVRasterBand(HKVDataset *poDS, int nBand, VSILFILE *fpRaw,
                   unsigned int nImgOffset, int nPixelOffset, int nLineOffset,
                   GDALDataType eDataType, int bNativeOrder);
+
     ~HKVRasterBand() override
     {
     }
@@ -70,6 +55,7 @@ class HKVSpheroidList : public SpheroidList
 {
   public:
     HKVSpheroidList();
+
     ~HKVSpheroidList()
     {
     }
@@ -222,6 +208,7 @@ class HKVDataset final : public RawDataset
 
     void ProcessGeoref(const char *);
     void ProcessGeorefGCP(char **, const char *, double, double);
+
     void SetVersion(float version_number)
     {
         // Update stored info.
@@ -264,16 +251,19 @@ class HKVDataset final : public RawDataset
     {
         return nGCPCount;
     }
+
     const OGRSpatialReference *GetGCPSpatialRef() const override
     {
         return m_oGCPSRS.IsEmpty() ? nullptr : &m_oGCPSRS;
     }
+
     const GDAL_GCP *GetGCPs() override;
 
     const OGRSpatialReference *GetSpatialRef() const override
     {
         return m_oSRS.IsEmpty() ? nullptr : &m_oSRS;
     }
+
     CPLErr GetGeoTransform(double *) override;
 
     CPLErr SetGeoTransform(double *) override;
@@ -306,7 +296,7 @@ HKVRasterBand::HKVRasterBand(HKVDataset *poDSIn, int nBandIn, VSILFILE *fpRawIn,
                              unsigned int nImgOffsetIn, int nPixelOffsetIn,
                              int nLineOffsetIn, GDALDataType eDataTypeIn,
                              int bNativeOrderIn)
-    : RawRasterBand(reinterpret_cast<GDALDataset *>(poDSIn), nBandIn, fpRawIn,
+    : RawRasterBand(GDALDataset::FromHandle(poDSIn), nBandIn, fpRawIn,
                     nImgOffsetIn, nPixelOffsetIn, nLineOffsetIn, eDataTypeIn,
                     bNativeOrderIn, RawRasterBand::OwnFP::NO)
 
@@ -1183,7 +1173,7 @@ void HKVDataset::ProcessGeoref(const char *pszFilename)
             }
             else
             {
-                m_oSRS = oUTM;
+                m_oSRS = std::move(oUTM);
             }
         }
 
@@ -1244,7 +1234,7 @@ void HKVDataset::ProcessGeoref(const char *pszFilename)
             m_oSRS = oLL;
         }
 
-        m_oGCPSRS = oLL;
+        m_oGCPSRS = std::move(oLL);
     }
 
     delete hkvEllipsoids;
@@ -1302,7 +1292,7 @@ GDALDataset *HKVDataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     /*      Create a corresponding GDALDataset.                             */
     /* -------------------------------------------------------------------- */
-    HKVDataset *poDS = new HKVDataset();
+    auto poDS = std::make_unique<HKVDataset>();
 
     poDS->pszPath = CPLStrdup(poOpenInfo->pszFilename);
     poDS->papszAttrib = papszAttrib;
@@ -1319,7 +1309,6 @@ GDALDataset *HKVDataset::Open(GDALOpenInfo *poOpenInfo)
     if (CSLFetchNameValue(papszAttrib, "extent.cols") == nullptr ||
         CSLFetchNameValue(papszAttrib, "extent.rows") == nullptr)
     {
-        delete poDS;
         return nullptr;
     }
 
@@ -1328,7 +1317,6 @@ GDALDataset *HKVDataset::Open(GDALOpenInfo *poOpenInfo)
 
     if (!GDALCheckDatasetDimensions(poDS->nRasterXSize, poDS->nRasterYSize))
     {
-        delete poDS;
         return nullptr;
     }
 
@@ -1361,7 +1349,6 @@ GDALDataset *HKVDataset::Open(GDALOpenInfo *poOpenInfo)
 
     if (!GDALCheckBandCount(nRawBands, TRUE))
     {
-        delete poDS;
         return nullptr;
     }
 
@@ -1427,7 +1414,6 @@ GDALDataset *HKVDataset::Open(GDALOpenInfo *poOpenInfo)
                  "Unsupported pixel data type in %s.\n"
                  "pixel.size=%d pixel.encoding=%s",
                  poDS->pszPath, nSize, pszEncoding);
-        delete poDS;
         return nullptr;
     }
 
@@ -1444,7 +1430,6 @@ GDALDataset *HKVDataset::Open(GDALOpenInfo *poOpenInfo)
         {
             CPLError(CE_Failure, CPLE_OpenFailed,
                      "Unable to open file %s for read access.", pszFilename);
-            delete poDS;
             return nullptr;
         }
     }
@@ -1455,7 +1440,6 @@ GDALDataset *HKVDataset::Open(GDALOpenInfo *poOpenInfo)
         {
             CPLError(CE_Failure, CPLE_OpenFailed,
                      "Unable to open file %s for update access.", pszFilename);
-            delete poDS;
             return nullptr;
         }
     }
@@ -1463,10 +1447,8 @@ GDALDataset *HKVDataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     /*      Build the overview filename, as blob file = "_ovr".             */
     /* -------------------------------------------------------------------- */
-    const size_t nOvrFilenameLen = strlen(pszFilename) + 5;
-    char *pszOvrFilename = reinterpret_cast<char *>(CPLMalloc(nOvrFilenameLen));
-
-    snprintf(pszOvrFilename, nOvrFilenameLen, "%s_ovr", pszFilename);
+    std::string osOvrFilename(pszFilename);
+    osOvrFilename += "_ovr";
 
     /* -------------------------------------------------------------------- */
     /*      Define the bands.                                               */
@@ -1477,14 +1459,16 @@ GDALDataset *HKVDataset::Open(GDALOpenInfo *poOpenInfo)
 
     for (int iRawBand = 0; iRawBand < nRawBands; iRawBand++)
     {
-        HKVRasterBand *poBand = new HKVRasterBand(
-            poDS, poDS->GetRasterCount() + 1, poDS->fpBlob, nOffset,
+        auto poBand = std::make_unique<HKVRasterBand>(
+            poDS.get(), poDS->GetRasterCount() + 1, poDS->fpBlob, nOffset,
             nPixelOffset, nLineOffset, eType, bNative);
-        poDS->SetBand(poDS->GetRasterCount() + 1, poBand);
-        nOffset += GDALGetDataTypeSize(eType) / 8;
+        if (!poBand->IsValid())
+            return nullptr;
 
         if (bNoDataSet)
             poBand->SetNoDataValue(dfNoDataValue);
+        poDS->SetBand(poDS->GetRasterCount() + 1, std::move(poBand));
+        nOffset += GDALGetDataTypeSizeBytes(eType);
     }
 
     poDS->eRasterType = eType;
@@ -1499,17 +1483,16 @@ GDALDataset *HKVDataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     /*      Initialize any PAM information.                                 */
     /* -------------------------------------------------------------------- */
-    poDS->SetDescription(pszOvrFilename);
+    poDS->SetDescription(osOvrFilename.c_str());
     poDS->TryLoadXML();
 
     /* -------------------------------------------------------------------- */
     /*      Handle overviews.                                               */
     /* -------------------------------------------------------------------- */
-    poDS->oOvManager.Initialize(poDS, pszOvrFilename, nullptr, TRUE);
+    poDS->oOvManager.Initialize(poDS.get(), osOvrFilename.c_str(), nullptr,
+                                TRUE);
 
-    CPLFree(pszOvrFilename);
-
-    return poDS;
+    return poDS.release();
 }
 
 /************************************************************************/
@@ -1607,7 +1590,7 @@ GDALDataset *HKVDataset::Create(const char *pszFilenameIn, int nXSize,
     /* -------------------------------------------------------------------- */
     /*      Open the dataset normally.                                      */
     /* -------------------------------------------------------------------- */
-    return reinterpret_cast<GDALDataset *>(GDALOpen(pszFilenameIn, GA_Update));
+    return GDALDataset::FromHandle(GDALOpen(pszFilenameIn, GA_Update));
 }
 
 /************************************************************************/

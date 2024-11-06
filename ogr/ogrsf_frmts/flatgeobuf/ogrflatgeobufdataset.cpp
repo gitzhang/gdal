@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2018-2020, Björn Harrtell <bjorn at wololo dot org>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "ogr_flatgeobuf.h"
@@ -31,6 +15,12 @@
 #include <memory>
 
 #include "header_generated.h"
+
+// For users not using CMake...
+#ifndef flatbuffers
+#error                                                                         \
+    "Make sure to build with -Dflatbuffers=gdal_flatbuffers (for example) to avoid potential conflict of flatbuffers"
+#endif
 
 using namespace flatbuffers;
 using namespace FlatGeobuf;
@@ -145,6 +135,9 @@ void RegisterOGRFlatGeobuf()
         "Integer Integer64 Real String Date DateTime Binary");
     poDriver->SetMetadataItem(GDAL_DMD_CREATIONFIELDDATASUBTYPES,
                               "Boolean Int16 Float32");
+    poDriver->SetMetadataItem(GDAL_DMD_CREATION_FIELD_DEFN_FLAGS,
+                              "WidthPrecision Comment AlternativeName");
+
     poDriver->SetMetadataItem(
         GDAL_DS_LAYER_CREATIONOPTIONLIST,
         "<LayerCreationOptionList>"
@@ -152,6 +145,9 @@ void RegisterOGRFlatGeobuf()
         "create a spatial index' default='YES'/>"
         "  <Option name='TEMPORARY_DIR' type='string' description='Directory "
         "where temporary file should be created'/>"
+        "  <Option name='TITLE' type='string' description='Layer title'/>"
+        "  <Option name='DESCRIPTION' type='string' "
+        "description='Layer description'/>"
         "</LayerCreationOptionList>");
     poDriver->SetMetadataItem(
         GDAL_DMD_OPENOPTIONLIST,
@@ -162,6 +158,8 @@ void RegisterOGRFlatGeobuf()
 
     poDriver->SetMetadataItem(GDAL_DCAP_COORDINATE_EPOCH, "YES");
     poDriver->SetMetadataItem(GDAL_DMD_SUPPORTED_SQL_DIALECTS, "OGRSQL SQLITE");
+    poDriver->SetMetadataItem(GDAL_DMD_ALTER_FIELD_DEFN_FLAGS,
+                              "Name WidthPrecision AlternativeName Comment");
 
     poDriver->pfnOpen = OGRFlatGeobufDataset::Open;
     poDriver->pfnCreate = OGRFlatGeobufDataset::Create;
@@ -391,10 +389,10 @@ static CPLString LaunderLayerName(const char *pszLayerName)
     return osRet;
 }
 
-OGRLayer *OGRFlatGeobufDataset::ICreateLayer(const char *pszLayerName,
-                                             OGRSpatialReference *poSpatialRef,
-                                             OGRwkbGeometryType eGType,
-                                             char **papszOptions)
+OGRLayer *
+OGRFlatGeobufDataset::ICreateLayer(const char *pszLayerName,
+                                   const OGRGeomFieldDefn *poGeomFieldDefn,
+                                   CSLConstList papszOptions)
 {
     // Verify we are in update mode.
     if (!m_bCreate)
@@ -414,6 +412,10 @@ OGRLayer *OGRFlatGeobufDataset::ICreateLayer(const char *pszLayerName,
 
         return nullptr;
     }
+
+    const auto eGType = poGeomFieldDefn ? poGeomFieldDefn->GetType() : wkbNone;
+    const auto poSpatialRef =
+        poGeomFieldDefn ? poGeomFieldDefn->GetSpatialRef() : nullptr;
 
     // Verify that the datasource is a directory.
     VSIStatBufL sStatBuf;
@@ -441,7 +443,7 @@ OGRLayer *OGRFlatGeobufDataset::ICreateLayer(const char *pszLayerName,
 
     auto poLayer =
         std::unique_ptr<OGRFlatGeobufLayer>(OGRFlatGeobufLayer::Create(
-            pszLayerName, osFilename, poSpatialRef, eGType,
+            this, pszLayerName, osFilename, poSpatialRef, eGType,
             bCreateSpatialIndexAtClose, papszOptions));
     if (poLayer == nullptr)
         return nullptr;

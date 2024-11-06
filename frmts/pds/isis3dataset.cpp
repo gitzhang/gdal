@@ -17,23 +17,7 @@
  * Copyright (c) 2017, Dmitry Baryshnikov <polimax@mail.ru>
  * Copyright (c) 2017, NextGIS <info@nextgis.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_json.h"
@@ -48,6 +32,8 @@
 #include "rawdataset.h"
 #include "vrtdataset.h"
 #include "cpl_safemaths.hpp"
+#include "pdsdrivercore.h"
+#include "json_utils.h"
 
 // For gethostname()
 #ifdef _WIN32
@@ -72,28 +58,28 @@
 //    *   Isis::Hrs Pixel was saturated during a computation
 
 // 1-byte special pixel values
-const unsigned char NULL1 = 0;
+const unsigned char ISIS3_NULL1 = 0;
 const unsigned char LOW_REPR_SAT1 = 0;
 const unsigned char LOW_INSTR_SAT1 = 0;
 const unsigned char HIGH_INSTR_SAT1 = 255;
 const unsigned char HIGH_REPR_SAT1 = 255;
 
 // 2-byte unsigned special pixel values
-const unsigned short NULLU2 = 0;
+const unsigned short ISIS3_NULLU2 = 0;
 const unsigned short LOW_REPR_SATU2 = 1;
 const unsigned short LOW_INSTR_SATU2 = 2;
 const unsigned short HIGH_INSTR_SATU2 = 65534;
 const unsigned short HIGH_REPR_SATU2 = 65535;
 
 // 2-byte signed special pixel values
-const short NULL2 = -32768;
+const short ISIS3_NULL2 = -32768;
 const short LOW_REPR_SAT2 = -32767;
 const short LOW_INSTR_SAT2 = -32766;
 const short HIGH_INSTR_SAT2 = -32765;
 const short HIGH_REPR_SAT2 = -32764;
 
 // Define 4-byte special pixel values for IEEE floating point
-const float NULL4 = -3.4028226550889045e+38f;            // 0xFF7FFFFB;
+const float ISIS3_NULL4 = -3.4028226550889045e+38f;      // 0xFF7FFFFB;
 const float LOW_REPR_SAT4 = -3.4028228579130005e+38f;    // 0xFF7FFFFC;
 const float LOW_INSTR_SAT4 = -3.4028230607370965e+38f;   // 0xFF7FFFFD;
 const float HIGH_INSTR_SAT4 = -3.4028232635611926e+38f;  // 0xFF7FFFFE;
@@ -211,7 +197,6 @@ class ISIS3Dataset final : public RawDataset
 
     bool GetRawBinaryLayout(GDALDataset::RawBinaryLayout &) override;
 
-    static int Identify(GDALOpenInfo *);
     static GDALDataset *Open(GDALOpenInfo *);
     static GDALDataset *Create(const char *pszFilename, int nXSize, int nYSize,
                                int nBandsIn, GDALDataType eType,
@@ -243,14 +228,21 @@ class ISISTiledBand final : public GDALPamRasterBand
     double m_dfOffset;
     double m_dfScale;
     double m_dfNoData;
+    bool m_bValid = false;
 
   public:
     ISISTiledBand(GDALDataset *poDS, VSILFILE *fpVSIL, int nBand,
                   GDALDataType eDT, int nTileXSize, int nTileYSize,
                   GIntBig nFirstTileOffset, GIntBig nXTileOffset,
                   GIntBig nYTileOffset, int bNativeOrder);
+
     virtual ~ISISTiledBand()
     {
+    }
+
+    bool IsValid() const
+    {
+        return m_bValid;
     }
 
     virtual CPLErr IReadBlock(int, int, void *) override;
@@ -287,6 +279,7 @@ class ISIS3RawRasterBand final : public RawRasterBand
                        vsi_l_offset l_nImgOffset, int l_nPixelOffset,
                        int l_nLineOffset, GDALDataType l_eDataType,
                        int l_bNativeOrder);
+
     virtual ~ISIS3RawRasterBand()
     {
     }
@@ -336,6 +329,7 @@ class ISIS3WrapperRasterBand final : public GDALProxyRasterBand
 
   public:
     explicit ISIS3WrapperRasterBand(GDALRasterBand *poBaseBandIn);
+
     ~ISIS3WrapperRasterBand()
     {
     }
@@ -362,10 +356,12 @@ class ISIS3WrapperRasterBand final : public GDALProxyRasterBand
     {
         return nMaskFlags;
     }
+
     GDALRasterBand *GetMaskBand() override
     {
         return poMask;
     }
+
     void SetMaskBand(GDALRasterBand *poMaskBand);
 };
 
@@ -443,6 +439,7 @@ ISISTiledBand::ISISTiledBand(GDALDataset *poDSIn, VSILFILE *fpVSILIn,
         }
         m_nFirstTileOffset += (nBand - 1) * m_nYTileOffset * l_nBlocksPerColumn;
     }
+    m_bValid = true;
 }
 
 /************************************************************************/
@@ -535,30 +532,6 @@ static void RemapNoData(GDALDataType eDataType, void *pBuffer, int nItems,
     }
 }
 
-/**
- * Get or create CPLJSONObject.
- * @param  oParent Parent CPLJSONObject.
- * @param  osKey  Key name.
- * @return         CPLJSONObject class instance.
- */
-static CPLJSONObject GetOrCreateJSONObject(CPLJSONObject &oParent,
-                                           const std::string &osKey)
-{
-    CPLJSONObject oChild = oParent[osKey];
-    if (oChild.IsValid() && oChild.GetType() != CPLJSONObject::Type::Object)
-    {
-        oParent.Delete(osKey);
-        oChild.Deinit();
-    }
-
-    if (!oChild.IsValid())
-    {
-        oChild = CPLJSONObject();
-        oParent.Add(osKey, oChild);
-    }
-    return oChild;
-}
-
 /************************************************************************/
 /*                             IReadBlock()                             */
 /************************************************************************/
@@ -642,8 +615,7 @@ CPLErr ISISTiledBand::IWriteBlock(int nXBlock, int nYBlock, void *pImage)
 
 void ISISTiledBand::SetMaskBand(GDALRasterBand *poMaskBand)
 {
-    bOwnMask = true;
-    poMask = poMaskBand;
+    poMask.reset(poMaskBand, true);
     nMaskFlags = 0;
 }
 
@@ -813,7 +785,8 @@ CPLErr ISIS3RawRasterBand::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
                         poGDS->m_dfSrcNoData, m_dfNoData);
             CPLErr eErr = RawRasterBand::IRasterIO(
                 eRWFlag, nXOff, nYOff, nXSize, nYSize, pabyTemp, nBufXSize,
-                nBufYSize, eDataType, nDTSize, nDTSize * nBufXSize, psExtraArg);
+                nBufYSize, eDataType, nDTSize,
+                static_cast<GSpacing>(nDTSize) * nBufXSize, psExtraArg);
             VSIFree(pabyTemp);
             return eErr;
         }
@@ -829,8 +802,7 @@ CPLErr ISIS3RawRasterBand::IRasterIO(GDALRWFlag eRWFlag, int nXOff, int nYOff,
 
 void ISIS3RawRasterBand::SetMaskBand(GDALRasterBand *poMaskBand)
 {
-    bOwnMask = true;
-    poMask = poMaskBand;
+    poMask.reset(poMaskBand, true);
     nMaskFlags = 0;
 }
 
@@ -917,8 +889,7 @@ ISIS3WrapperRasterBand::ISIS3WrapperRasterBand(GDALRasterBand *poBaseBandIn)
 
 void ISIS3WrapperRasterBand::SetMaskBand(GDALRasterBand *poMaskBand)
 {
-    bOwnMask = true;
-    poMask = poMaskBand;
+    poMask.reset(poMaskBand, true);
     nMaskFlags = 0;
 }
 
@@ -1155,7 +1126,8 @@ CPLErr ISIS3WrapperRasterBand::IRasterIO(
                         poGDS->m_dfSrcNoData, m_dfNoData);
             CPLErr eErr = GDALProxyRasterBand::IRasterIO(
                 eRWFlag, nXOff, nYOff, nXSize, nYSize, pabyTemp, nBufXSize,
-                nBufYSize, eDataType, nDTSize, nDTSize * nBufXSize, psExtraArg);
+                nBufYSize, eDataType, nDTSize,
+                static_cast<GSpacing>(nDTSize) * nBufXSize, psExtraArg);
             VSIFree(pabyTemp);
             return eErr;
         }
@@ -1243,7 +1215,8 @@ CPLErr ISISMaskBand::IReadBlock(int nXBlock, int nYBlock, void *pImage)
 
     if (m_poBaseBand->RasterIO(GF_Read, nXOff, nYOff, nReqXSize, nReqYSize,
                                m_pBuffer, nReqXSize, nReqYSize, eSrcDT,
-                               nSrcDTSize, nSrcDTSize * nBlockXSize,
+                               nSrcDTSize,
+                               static_cast<GSpacing>(nSrcDTSize) * nBlockXSize,
                                nullptr) != CE_None)
     {
         return CE_Failure;
@@ -1253,27 +1226,27 @@ CPLErr ISISMaskBand::IReadBlock(int nXBlock, int nYBlock, void *pImage)
     if (eSrcDT == GDT_Byte)
     {
         FillMask<GByte>(m_pBuffer, pabyDst, nReqXSize, nReqYSize, nBlockXSize,
-                        NULL1, LOW_REPR_SAT1, LOW_INSTR_SAT1, HIGH_INSTR_SAT1,
-                        HIGH_REPR_SAT1);
+                        ISIS3_NULL1, LOW_REPR_SAT1, LOW_INSTR_SAT1,
+                        HIGH_INSTR_SAT1, HIGH_REPR_SAT1);
     }
     else if (eSrcDT == GDT_UInt16)
     {
         FillMask<GUInt16>(m_pBuffer, pabyDst, nReqXSize, nReqYSize, nBlockXSize,
-                          NULLU2, LOW_REPR_SATU2, LOW_INSTR_SATU2,
+                          ISIS3_NULLU2, LOW_REPR_SATU2, LOW_INSTR_SATU2,
                           HIGH_INSTR_SATU2, HIGH_REPR_SATU2);
     }
     else if (eSrcDT == GDT_Int16)
     {
         FillMask<GInt16>(m_pBuffer, pabyDst, nReqXSize, nReqYSize, nBlockXSize,
-                         NULL2, LOW_REPR_SAT2, LOW_INSTR_SAT2, HIGH_INSTR_SAT2,
-                         HIGH_REPR_SAT2);
+                         ISIS3_NULL2, LOW_REPR_SAT2, LOW_INSTR_SAT2,
+                         HIGH_INSTR_SAT2, HIGH_REPR_SAT2);
     }
     else
     {
         CPLAssert(eSrcDT == GDT_Float32);
         FillMask<float>(m_pBuffer, pabyDst, nReqXSize, nReqYSize, nBlockXSize,
-                        NULL4, LOW_REPR_SAT4, LOW_INSTR_SAT4, HIGH_INSTR_SAT4,
-                        HIGH_REPR_SAT4);
+                        ISIS3_NULL4, LOW_REPR_SAT4, LOW_INSTR_SAT4,
+                        HIGH_INSTR_SAT4, HIGH_REPR_SAT4);
     }
 
     return CE_None;
@@ -1544,19 +1517,6 @@ CPLErr ISIS3Dataset::SetMetadata(char **papszMD, const char *pszDomain)
 }
 
 /************************************************************************/
-/*                              Identify()                              */
-/************************************************************************/
-int ISIS3Dataset::Identify(GDALOpenInfo *poOpenInfo)
-
-{
-    if (poOpenInfo->fpL != nullptr && poOpenInfo->pabyHeader != nullptr &&
-        strstr((const char *)poOpenInfo->pabyHeader, "IsisCube") != nullptr)
-        return TRUE;
-
-    return FALSE;
-}
-
-/************************************************************************/
 /*                        GetRawBinaryLayout()                          */
 /************************************************************************/
 
@@ -1635,19 +1595,18 @@ GDALDataset *ISIS3Dataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     /*      Does this look like a CUBE dataset?                             */
     /* -------------------------------------------------------------------- */
-    if (!Identify(poOpenInfo))
+    if (!ISIS3DriverIdentify(poOpenInfo))
         return nullptr;
 
     /* -------------------------------------------------------------------- */
     /*      Open the file using the large file API.                         */
     /* -------------------------------------------------------------------- */
-    ISIS3Dataset *poDS = new ISIS3Dataset();
+    auto poDS = std::make_unique<ISIS3Dataset>();
 
     if (!poDS->m_oKeywords.Ingest(poOpenInfo->fpL, 0))
     {
         VSIFCloseL(poOpenInfo->fpL);
         poOpenInfo->fpL = nullptr;
-        delete poDS;
         return nullptr;
     }
     poDS->m_oJSonLabel = poDS->m_oKeywords.GetJsonObject();
@@ -1720,14 +1679,13 @@ GDALDataset *ISIS3Dataset::Open(GDALOpenInfo *poOpenInfo)
     /*      What file contains the actual data?                             */
     /* -------------------------------------------------------------------- */
     const char *pszCore = poDS->GetKeyword("IsisCube.Core.^Core");
-    CPLString osQubeFile;
-
-    if (EQUAL(pszCore, ""))
-        osQubeFile = poOpenInfo->pszFilename;
-    else
+    const CPLString osQubeFile(
+        EQUAL(pszCore, "")
+            ? poOpenInfo->pszFilename
+            : CPLFormFilename(CPLGetPath(poOpenInfo->pszFilename), pszCore,
+                              nullptr));
+    if (!EQUAL(pszCore, ""))
     {
-        CPLString osPath = CPLGetPath(poOpenInfo->pszFilename);
-        osQubeFile = CPLFormFilename(osPath, pszCore, nullptr);
         poDS->m_osExternalFilename = osQubeFile;
     }
 
@@ -1759,7 +1717,6 @@ GDALDataset *ISIS3Dataset::Open(GDALOpenInfo *poOpenInfo)
         {
             CPLError(CE_Failure, CPLE_OpenFailed,
                      "Wrong tile dimensions : %d x %d", tileSizeX, tileSizeY);
-            delete poDS;
             return nullptr;
         }
     }
@@ -1767,7 +1724,6 @@ GDALDataset *ISIS3Dataset::Open(GDALOpenInfo *poOpenInfo)
     {
         CPLError(CE_Failure, CPLE_OpenFailed, "%s format not supported.",
                  osFormat.c_str());
-        delete poDS;
         return nullptr;
     }
 
@@ -1785,28 +1741,27 @@ GDALDataset *ISIS3Dataset::Open(GDALOpenInfo *poOpenInfo)
     if (EQUAL(itype, "UnsignedByte"))
     {
         eDataType = GDT_Byte;
-        dfNoData = NULL1;
+        dfNoData = ISIS3_NULL1;
     }
     else if (EQUAL(itype, "UnsignedWord"))
     {
         eDataType = GDT_UInt16;
-        dfNoData = NULLU2;
+        dfNoData = ISIS3_NULLU2;
     }
     else if (EQUAL(itype, "SignedWord"))
     {
         eDataType = GDT_Int16;
-        dfNoData = NULL2;
+        dfNoData = ISIS3_NULL2;
     }
     else if (EQUAL(itype, "Real") || EQUAL(itype, ""))
     {
         eDataType = GDT_Float32;
-        dfNoData = NULL4;
+        dfNoData = ISIS3_NULL4;
     }
     else
     {
         CPLError(CE_Failure, CPLE_OpenFailed, "%s pixel type not supported.",
                  itype);
-        delete poDS;
         return nullptr;
     }
 
@@ -1985,8 +1940,8 @@ GDALDataset *ISIS3Dataset::Open(GDALOpenInfo *poOpenInfo)
         // acknowledged in
         // https://pds-imaging.jpl.nasa.gov/documentation/Cassini_BIDRSIS.PDF in
         // the middle of page 10
-        oProj4String.Printf("+proj=ob_tran +o_proj=eqc +o_lon_p=%.18g "
-                            "+o_lat_p=%.18g +lon_0=%.18g",
+        oProj4String.Printf("+proj=ob_tran +o_proj=eqc +o_lon_p=%.17g "
+                            "+o_lat_p=%.17g +lon_0=%.17g",
                             -poleRotation, 180 - poleLatitude, poleLongitude);
         oSRS.SetFromUserInput(oProj4String);
     }
@@ -2094,7 +2049,7 @@ GDALDataset *ISIS3Dataset::Open(GDALOpenInfo *poOpenInfo)
         }
 
         // translate back into a projection string.
-        poDS->m_oSRS = oSRS;
+        poDS->m_oSRS = std::move(oSRS);
         poDS->m_oSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
     }
 
@@ -2109,7 +2064,6 @@ GDALDataset *ISIS3Dataset::Open(GDALOpenInfo *poOpenInfo)
     if (!GDALCheckDatasetDimensions(nCols, nRows) ||
         !GDALCheckBandCount(nBands, false))
     {
-        delete poDS;
         return nullptr;
     }
 
@@ -2133,14 +2087,12 @@ GDALDataset *ISIS3Dataset::Open(GDALOpenInfo *poOpenInfo)
         if (osQubeFile == poOpenInfo->pszFilename)
         {
             CPLError(CE_Failure, CPLE_AppDefined, "A ^Core file must be set");
-            delete poDS;
             return nullptr;
         }
-        poDS->m_poExternalDS = reinterpret_cast<GDALDataset *>(
-            GDALOpen(osQubeFile, poOpenInfo->eAccess));
+        poDS->m_poExternalDS =
+            GDALDataset::FromHandle(GDALOpen(osQubeFile, poOpenInfo->eAccess));
         if (poDS->m_poExternalDS == nullptr)
         {
-            delete poDS;
             return nullptr;
         }
         if (poDS->m_poExternalDS->GetRasterXSize() != poDS->nRasterXSize ||
@@ -2153,7 +2105,6 @@ GDALDataset *ISIS3Dataset::Open(GDALOpenInfo *poOpenInfo)
                      "%s has incompatible characteristics with the ones "
                      "declared in the label.",
                      osQubeFile.c_str());
-            delete poDS;
             return nullptr;
         }
     }
@@ -2168,7 +2119,6 @@ GDALDataset *ISIS3Dataset::Open(GDALOpenInfo *poOpenInfo)
         {
             CPLError(CE_Failure, CPLE_OpenFailed, "Failed to open %s: %s.",
                      osQubeFile.c_str(), VSIStrerror(errno));
-            delete poDS;
             return nullptr;
         }
 
@@ -2176,8 +2126,8 @@ GDALDataset *ISIS3Dataset::Open(GDALOpenInfo *poOpenInfo)
         // TIFF file
         if (EQUAL(CPLGetExtension(osQubeFile), "tif"))
         {
-            GDALDataset *poTIF_DS = reinterpret_cast<GDALDataset *>(
-                GDALOpen(osQubeFile, GA_ReadOnly));
+            GDALDataset *poTIF_DS =
+                GDALDataset::FromHandle(GDALOpen(osQubeFile, GA_ReadOnly));
             if (poTIF_DS)
             {
                 bool bWarned = false;
@@ -2279,7 +2229,6 @@ GDALDataset *ISIS3Dataset::Open(GDALOpenInfo *poOpenInfo)
         }
         catch (const CPLSafeIntOverflow &)
         {
-            delete poDS;
             return nullptr;
         }
         nBandOffset = static_cast<vsi_l_offset>(nLineOffset) * nRows;
@@ -2417,44 +2366,42 @@ GDALDataset *ISIS3Dataset::Open(GDALOpenInfo *poOpenInfo)
 
     for (int i = 0; i < nBands; i++)
     {
-        GDALRasterBand *poBand = nullptr;
+        GDALRasterBand *poBand;
 
         if (poDS->m_poExternalDS != nullptr)
         {
-            ISIS3WrapperRasterBand *poISISBand = new ISIS3WrapperRasterBand(
+            auto poISISBand = std::make_unique<ISIS3WrapperRasterBand>(
                 poDS->m_poExternalDS->GetRasterBand(i + 1));
-            poBand = poISISBand;
-            poDS->SetBand(i + 1, poBand);
-
-            poISISBand->SetMaskBand(new ISISMaskBand(poISISBand));
+            poISISBand->SetMaskBand(new ISISMaskBand(poISISBand.get()));
+            poDS->SetBand(i + 1, std::move(poISISBand));
+            poBand = poDS->GetRasterBand(i + 1);
         }
         else if (poDS->m_bIsTiled)
         {
-            CPLErrorReset();
-            ISISTiledBand *poISISBand = new ISISTiledBand(
-                poDS, poDS->m_fpImage, i + 1, eDataType, tileSizeX, tileSizeY,
-                nSkipBytes, 0, 0, bNativeOrder);
-            if (CPLGetLastErrorType() != CE_None)
+            auto poISISBand = std::make_unique<ISISTiledBand>(
+                poDS.get(), poDS->m_fpImage, i + 1, eDataType, tileSizeX,
+                tileSizeY, nSkipBytes, 0, 0, bNativeOrder);
+            if (!poISISBand->IsValid())
             {
-                delete poISISBand;
-                delete poDS;
                 return nullptr;
             }
-            poBand = poISISBand;
-            poDS->SetBand(i + 1, poBand);
-
-            poISISBand->SetMaskBand(new ISISMaskBand(poISISBand));
+            poISISBand->SetMaskBand(new ISISMaskBand(poISISBand.get()));
+            poDS->SetBand(i + 1, std::move(poISISBand));
+            poBand = poDS->GetRasterBand(i + 1);
         }
         else
         {
-            ISIS3RawRasterBand *poISISBand = new ISIS3RawRasterBand(
-                poDS, i + 1, poDS->m_fpImage, nSkipBytes + nBandOffset * i,
-                nPixelOffset, nLineOffset, eDataType, bNativeOrder);
-
-            poBand = poISISBand;
-            poDS->SetBand(i + 1, poBand);
-
-            poISISBand->SetMaskBand(new ISISMaskBand(poISISBand));
+            auto poISISBand = std::make_unique<ISIS3RawRasterBand>(
+                poDS.get(), i + 1, poDS->m_fpImage,
+                nSkipBytes + nBandOffset * i, nPixelOffset, nLineOffset,
+                eDataType, bNativeOrder);
+            if (!poISISBand->IsValid())
+            {
+                return nullptr;
+            }
+            poISISBand->SetMaskBand(new ISISMaskBand(poISISBand.get()));
+            poDS->SetBand(i + 1, std::move(poISISBand));
+            poBand = poDS->GetRasterBand(i + 1);
         }
 
         if (i < static_cast<int>(aosBandNames.size()))
@@ -2514,7 +2461,7 @@ GDALDataset *ISIS3Dataset::Open(GDALOpenInfo *poOpenInfo)
         if (oSRS2.importFromESRI(papszLines) == OGRERR_NONE)
         {
             poDS->m_aosAdditionalFiles.AddString(pszPrjFile);
-            poDS->m_oSRS = oSRS2;
+            poDS->m_oSRS = std::move(oSRS2);
             poDS->m_oSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
         }
 
@@ -2563,9 +2510,9 @@ GDALDataset *ISIS3Dataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     /*      Check for overviews.                                            */
     /* -------------------------------------------------------------------- */
-    poDS->oOvManager.Initialize(poDS, poOpenInfo->pszFilename);
+    poDS->oOvManager.Initialize(poDS.get(), poOpenInfo->pszFilename);
 
-    return poDS;
+    return poDS.release();
 }
 
 /************************************************************************/
@@ -3199,7 +3146,7 @@ void ISIS3Dataset::BuildLabel()
                     "!*^PLACEHOLDER_%d_STARTBYTE^*!",
                     static_cast<int>(m_aoNonPixelSections.size()) + 1);
                 oObj.Set("StartByte", osPlaceHolder);
-                oSection.osPlaceHolder = osPlaceHolder;
+                oSection.osPlaceHolder = std::move(osPlaceHolder);
             }
 
             if (!m_osExternalFilename.empty())
@@ -3226,7 +3173,7 @@ void ISIS3Dataset::BuildLabel()
             m_aoNonPixelSections.push_back(oSection);
         }
     }
-    m_oJSonLabel = oLabel;
+    m_oJSonLabel = std::move(oLabel);
 }
 
 /************************************************************************/
@@ -3383,7 +3330,7 @@ void ISIS3Dataset::BuildHistory()
         osHistory += SerializeAsPDL(oHistoryObj);
     }
 
-    m_osHistory = osHistory;
+    m_osHistory = std::move(osHistory);
 }
 
 /************************************************************************/
@@ -3551,7 +3498,8 @@ void ISIS3Dataset::WriteLabel()
                     n = nMaxPerPage;
                 else
                     n = static_cast<int>(nImagePixels - i);
-                if (VSIFWriteL(pabyTemp, n * nDTSize, 1, m_fpImage) != 1)
+                if (VSIFWriteL(pabyTemp, static_cast<size_t>(n) * nDTSize, 1,
+                               m_fpImage) != 1)
                 {
                     CPLError(CE_Failure, CPLE_FileIO,
                              "Cannot initialize imagery to null");
@@ -3654,8 +3602,7 @@ void ISIS3Dataset::WriteLabel()
 
 CPLString ISIS3Dataset::SerializeAsPDL(const CPLJSONObject &oObj)
 {
-    CPLString osTmpFile(
-        CPLSPrintf("/vsimem/isis3_%p", oObj.GetInternalHandle()));
+    const CPLString osTmpFile(VSIMemGenerateHiddenFilename("isis3_pdl"));
     VSILFILE *fpTmp = VSIFOpenL(osTmpFile, "wb+");
     SerializeAsPDL(fpTmp, oObj);
     VSIFCloseL(fpTmp);
@@ -3798,7 +3745,7 @@ void ISIS3Dataset::SerializeAsPDL(VSILFILE *fp, const CPLJSONObject &oObj,
                         }
                         else
                         {
-                            VSIFPrintfL(fp, "%s%s%s = %.18g <%s>\n",
+                            VSIFPrintfL(fp, "%s%s%s = %.17g <%s>\n",
                                         osIndentation.c_str(), osKey.c_str(),
                                         osPadding.c_str(), dfVal,
                                         osUnit.c_str());
@@ -3875,7 +3822,7 @@ void ISIS3Dataset::SerializeAsPDL(VSILFILE *fp, const CPLJSONObject &oObj,
             }
             else
             {
-                VSIFPrintfL(fp, "%s%s%s = %.18g\n", osIndentation.c_str(),
+                VSIFPrintfL(fp, "%s%s%s = %.17g\n", osIndentation.c_str(),
                             osKey.c_str(), osPadding.c_str(), dfVal);
             }
         }
@@ -3969,7 +3916,7 @@ void ISIS3Dataset::SerializeAsPDL(VSILFILE *fp, const CPLJSONObject &oObj,
                     }
                     else
                     {
-                        osVal = CPLSPrintf("%.18g", dfVal);
+                        osVal = CPLSPrintf("%.17g", dfVal);
                     }
                     const size_t nValLen = osVal.size();
                     if (nFirstPos < WIDTH && idx > 0 &&
@@ -4034,7 +3981,10 @@ GDALDataset *ISIS3Dataset::Create(const char *pszFilename, int nXSize,
         return nullptr;
     }
 
-    VSILFILE *fp = VSIFOpenExL(pszFilename, "wb", true);
+    const char *pszPermission =
+        VSISupportsRandomWrite(pszFilename, true) ? "wb+" : "wb";
+
+    VSILFILE *fp = VSIFOpenExL(pszFilename, pszPermission, true);
     if (fp == nullptr)
     {
         CPLError(CE_Failure, CPLE_FileIO, "Cannot create %s: %s", pszFilename,
@@ -4042,7 +3992,7 @@ GDALDataset *ISIS3Dataset::Create(const char *pszFilename, int nXSize,
         return nullptr;
     }
     VSILFILE *fpImage = nullptr;
-    CPLString osExternalFilename;
+    std::string osExternalFilename;
     GDALDataset *poExternalDS = nullptr;
     bool bGeoTIFFAsRegularExternal = false;
     if (EQUAL(pszDataLocation, "EXTERNAL"))
@@ -4050,7 +4000,7 @@ GDALDataset *ISIS3Dataset::Create(const char *pszFilename, int nXSize,
         osExternalFilename =
             CSLFetchNameValueDef(papszOptions, "EXTERNAL_FILENAME",
                                  CPLResetExtension(pszFilename, "cub"));
-        fpImage = VSIFOpenExL(osExternalFilename, "wb", true);
+        fpImage = VSIFOpenExL(osExternalFilename.c_str(), pszPermission, true);
         if (fpImage == nullptr)
         {
             CPLError(CE_Failure, CPLE_FileIO, "Cannot create %s: %s",
@@ -4114,7 +4064,7 @@ GDALDataset *ISIS3Dataset::Create(const char *pszFilename, int nXSize,
             }
         }
 
-        poExternalDS = poDrv->Create(osExternalFilename, nXSize, nYSize,
+        poExternalDS = poDrv->Create(osExternalFilename.c_str(), nXSize, nYSize,
                                      nBandsIn, eType, papszGTiffOptions);
         CSLDestroy(papszGTiffOptions);
         if (poExternalDS == nullptr)
@@ -4131,7 +4081,7 @@ GDALDataset *ISIS3Dataset::Create(const char *pszFilename, int nXSize,
     poDS->eAccess = GA_Update;
     poDS->nRasterXSize = nXSize;
     poDS->nRasterYSize = nYSize;
-    poDS->m_osExternalFilename = osExternalFilename;
+    poDS->m_osExternalFilename = std::move(osExternalFilename);
     poDS->m_poExternalDS = poExternalDS;
     poDS->m_bGeoTIFFAsRegularExternal = bGeoTIFFAsRegularExternal;
     if (bGeoTIFFAsRegularExternal)
@@ -4165,12 +4115,12 @@ GDALDataset *ISIS3Dataset::Create(const char *pszFilename, int nXSize,
         poDS->m_osGDALHistory =
             CSLFetchNameValueDef(papszOptions, "GDAL_HISTORY", "");
     }
-    const double dfNoData = (eType == GDT_Byte)     ? NULL1
-                            : (eType == GDT_UInt16) ? NULLU2
+    const double dfNoData = (eType == GDT_Byte)     ? ISIS3_NULL1
+                            : (eType == GDT_UInt16) ? ISIS3_NULLU2
                             : (eType == GDT_Int16)
-                                ? NULL2
+                                ? ISIS3_NULL2
                                 :
-                                /*(eType == GDT_Float32) ?*/ NULL4;
+                                /*(eType == GDT_Float32) ?*/ ISIS3_NULL4;
 
     for (int i = 0; i < nBandsIn; i++)
     {
@@ -4334,95 +4284,13 @@ GDALDataset *ISIS3Dataset::CreateCopy(const char *pszFilename,
 void GDALRegister_ISIS3()
 
 {
-    if (GDALGetDriverByName("ISIS3") != nullptr)
+    if (GDALGetDriverByName(ISIS3_DRIVER_NAME) != nullptr)
         return;
 
     GDALDriver *poDriver = new GDALDriver();
-
-    poDriver->SetDescription("ISIS3");
-    poDriver->SetMetadataItem(GDAL_DCAP_RASTER, "YES");
-    poDriver->SetMetadataItem(GDAL_DMD_LONGNAME,
-                              "USGS Astrogeology ISIS cube (Version 3)");
-    poDriver->SetMetadataItem(GDAL_DMD_HELPTOPIC, "drivers/raster/isis3.html");
-    poDriver->SetMetadataItem(GDAL_DCAP_VIRTUALIO, "YES");
-    poDriver->SetMetadataItem(GDAL_DMD_EXTENSIONS, "lbl cub");
-    poDriver->SetMetadataItem(GDAL_DMD_CREATIONDATATYPES,
-                              "Byte UInt16 Int16 Float32");
-    poDriver->SetMetadataItem(GDAL_DMD_OPENOPTIONLIST, "<OpenOptionList/>");
-    poDriver->SetMetadataItem(
-        GDAL_DMD_CREATIONOPTIONLIST,
-        "<CreationOptionList>"
-        "  <Option name='DATA_LOCATION' type='string-select' "
-        "description='Location of pixel data' default='LABEL'>"
-        "     <Value>LABEL</Value>"
-        "     <Value>EXTERNAL</Value>"
-        "     <Value>GEOTIFF</Value>"
-        "  </Option>"
-        "  <Option name='GEOTIFF_AS_REGULAR_EXTERNAL' type='boolean' "
-        "description='Whether the GeoTIFF file, if uncompressed, should be "
-        "registered as a regular raw file' default='YES'/>"
-        "  <Option name='GEOTIFF_OPTIONS' type='string' "
-        "description='Comma separated list of KEY=VALUE tuples to forward "
-        "to the GeoTIFF driver'/>"
-        "  <Option name='EXTERNAL_FILENAME' type='string' "
-        "description='Override default external filename. "
-        "Only for DATA_LOCATION=EXTERNAL or GEOTIFF'/>"
-        "  <Option name='TILED' type='boolean' "
-        "description='Whether the pixel data should be tiled' default='NO'/>"
-        "  <Option name='BLOCKXSIZE' type='int' "
-        "description='Tile width' default='256'/>"
-        "  <Option name='BLOCKYSIZE' type='int' "
-        "description='Tile height' default='256'/>"
-        "  <Option name='COMMENT' type='string' "
-        "description='Comment to add into the label'/>"
-        "  <Option name='LATITUDE_TYPE' type='string-select' "
-        "description='Value of Mapping.LatitudeType' default='Planetocentric'>"
-        "     <Value>Planetocentric</Value>"
-        "     <Value>Planetographic</Value>"
-        "  </Option>"
-        "  <Option name='LONGITUDE_DIRECTION' type='string-select' "
-        "description='Value of Mapping.LongitudeDirection' "
-        "default='PositiveEast'>"
-        "     <Value>PositiveEast</Value>"
-        "     <Value>PositiveWest</Value>"
-        "  </Option>"
-        "  <Option name='TARGET_NAME' type='string' description='Value of "
-        "Mapping.TargetName'/>"
-        "  <Option name='FORCE_360' type='boolean' "
-        "description='Whether to force longitudes in [0,360] range' "
-        "default='NO'/>"
-        "  <Option name='WRITE_BOUNDING_DEGREES' type='boolean' "
-        "description='Whether to write Min/MaximumLong/Latitude values' "
-        "default='YES'/>"
-        "  <Option name='BOUNDING_DEGREES' type='string' "
-        "description='Manually set bounding box with the syntax "
-        "min_long,min_lat,max_long,max_lat'/>"
-        "  <Option name='USE_SRC_LABEL' type='boolean' "
-        "description='Whether to use source label in ISIS3 to ISIS3 "
-        "conversions' "
-        "default='YES'/>"
-        "  <Option name='USE_SRC_MAPPING' type='boolean' "
-        "description='Whether to use Mapping group from source label in "
-        "ISIS3 to ISIS3 conversions' "
-        "default='NO'/>"
-        "  <Option name='USE_SRC_HISTORY' type='boolean' "
-        "description='Whether to use content pointed by the History object in "
-        "ISIS3 to ISIS3 conversions' "
-        "default='YES'/>"
-        "  <Option name='ADD_GDAL_HISTORY' type='boolean' "
-        "description='Whether to add GDAL specific history in the content "
-        "pointed "
-        "by the History object in "
-        "ISIS3 to ISIS3 conversions' "
-        "default='YES'/>"
-        "  <Option name='GDAL_HISTORY' type='string' "
-        "description='Manually defined GDAL history. Must be formatted as "
-        "ISIS3 "
-        "PDL. If not specified, it is automatically composed.'/>"
-        "</CreationOptionList>");
+    ISIS3DriverSetCommonMetadata(poDriver);
 
     poDriver->pfnOpen = ISIS3Dataset::Open;
-    poDriver->pfnIdentify = ISIS3Dataset::Identify;
     poDriver->pfnCreate = ISIS3Dataset::Create;
     poDriver->pfnCreateCopy = ISIS3Dataset::CreateCopy;
 

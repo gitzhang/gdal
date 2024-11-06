@@ -7,23 +7,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Copyright (c) 2006, Mateusz Loskot <mateusz@loskot.net>
 /*
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "gdal_unit_test.h"
@@ -494,12 +478,151 @@ TEST_F(test_osr, importFromPanorama)
     oSRS.importFromPanorama(35, 0, 9, nullptr);
     EXPECT_EQ(GetEPSGCode(oSRS), 3395);
 
-    double adfPrjParams[8] = {0.0,    0.0,      0.0, 0.680678,
-                              0.9996, 500000.0, 0.0, 0.0};
-    oSRS.importFromPanorama(17, 2, 9, adfPrjParams);
-    EXPECT_EQ(GetEPSGCode(oSRS), 32637);
+    constexpr double TO_RADIANS = 0.017453292519943295769;
+    {
+        // WGS 84 / UTM zone 1
+        double adfPrjParams[8] = {0.0,    0.0,      0.0, -177 * TO_RADIANS,
+                                  0.9996, 500000.0, 0.0, 0.0};
+        oSRS.importFromPanorama(17, 2, 9, adfPrjParams);
+        EXPECT_EQ(GetEPSGCode(oSRS), 32601);
 
-    oSRS.importFromPanorama(17, 2, 9, adfPrjParams, FALSE);
-    EXPECT_EQ(GetEPSGCode(oSRS), 32737);
+        oSRS.importFromPanorama(17, 2, 9, adfPrjParams, FALSE);
+        EXPECT_EQ(GetEPSGCode(oSRS), 32701);
+    }
+    {
+        // WGS 84 / UTM zone 37
+        double adfPrjParams[8] = {0.0,    0.0,      0.0, 39 * TO_RADIANS,
+                                  0.9996, 500000.0, 0.0, 0.0};
+        oSRS.importFromPanorama(17, 2, 9, adfPrjParams);
+        EXPECT_EQ(GetEPSGCode(oSRS), 32637);
+
+        oSRS.importFromPanorama(17, 2, 9, adfPrjParams, FALSE);
+        EXPECT_EQ(GetEPSGCode(oSRS), 32737);
+    }
+    {
+        // Pulkovo 1942 / Gauss-Kruger zone 4
+        double adfPrjParams[8] = {0.0, 0.0,       0.0, 21 * TO_RADIANS,
+                                  1.0, 4500000.0, 0.0, 0.0};
+        oSRS.importFromPanorama(1, 1, 1, adfPrjParams);
+        EXPECT_EQ(GetEPSGCode(oSRS), 28404);
+        oSRS.importFromPanorama(1, 0, 0, adfPrjParams);
+        EXPECT_EQ(GetEPSGCode(oSRS), 28404);
+        adfPrjParams[7] = 4;
+        oSRS.importFromPanorama(1, 1, 1, adfPrjParams);
+        EXPECT_EQ(GetEPSGCode(oSRS), 28404);
+    }
+    {
+        // Pulkovo 1942 / Gauss-Kruger zone 31
+        double adfPrjParams[8] = {0.0, 0.0,        0.0, -177 * TO_RADIANS,
+                                  1.0, 31500000.0, 0.0, 0.0};
+        oSRS.importFromPanorama(1, 1, 1, adfPrjParams);
+        EXPECT_EQ(GetEPSGCode(oSRS), 28431);
+        oSRS.importFromPanorama(1, 0, 0, adfPrjParams);
+        EXPECT_EQ(GetEPSGCode(oSRS), 28431);
+        adfPrjParams[7] = 31;
+        oSRS.importFromPanorama(1, 1, 1, adfPrjParams);
+        EXPECT_EQ(GetEPSGCode(oSRS), 28431);
+    }
+    {
+        // Invalid data
+        double adfPrjParams[8] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+        oSRS.importFromPanorama(0, 0, 0, adfPrjParams);
+        EXPECT_EQ(oSRS.IsLocal(), true);
+        EXPECT_EQ(GetEPSGCode(oSRS), 0);
+    }
+}
+
+// Test exportToPanorama
+TEST_F(test_osr, exportToPanorama)
+{
+    constexpr double RAD = 0.017453292519943295769;
+    constexpr double EPS = 1e-12;
+
+    {
+        OGRSpatialReference oSRS;
+        oSRS.importFromEPSG(32601);  // WGS 84 / UTM zone 1N
+        EXPECT_EQ(GetEPSGCode(oSRS), 32601);
+
+        long iProjSys = 0;
+        long iDatum = 0;
+        long iEllips = 0;
+        long iZone = 0;
+        double adfParams[7] = {0};
+        oSRS.exportToPanorama(&iProjSys, &iDatum, &iEllips, &iZone, adfParams);
+        EXPECT_EQ(iProjSys, 17);
+        EXPECT_EQ(iDatum, 6);
+        EXPECT_EQ(iEllips, 9);
+        EXPECT_EQ(iZone, 1);
+        EXPECT_NEAR(adfParams[2], 0.0, EPS);         //latitude_of_origin
+        EXPECT_NEAR(adfParams[3], -177 * RAD, EPS);  //central_meridian
+        EXPECT_NEAR(adfParams[4], 0.9996, EPS);      //scale_factor
+        EXPECT_NEAR(adfParams[5], 500000, EPS);      //false_easting
+        EXPECT_NEAR(adfParams[6], 0, EPS);           //false_northing
+    }
+
+    {
+        OGRSpatialReference oSRS;
+        oSRS.importFromEPSG(32660);  // WGS 84 / UTM zone 1N
+        EXPECT_EQ(GetEPSGCode(oSRS), 32660);
+
+        long iProjSys = 0;
+        long iDatum = 0;
+        long iEllips = 0;
+        long iZone = 0;
+        double adfParams[7] = {0};
+        oSRS.exportToPanorama(&iProjSys, &iDatum, &iEllips, &iZone, adfParams);
+        EXPECT_EQ(iProjSys, 17);
+        EXPECT_EQ(iDatum, 6);
+        EXPECT_EQ(iEllips, 9);
+        EXPECT_EQ(iZone, 60);
+        EXPECT_NEAR(adfParams[2], 0.0, EPS);        //latitude_of_origin
+        EXPECT_NEAR(adfParams[3], 177 * RAD, EPS);  //central_meridian
+        EXPECT_NEAR(adfParams[4], 0.9996, EPS);     //scale_factor
+        EXPECT_NEAR(adfParams[5], 500000, EPS);     //false_easting
+        EXPECT_NEAR(adfParams[6], 0, EPS);          //false_northing
+    }
+
+    {
+        OGRSpatialReference oSRS;
+        oSRS.importFromEPSG(28404);  // Pulkovo 1942 / Gauss-Kruger zone 4
+        EXPECT_EQ(GetEPSGCode(oSRS), 28404);
+
+        long iProjSys = 0;
+        long iDatum = 0;
+        long iEllips = 0;
+        long iZone = 0;
+        double adfParams[7] = {0};
+        oSRS.exportToPanorama(&iProjSys, &iDatum, &iEllips, &iZone, adfParams);
+        EXPECT_EQ(iProjSys, 1);
+        EXPECT_EQ(iDatum, 1);
+        EXPECT_EQ(iEllips, 1);
+        EXPECT_EQ(iZone, 4);
+        EXPECT_NEAR(adfParams[2], 0.0, EPS);       //latitude_of_origin
+        EXPECT_NEAR(adfParams[3], 21 * RAD, EPS);  //central_meridian
+        EXPECT_NEAR(adfParams[4], 1.0, EPS);       //scale_factor
+        EXPECT_NEAR(adfParams[5], 4500000, EPS);   //false_easting
+        EXPECT_NEAR(adfParams[6], 0, EPS);         //false_northing
+    }
+    {
+        OGRSpatialReference oSRS;
+        oSRS.importFromEPSG(28431);  // Pulkovo 1942 / Gauss-Kruger zone 31
+        EXPECT_EQ(GetEPSGCode(oSRS), 28431);
+
+        long iProjSys = 0;
+        long iDatum = 0;
+        long iEllips = 0;
+        long iZone = 0;
+        double adfParams[7] = {0};
+        oSRS.exportToPanorama(&iProjSys, &iDatum, &iEllips, &iZone, adfParams);
+        EXPECT_EQ(iProjSys, 1);
+        EXPECT_EQ(iDatum, 1);
+        EXPECT_EQ(iEllips, 1);
+        EXPECT_EQ(iZone, 31);
+        EXPECT_NEAR(adfParams[2], 0.0, EPS);         //latitude_of_origin
+        EXPECT_NEAR(adfParams[3], -177 * RAD, EPS);  //central_meridian
+        EXPECT_NEAR(adfParams[4], 1.0, EPS);         //scale_factor
+        EXPECT_NEAR(adfParams[5], 31500000, EPS);    //false_easting
+        EXPECT_NEAR(adfParams[6], 0, EPS);           //false_northing
+    }
 }
 }  // namespace

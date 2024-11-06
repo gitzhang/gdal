@@ -10,23 +10,7 @@
  * Copyright (c) 2017, Dmitry Baryshnikov, <polimax@mail.ru>
  * Copyright (c) 2017, NextGIS, <info@nextgis.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_md5.h"
@@ -116,7 +100,7 @@ class GDALWMSFileCache : public GDALWMSCacheImpl
     virtual GDALDataset *GetDataset(const char *pszKey,
                                     char **papszOpenOptions) const override
     {
-        return reinterpret_cast<GDALDataset *>(GDALOpenEx(
+        return GDALDataset::FromHandle(GDALOpenEx(
             GetFilePath(pszKey),
             GDAL_OF_RASTER | GDAL_OF_READONLY | GDAL_OF_VERBOSE_ERROR, nullptr,
             papszOpenOptions, nullptr));
@@ -222,11 +206,7 @@ class GDALWMSFileCache : public GDALWMSCacheImpl
 // GDALWMSCache
 //------------------------------------------------------------------------------
 
-GDALWMSCache::GDALWMSCache()
-    : m_osCachePath("./gdalwmscache"), m_bIsCleanThreadRunning(false),
-      m_nCleanThreadLastRunTime(0), m_poCache(nullptr), m_hThread(nullptr)
-{
-}
+GDALWMSCache::GDALWMSCache() = default;
 
 GDALWMSCache::~GDALWMSCache()
 {
@@ -237,24 +217,84 @@ GDALWMSCache::~GDALWMSCache()
 
 CPLErr GDALWMSCache::Initialize(const char *pszUrl, CPLXMLNode *pConfig)
 {
-    const char *pszXmlCachePath = CPLGetXMLValue(pConfig, "Path", nullptr);
-    const char *pszUserCachePath =
-        CPLGetConfigOption("GDAL_DEFAULT_WMS_CACHE_PATH", nullptr);
-    if (pszXmlCachePath != nullptr)
+    const auto NullifyIfEmpty = [](const char *pszStr)
+    { return pszStr && pszStr[0] != 0 ? pszStr : nullptr; };
+
+    if (const char *pszXmlCachePath =
+            NullifyIfEmpty(CPLGetXMLValue(pConfig, "Path", nullptr)))
     {
         m_osCachePath = pszXmlCachePath;
     }
-    else if (pszUserCachePath != nullptr)
+    else if (const char *pszUserCachePath = NullifyIfEmpty(
+                 CPLGetConfigOption("GDAL_DEFAULT_WMS_CACHE_PATH", nullptr)))
     {
         m_osCachePath = pszUserCachePath;
+    }
+    else if (const char *pszXDG_CACHE_HOME =
+                 NullifyIfEmpty(CPLGetConfigOption("XDG_CACHE_HOME", nullptr)))
+    {
+        m_osCachePath =
+            CPLFormFilename(pszXDG_CACHE_HOME, "gdalwmscache", nullptr);
+    }
+    else
+    {
+#ifdef _WIN32
+        const char *pszHome =
+            NullifyIfEmpty(CPLGetConfigOption("USERPROFILE", nullptr));
+#else
+        const char *pszHome =
+            NullifyIfEmpty(CPLGetConfigOption("HOME", nullptr));
+#endif
+        if (pszHome)
+        {
+            m_osCachePath =
+                CPLFormFilename(CPLFormFilename(pszHome, ".cache", nullptr),
+                                "gdalwmscache", nullptr);
+        }
+        else
+        {
+            const char *pszDir =
+                NullifyIfEmpty(CPLGetConfigOption("CPL_TMPDIR", nullptr));
+
+            if (!pszDir)
+                pszDir = NullifyIfEmpty(CPLGetConfigOption("TMPDIR", nullptr));
+
+            if (!pszDir)
+                pszDir = NullifyIfEmpty(CPLGetConfigOption("TEMP", nullptr));
+
+            if (!pszDir)
+                pszDir = ".";
+
+            const char *pszUsername =
+                NullifyIfEmpty(CPLGetConfigOption("USERNAME", nullptr));
+            if (!pszUsername)
+                pszUsername =
+                    NullifyIfEmpty(CPLGetConfigOption("USER", nullptr));
+
+            if (pszUsername)
+            {
+                m_osCachePath = CPLFormFilename(
+                    pszDir, CPLSPrintf("gdalwmscache_%s", pszUsername),
+                    nullptr);
+            }
+            else
+            {
+                m_osCachePath = CPLFormFilename(
+                    pszDir,
+                    CPLSPrintf("gdalwmscache_%s",
+                               CPLMD5String(pszUrl ? pszUrl : "")),
+                    nullptr);
+            }
+        }
     }
 
     // Separate folder for each unique dataset url
     if (CPLTestBool(CPLGetXMLValue(pConfig, "Unique", "True")))
     {
-        m_osCachePath =
-            CPLFormFilename(m_osCachePath, CPLMD5String(pszUrl), nullptr);
+        m_osCachePath = CPLFormFilename(
+            m_osCachePath, CPLMD5String(pszUrl ? pszUrl : ""), nullptr);
     }
+    CPLDebug("WMS", "Using %s for cache", m_osCachePath.c_str());
 
     // TODO: Add sqlite db cache type
     const char *pszType = CPLGetXMLValue(pConfig, "Type", "file");

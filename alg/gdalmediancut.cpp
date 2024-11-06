@@ -9,23 +9,7 @@
  * Copyright (c) 2001, Frank Warmerdam
  * Copyright (c) 2007-2010, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ******************************************************************************
  *
  * This code was based on the tiffmedian.c code from libtiff (www.libtiff.org)
@@ -53,18 +37,20 @@
 #include "gdal.h"
 #include "gdal_priv.h"
 
-CPL_CVSID("$Id$")
-
 template <typename T> static T *HISTOGRAM(T *h, int n, int r, int g, int b)
 {
     const int index = (r * n + g) * n + b;
     return &h[index];
 }
 
+#ifndef MAKE_COLOR_CODE_defined
+#define MAKE_COLOR_CODE_defined
+
 static int MAKE_COLOR_CODE(int r, int g, int b)
 {
-    return r + g * 256 + b * 256 * 256;
+    return r | (g << 8) | (b << 16);
 }
+#endif
 
 // NOTE: If changing the size of this structure, edit
 // MEDIAN_CUT_AND_DITHER_BUFFER_SIZE_65536 in gdal_alg_priv.h and take into
@@ -169,10 +155,14 @@ extern "C" int CPL_STDCALL GDALComputeMedianCutPCT(
     }
 }
 
+#ifndef IsColorCodeSet_defined
+#define IsColorCodeSet_defined
+
 static inline bool IsColorCodeSet(GUInt32 nColorCode)
 {
     return (nColorCode >> 31) == 0;
 }
+#endif
 
 static inline int FindColorCount(const HashHistogram *psHashHistogram,
                                  GUInt32 nColorCode)
@@ -355,6 +345,7 @@ int GDALComputeMedianCutPCTInternal(
     }
 
     const int nCLevels = 1 << nBits;
+    const int nCLevelsCube = nCLevels * nCLevels * nCLevels;
     T *histogram = nullptr;
     HashHistogram *psHashHistogram = nullptr;
     if (panHistogram)
@@ -372,13 +363,13 @@ int GDALComputeMedianCutPCTInternal(
         else
         {
             histogram = panHistogram;
-            memset(histogram, 0, nCLevels * nCLevels * nCLevels * sizeof(T));
+            memset(histogram, 0, nCLevelsCube * sizeof(T));
         }
     }
     else
     {
-        histogram = static_cast<T *>(
-            VSI_CALLOC_VERBOSE(nCLevels * nCLevels * nCLevels, sizeof(T)));
+        histogram =
+            static_cast<T *>(VSI_CALLOC_VERBOSE(nCLevelsCube, sizeof(T)));
         if (histogram == nullptr)
         {
             return CE_Failure;
@@ -781,6 +772,7 @@ static void splitbox(Colorbox *ptr, const T *histogram,
     T hist2[256] = {};
     int first = 0;
     int last = 0;
+
     enum
     {
         RED,

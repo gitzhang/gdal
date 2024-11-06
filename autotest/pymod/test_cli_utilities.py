@@ -9,23 +9,7 @@
 ###############################################################################
 # Copyright (c) 2008-2010, Even Rouault <even dot rouault at spatialys.com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 import os
@@ -42,45 +26,29 @@ cli_exe_path = {}
 def get_cli_utility_path_internal(cli_utility_name):
 
     if sys.platform == "win32":
-        cli_utility_name = cli_utility_name + ".exe"
+        cli_utility_name += ".exe"
 
-    # First try : in the apps directory of the GDAL source tree
-    # This is the case for the buildbot directory tree
+    build_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+
     try:
-        cli_utility_path = os.path.join(
-            os.getcwd(), "..", "..", "gdal", "apps", cli_utility_name
-        )
+        cli_utility_path = os.path.join(build_dir, "apps", cli_utility_name)
         if sys.platform == "win32":
             cli_utility_path = cli_utility_path.replace("\\", "/")
         if os.path.isfile(cli_utility_path):
             ret = gdaltest.runexternal(cli_utility_path + " --utility_version")
 
-            if ret.find("GDAL") != -1:
-                return cli_utility_path
-    except OSError:
-        pass
-
-    # Second try : the autotest directory is a subdirectory of gdal/ (FrankW's layout)
-    try:
-        cli_utility_path = os.path.join(
-            os.getcwd(), "..", "..", "apps", cli_utility_name
-        )
-        if sys.platform == "win32":
-            cli_utility_path = cli_utility_path.replace("\\", "/")
-        if os.path.isfile(cli_utility_path):
-            ret = gdaltest.runexternal(cli_utility_path + " --utility_version")
-
-            if ret.find("GDAL") != -1:
+            if "GDAL" in ret:
                 return cli_utility_path
     except OSError:
         pass
 
     # Otherwise look up in the system path
+    print(f"Could not find {cli_utility_name} in {build_dir}/apps. Trying with PATH")
     try:
         cli_utility_path = cli_utility_name
         ret = gdaltest.runexternal(cli_utility_path + " --utility_version")
 
-        if ret.find("GDAL") != -1:
+        if "GDAL" in ret:
             return cli_utility_path
     except OSError:
         pass
@@ -114,6 +82,14 @@ def get_gdalinfo_path():
 
 def get_gdalmdiminfo_path():
     return get_cli_utility_path("gdalmdiminfo")
+
+
+###############################################################################
+#
+
+
+def get_gdalmanage_path():
+    return get_cli_utility_path("gdalmanage")
 
 
 ###############################################################################
@@ -232,6 +208,14 @@ def get_gdaldem_path():
 #
 
 
+def get_gdalenhance_path():
+    return get_cli_utility_path("gdalenhance")
+
+
+###############################################################################
+#
+
+
 def get_gdal_rasterize_path():
     return get_cli_utility_path("gdal_rasterize")
 
@@ -290,3 +274,11 @@ def get_gnmanalyse_path():
 
 def get_gdal_viewshed_path():
     return get_cli_utility_path("gdal_viewshed")
+
+
+###############################################################################
+#
+
+
+def get_gdal_footprint_path():
+    return get_cli_utility_path("gdal_footprint")

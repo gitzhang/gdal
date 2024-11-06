@@ -8,23 +8,7 @@
  * Copyright (c) 2005, Frank Warmerdam
  * Copyright (c) 2009, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_port.h"
@@ -54,7 +38,7 @@
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
-#include "ogrgeojsonwriter.h"
+#include "ogrlibjsonutils.h"
 
 /**
  * \class GDALRasterAttributeTable
@@ -290,13 +274,13 @@ CPLErr GDALRasterAttributeTable::ValuesIO(GDALRWFlag eRWFlag, int iField,
 CPLErr CPL_STDCALL GDALRATValuesIOAsString(GDALRasterAttributeTableH hRAT,
                                            GDALRWFlag eRWFlag, int iField,
                                            int iStartRow, int iLength,
-                                           CSLConstList papszStrList)
+                                           char **papszStrList)
 
 {
     VALIDATE_POINTER1(hRAT, "GDALRATValuesIOAsString", CE_Failure);
 
     return GDALRasterAttributeTable::FromHandle(hRAT)->ValuesIO(
-        eRWFlag, iField, iStartRow, iLength, const_cast<char **>(papszStrList));
+        eRWFlag, iField, iStartRow, iLength, papszStrList);
 }
 
 /************************************************************************/
@@ -831,7 +815,7 @@ void *GDALRasterAttributeTable::SerializeJSON() const
  * @param psTree XML tree
  * @return error code.
  */
-CPLErr GDALRasterAttributeTable::XMLInit(CPLXMLNode *psTree,
+CPLErr GDALRasterAttributeTable::XMLInit(const CPLXMLNode *psTree,
                                          const char * /*pszVRTPath*/)
 
 {
@@ -884,7 +868,7 @@ CPLErr GDALRasterAttributeTable::XMLInit(CPLXMLNode *psTree,
     /* -------------------------------------------------------------------- */
     /*      Row data.                                                       */
     /* -------------------------------------------------------------------- */
-    for (CPLXMLNode *psChild = psTree->psChild; psChild != nullptr;
+    for (const CPLXMLNode *psChild = psTree->psChild; psChild != nullptr;
          psChild = psChild->psNext)
     {
         if (psChild->eType == CXT_Element && EQUAL(psChild->pszValue, "Row"))
@@ -2147,7 +2131,7 @@ void GDALDefaultRasterAttributeTable::RemoveStatistics()
                 }
         }
     }
-    aoFields = aoNewFields;
+    aoFields = std::move(aoNewFields);
 }
 
 /************************************************************************/

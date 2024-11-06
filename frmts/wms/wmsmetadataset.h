@@ -8,23 +8,7 @@
  ******************************************************************************
  * Copyright (c) 2011-2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #ifndef WMS_METADATASET_H_INCLUDED
@@ -72,11 +56,13 @@ class GDALWMSMetaDataset final : public GDALPamDataset
                        const char *pszAbstract, const char *pszSRS,
                        const char *pszMinX, const char *pszMinY,
                        const char *pszMaxX, const char *pszMaxY,
-                       CPLString osFormat, CPLString osTransparent);
+                       const std::string &osFormat,
+                       const std::string &osTransparent);
 
     void
-    ExploreLayer(CPLXMLNode *psXML, CPLString osFormat, CPLString osTransparent,
-                 CPLString osPreferredSRS, const char *pszSRS = nullptr,
+    ExploreLayer(CPLXMLNode *psXML, const CPLString &osFormat,
+                 const CPLString &osTransparent,
+                 const CPLString &osPreferredSRS, const char *pszSRS = nullptr,
                  const char *pszMinX = nullptr, const char *pszMinY = nullptr,
                  const char *pszMaxX = nullptr, const char *pszMaxY = nullptr);
 
@@ -90,7 +76,8 @@ class GDALWMSMetaDataset final : public GDALPamDataset
 
     // WMS-C only
     void AddWMSCSubDataset(WMSCTileSetDesc &oWMSCTileSetDesc,
-                           const char *pszTitle, CPLString osTransparent);
+                           const char *pszTitle,
+                           const CPLString &osTransparent);
 
     // WMS-C only
     void ParseWMSCTileSets(CPLXMLNode *psXML);
@@ -102,10 +89,11 @@ class GDALWMSMetaDataset final : public GDALPamDataset
     virtual char **GetMetadataDomainList() override;
     virtual char **GetMetadata(const char *pszDomain = "") override;
 
-    static GDALDataset *AnalyzeGetCapabilities(CPLXMLNode *psXML,
-                                               CPLString osFormat = "",
-                                               CPLString osTransparent = "",
-                                               CPLString osPreferredSRS = "");
+    static GDALDataset *
+    AnalyzeGetCapabilities(CPLXMLNode *psXML,
+                           const std::string &osFormat = std::string(),
+                           const std::string &osTransparent = std::string(),
+                           const std::string &osPreferredSRS = std::string());
     static GDALDataset *AnalyzeTileMapService(CPLXMLNode *psXML);
 
     static GDALDataset *DownloadGetCapabilities(GDALOpenInfo *poOpenInfo);

@@ -8,23 +8,7 @@
  ******************************************************************************
  * Copyright (c) 2008-2014,2022 Antonio Valentino <antonio.valentino@tiscali.it>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  *****************************************************************************/
 
 #include <cmath>
@@ -1471,6 +1455,165 @@ static CPLErr ScalePixelFunc(void **papoSources, int nSources, void *pData,
     return CE_None;
 }
 
+static CPLErr NormDiffPixelFunc(void **papoSources, int nSources, void *pData,
+                                int nXSize, int nYSize, GDALDataType eSrcType,
+                                GDALDataType eBufType, int nPixelSpace,
+                                int nLineSpace)
+{
+    /* ---- Init ---- */
+    if (nSources != 2)
+        return CE_Failure;
+
+    if (GDALDataTypeIsComplex(eSrcType))
+    {
+        CPLError(CE_Failure, CPLE_AppDefined,
+                 "norm_diff cannot by applied to complex data types");
+        return CE_Failure;
+    }
+
+    /* ---- Set pixels ---- */
+    size_t ii = 0;
+    for (int iLine = 0; iLine < nYSize; ++iLine)
+    {
+        for (int iCol = 0; iCol < nXSize; ++iCol, ++ii)
+        {
+            const double dfLeftVal = GetSrcVal(papoSources[0], eSrcType, ii);
+            const double dfRightVal = GetSrcVal(papoSources[1], eSrcType, ii);
+
+            const double dfDenom = (dfLeftVal + dfRightVal);
+
+            const double dfPixVal =
+                dfDenom == 0 ? std::numeric_limits<double>::infinity()
+                             : (dfLeftVal - dfRightVal) / dfDenom;
+
+            GDALCopyWords(&dfPixVal, GDT_Float64, 0,
+                          static_cast<GByte *>(pData) +
+                              static_cast<GSpacing>(nLineSpace) * iLine +
+                              iCol * nPixelSpace,
+                          eBufType, nPixelSpace, 1);
+        }
+    }
+
+    /* ---- Return success ---- */
+    return CE_None;
+}  // NormDiffPixelFunc
+
+/************************************************************************/
+/*                   pszMinMaxFuncMetadataNodata                        */
+/************************************************************************/
+
+static const char pszMinMaxFuncMetadataNodata[] =
+    "<PixelFunctionArgumentsList>"
+    "   <Argument type='builtin' value='NoData' optional='true' />"
+    "   <Argument name='propagateNoData' description='Whether the output value "
+    "should be NoData as as soon as one source is NoData' type='boolean' "
+    "default='false' />"
+    "</PixelFunctionArgumentsList>";
+
+template <class Comparator>
+static CPLErr MinOrMaxPixelFunc(void **papoSources, int nSources, void *pData,
+                                int nXSize, int nYSize, GDALDataType eSrcType,
+                                GDALDataType eBufType, int nPixelSpace,
+                                int nLineSpace, CSLConstList papszArgs)
+{
+    /* ---- Init ---- */
+    if (nSources < 2)
+        return CE_Failure;
+
+    if (GDALDataTypeIsComplex(eSrcType))
+    {
+        CPLError(CE_Failure, CPLE_AppDefined,
+                 "Complex data type not supported for min/max().");
+        return CE_Failure;
+    }
+
+    double dfNoData = std::numeric_limits<double>::quiet_NaN();
+    if (FetchDoubleArg(papszArgs, "NoData", &dfNoData, &dfNoData) != CE_None)
+        return CE_Failure;
+    const bool bPropagateNoData = CPLTestBool(
+        CSLFetchNameValueDef(papszArgs, "propagateNoData", "false"));
+
+    /* ---- Set pixels ---- */
+    size_t ii = 0;
+    for (int iLine = 0; iLine < nYSize; ++iLine)
+    {
+        for (int iCol = 0; iCol < nXSize; ++iCol, ++ii)
+        {
+            double dfRes = std::numeric_limits<double>::quiet_NaN();
+
+            for (int iSrc = 0; iSrc < nSources; ++iSrc)
+            {
+                const double dfVal = GetSrcVal(papoSources[iSrc], eSrcType, ii);
+
+                if (std::isnan(dfVal) || dfVal == dfNoData)
+                {
+                    if (bPropagateNoData)
+                    {
+                        dfRes = dfNoData;
+                        break;
+                    }
+                }
+                else if (Comparator::compare(dfVal, dfRes))
+                {
+                    dfRes = dfVal;
+                }
+            }
+
+            if (!bPropagateNoData && std::isnan(dfRes))
+            {
+                dfRes = dfNoData;
+            }
+
+            GDALCopyWords(&dfRes, GDT_Float64, 0,
+                          static_cast<GByte *>(pData) +
+                              static_cast<GSpacing>(nLineSpace) * iLine +
+                              iCol * nPixelSpace,
+                          eBufType, nPixelSpace, 1);
+        }
+    }
+
+    /* ---- Return success ---- */
+    return CE_None;
+} /* MinOrMaxPixelFunc */
+
+static CPLErr MinPixelFunc(void **papoSources, int nSources, void *pData,
+                           int nXSize, int nYSize, GDALDataType eSrcType,
+                           GDALDataType eBufType, int nPixelSpace,
+                           int nLineSpace, CSLConstList papszArgs)
+{
+    struct Comparator
+    {
+        static bool compare(double x, double resVal)
+        {
+            // Written this way to deal with resVal being NaN
+            return !(x >= resVal);
+        }
+    };
+
+    return MinOrMaxPixelFunc<Comparator>(papoSources, nSources, pData, nXSize,
+                                         nYSize, eSrcType, eBufType,
+                                         nPixelSpace, nLineSpace, papszArgs);
+}
+
+static CPLErr MaxPixelFunc(void **papoSources, int nSources, void *pData,
+                           int nXSize, int nYSize, GDALDataType eSrcType,
+                           GDALDataType eBufType, int nPixelSpace,
+                           int nLineSpace, CSLConstList papszArgs)
+{
+    struct Comparator
+    {
+        static bool compare(double x, double resVal)
+        {
+            // Written this way to deal with resVal being NaN
+            return !(x <= resVal);
+        }
+    };
+
+    return MinOrMaxPixelFunc<Comparator>(papoSources, nSources, pData, nXSize,
+                                         nYSize, eSrcType, eBufType,
+                                         nPixelSpace, nLineSpace, papszArgs);
+}
+
 /************************************************************************/
 /*                     GDALRegisterDefaultPixelFunc()                   */
 /************************************************************************/
@@ -1495,10 +1638,13 @@ static CPLErr ScalePixelFunc(void **papoSources, int nSources, void *pData,
  * - "sum": sum 2 or more raster bands
  * - "diff": computes the difference between 2 raster bands (b1 - b2)
  * - "mul": multiply 2 or more raster bands
- * - "div": divide one rasted band by another (b1 / b2).
- *          Note: no check is performed on zero division
+ * - "div": divide one raster band by another (b1 / b2).
+ * - "min": minimum value of 2 or more raster bands
+ * - "max": maximum value of 2 or more raster bands
+ * - "norm_diff": computes the normalized difference between two raster bands:
+ *                ``(b1 - b2)/(b1 + b2)``.
  * - "cmul": multiply the first band for the complex conjugate of the second
- * - "inv": inverse (1./x). Note: no check is performed on zero division
+ * - "inv": inverse (1./x).
  * - "intensity": computes the intensity Re(x*conj(x)) of a single raster band
  *                (real or complex)
  * - "sqrt": perform the square root of a single raster band (real only)
@@ -1584,6 +1730,10 @@ CPLErr GDALRegisterDefaultPixelFunc()
                                         pszReplaceNoDataPixelFuncMetadata);
     GDALAddDerivedBandPixelFuncWithArgs("scale", ScalePixelFunc,
                                         pszScalePixelFuncMetadata);
-
+    GDALAddDerivedBandPixelFunc("norm_diff", NormDiffPixelFunc);
+    GDALAddDerivedBandPixelFuncWithArgs("min", MinPixelFunc,
+                                        pszMinMaxFuncMetadataNodata);
+    GDALAddDerivedBandPixelFuncWithArgs("max", MaxPixelFunc,
+                                        pszMinMaxFuncMetadataNodata);
     return CE_None;
 }

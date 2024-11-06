@@ -9,23 +9,7 @@
 ###############################################################################
 # Copyright (c) 2016, Even Rouault, <even.rouault at spatialys.com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 import glob
@@ -33,9 +17,16 @@ import glob
 import gdaltest
 import pytest
 
-from osgeo import gdal
+from osgeo import gdal, osr
 
 pytestmark = pytest.mark.require_driver("MRF")
+
+###############################################################################
+@pytest.fixture(autouse=True, scope="module")
+def module_disable_exceptions():
+    with gdaltest.disable_exceptions():
+        yield
+
 
 mrf_tests = (
     ("byte.tif", 4672, [4672], []),
@@ -70,6 +61,10 @@ mrf_tests = (
     ("../../gcore/data/uint32.tif", 4672, [4672], ["COMPRESS=LERC"]),
     ("../../gcore/data/uint32.tif", 4672, [4672], ["COMPRESS=QB3"]),
     ("../../gcore/data/uint32.tif", 4672, [4672], ["COMPRESS=LERC", "OPTIONS=V1:YES"]),
+    ("../../gcore/data/int64.tif", 4672, [4672], ["COMPRESS=DEFLATE"]),
+    ("../../gcore/data/int64.tif", 4672, [4672], ["COMPRESS=ZSTD"]),
+    ("../../gcore/data/int64.tif", 4672, [4672], ["COMPRESS=TIF"]),
+    ("../../gcore/data/int64.tif", 4672, [4672], ["COMPRESS=QB3"]),
     ("float32.tif", 4672, [4672], ["COMPRESS=DEFLATE"]),
     ("float32.tif", 4672, [4672], ["COMPRESS=ZSTD"]),
     ("float32.tif", 4672, [4672], ["COMPRESS=TIF"]),
@@ -142,22 +137,19 @@ mrf_tests = (
     mrf_tests,
     ids=("{0}-{3}".format(*r) for r in mrf_tests),
 )
-def test_mrf(src_filename, chksum, chksum_after_reopening, options):
+def test_mrf(src_filename, chksum, chksum_after_reopening, options, jpeg_version):
 
     mrf_co = gdal.GetDriverByName("MRF").GetMetadataItem("DMD_CREATIONOPTIONLIST")
 
     for comp in "LERC", "ZSTD", "QB3":
         if ("COMPRESS=" + comp) in options and comp not in mrf_co:
-            pytest.skip()
+            pytest.skip(f"COMPRESS={comp} not supported")
 
     if "jpg" in src_filename:
-        import jpeg
-
-        jpeg.test_jpeg_1()
-        if gdaltest.jpeg_version == "9b":
+        if jpeg_version == "9b":
             pytest.skip()
 
-    with gdaltest.error_handler():
+    with gdal.quiet_errors():
         ds = gdal.Open("data/" + src_filename)
     if ds is None:
         pytest.skip()
@@ -176,7 +168,7 @@ def test_mrf(src_filename, chksum, chksum_after_reopening, options):
     for x in ut.options:
         if "OPTIONS:LERC_PREC=" in x:
             check_minmax = False
-    return ut.testCreateCopy(check_minmax=check_minmax)
+    ut.testCreateCopy(check_minmax=check_minmax)
 
 
 def cleanup(base="/vsimem/out."):
@@ -195,6 +187,10 @@ def cleanup(base="/vsimem/out."):
         gdal.Unlink(base + ext)
 
 
+@pytest.mark.skipif(
+    not gdaltest.vrt_has_open_support(),
+    reason="VRT driver open missing",
+)
 def test_mrf_zen_test():
 
     expectedCS = 770
@@ -223,6 +219,30 @@ def test_mrf_zen_test():
         assert cs == expectedCS, (interleave, expectedCS, cs)
         for f in glob.glob("tmp/masked.*"):
             gdal.Unlink(f)
+
+
+def test_mrf_in_tar(tmp_path):
+    import tarfile
+
+    files = tuple("plain." + ext for ext in ("mrf", "idx", "pzp", "mrf.aux.xml"))
+    gdal.Translate(
+        tmp_path / "plain.mrf",
+        "data/byte.tif",
+        format="MRF",
+        creationOptions=["COMPRESS=DEFLATE"],
+    )
+    tarname = tmp_path / "plain.mrf.tar"
+    # the .mrf has to be the first file in the tar, with no path
+    with tarfile.TarFile(tarname, "w", format=tarfile.GNU_FORMAT) as tar:
+        for fn in files:
+            tar.add(tmp_path / fn, arcname=fn)
+    for fn in files:
+        gdal.Unlink(tmp_path / fn)
+    ds = gdal.Open(tarname)
+    cs = ds.GetRasterBand(1).Checksum()
+    ds = None
+    assert cs == 4672
+    gdal.Unlink(tarname)
 
 
 def test_mrf_overview_nnb_fact_2():
@@ -395,7 +415,7 @@ def test_mrf_overview_nnb_implicit_level():
     assert cs == expected_cs
     ds = None
 
-    with gdaltest.error_handler():
+    with gdal.quiet_errors():
         ds = gdal.Open("/vsimem/out.mrf:MRF:L3")
     assert ds is None
 
@@ -421,11 +441,8 @@ def test_mrf_overview_external():
     cleanup()
 
 
+@pytest.mark.require_creation_option("MRF", "LERC")
 def test_mrf_lerc_nodata():
-
-    mrf_co = gdal.GetDriverByName("MRF").GetMetadataItem("DMD_CREATIONOPTIONLIST")
-    if "LERC" not in mrf_co:
-        pytest.skip()
 
     gdal.Translate(
         "/vsimem/out.mrf",
@@ -444,11 +461,8 @@ def test_mrf_lerc_nodata():
     cleanup()
 
 
+@pytest.mark.require_creation_option("MRF", "LERC")
 def test_mrf_lerc_with_huffman():
-
-    mrf_co = gdal.GetDriverByName("MRF").GetMetadataItem("DMD_CREATIONOPTIONLIST")
-    if "LERC" not in mrf_co:
-        pytest.skip()
 
     gdal.Translate(
         "/vsimem/out.mrf",
@@ -466,11 +480,8 @@ def test_mrf_lerc_with_huffman():
     cleanup()
 
 
+@pytest.mark.require_creation_option("MRF", "LERC")
 def test_raw_lerc():
-
-    mrf_co = gdal.GetDriverByName("MRF").GetMetadataItem("DMD_CREATIONOPTIONLIST")
-    if "LERC" not in mrf_co:
-        pytest.skip()
 
     # Defaults to LERC2
     for opt in "OPTIONS=V1:1", None:
@@ -481,7 +492,7 @@ def test_raw_lerc():
             "/vsimem/out.mrf", "data/byte.tif", format="MRF", creationOptions=co
         )
         ds = gdal.Open("/vsimem/out.lrc")
-        with gdaltest.error_handler():
+        with gdal.quiet_errors():
             cs = ds.GetRasterBand(1).Checksum()
         expected_cs = 4819
         assert cs == expected_cs
@@ -491,7 +502,7 @@ def test_raw_lerc():
             ds = gdal.OpenEx(
                 "/vsimem/out.lrc", open_options=["@NDV=100, @datatype=UInt32"]
             )
-            with gdaltest.error_handler():
+            with gdal.quiet_errors():
                 cs = ds.GetRasterBand(1).Checksum()
             print(cs, opt)
             assert cs == 60065
@@ -509,7 +520,7 @@ def test_mrf_cached_source():
         creationOptions=["CACHEDSOURCE=invalid_source", "NOCOPY=TRUE"],
     )
     ds = gdal.Open("/vsimem/out.mrf")
-    with gdaltest.error_handler():
+    with gdal.quiet_errors():
         cs = ds.GetRasterBand(1).Checksum()
     expected_cs = -1
     assert cs == expected_cs
@@ -628,11 +639,26 @@ def test_mrf_versioned():
     assert cs == expected_cs
     ds = None
 
-    with gdaltest.error_handler():
+    with gdal.quiet_errors():
         ds = gdal.Open("/vsimem/out.mrf:MRF:V2")
     assert ds is None
 
     cleanup()
+
+
+def test_mrf_setspatialref():
+
+    filename = "/vsimem/out.mrf"
+    ds = gdal.GetDriverByName("MRF").Create(filename, 1, 1)
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(32631)
+    ds.SetSpatialRef(srs)
+    ds = None
+    gdal.Unlink(filename + ".aux.xml")
+    ds = gdal.Open(filename)
+    assert ds.GetSpatialRef().GetAuthorityCode(None) == "32631"
+    ds = None
+    gdal.GetDriverByName("MRF").Delete(filename)
 
 
 def test_mrf_cleanup():

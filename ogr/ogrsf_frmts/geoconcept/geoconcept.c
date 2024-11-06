@@ -10,23 +10,7 @@
  * Copyright (c) 2007,  Geoconcept and IGN
  * Copyright (c) 2008-2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  **********************************************************************/
 
 #include "cpl_port.h"
@@ -1411,7 +1395,7 @@ static GCExportFileMetadata GCIOAPI_CALL1(*)
         while (isspace((unsigned char)*p))
             p++;
         e = p;
-        while (isalpha(*p))
+        while (isalpha((unsigned char)*p))
             p++;
         *p = '\0';
         SetMetaVersion_GCIO(Meta, CPLStrdup(e));
@@ -1468,7 +1452,7 @@ static GCExportFileMetadata GCIOAPI_CALL1(*)
         while (isspace((unsigned char)*p))
             p++;
         e = p;
-        while (isalpha(*p))
+        while (isalpha((unsigned char)*p))
             p++;
         *p = '\0';
         SetMetaCharset_GCIO(Meta, str2GCCharset_GCIO(e));
@@ -1483,7 +1467,7 @@ static GCExportFileMetadata GCIOAPI_CALL1(*)
             while (isspace((unsigned char)*p))
                 p++;
             e = p;
-            while (isalpha(*p) || *p == '.')
+            while (isalpha((unsigned char)*p) || *p == '.')
                 p++;
             *p = '\0';
             SetMetaUnit_GCIO(Meta, e); /* FIXME : check value ? */
@@ -1529,7 +1513,7 @@ static GCExportFileMetadata GCIOAPI_CALL1(*)
             e = p;
             if (*p == '-')
                 p++; /* allow -1 as SysCoord */
-            while (isdigit(*p))
+            while (isdigit((unsigned char)*p))
                 p++;
             *p = '\0';
             if (sscanf(e, "%d", &v) != 1)
@@ -1551,7 +1535,7 @@ static GCExportFileMetadata GCIOAPI_CALL1(*)
                     e = p;
                     if (*p == '-')
                         p++; /* allow -1 as TimeZone */
-                    while (isdigit(*p))
+                    while (isdigit((unsigned char)*p))
                         p++;
                     *p = '\0';
                     if (sscanf(e, "%d", &z) != 1)
@@ -1727,7 +1711,7 @@ static GCExportFileMetadata GCIOAPI_CALL1(*)
         }
         p = vl[1];
         e = p;
-        while (isdigit(*p))
+        while (isdigit((unsigned char)*p))
             p++;
         *p = '\0';
         if (sscanf(e, "%d", &v) != 1 || v < 1 || v > 4)

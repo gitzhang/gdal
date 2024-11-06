@@ -7,26 +7,11 @@
  ******************************************************************************
  * Copyright (c) 2021, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_json.h"
+#include "cpl_http.h"
 #include "vrtdataset.h"
 #include "ogr_spatialref.h"
 
@@ -80,7 +65,7 @@ class STACITDataset final : public VRTDataset
     bool SetupDataset(GDALOpenInfo *poOpenInfo,
                       const std::string &osSTACITFilename,
                       std::map<std::string, Collection> &oMapCollection);
-    bool
+    void
     SetSubdatasets(const std::string &osFilename,
                    const std::map<std::string, Collection> &oMapCollection);
 
@@ -97,6 +82,7 @@ class STACITDataset final : public VRTDataset
 
 STACITDataset::STACITDataset() : VRTDataset(0, 0)
 {
+    poDriver = nullptr;  // cancel what the VRTDataset did
     SetWritable(false);
 }
 
@@ -107,6 +93,13 @@ STACITDataset::STACITDataset() : VRTDataset(0, 0)
 int STACITDataset::Identify(GDALOpenInfo *poOpenInfo)
 {
     if (STARTS_WITH(poOpenInfo->pszFilename, "STACIT:"))
+    {
+        return true;
+    }
+
+    const bool bIsSingleDriver = poOpenInfo->IsSingleAllowedDriver("STACIT");
+    if (bIsSingleDriver && (STARTS_WITH(poOpenInfo->pszFilename, "http://") ||
+                            STARTS_WITH(poOpenInfo->pszFilename, "https://")))
     {
         return true;
     }
@@ -122,6 +115,14 @@ int STACITDataset::Identify(GDALOpenInfo *poOpenInfo)
         // before the loop.
         const char *pszHeader =
             reinterpret_cast<const char *>(poOpenInfo->pabyHeader);
+        while (*pszHeader != 0 &&
+               std::isspace(static_cast<unsigned char>(*pszHeader)))
+            ++pszHeader;
+        if (bIsSingleDriver)
+        {
+            return pszHeader[0] == '{';
+        }
+
         if (strstr(pszHeader, "\"stac_version\"") != nullptr &&
             strstr(pszHeader, "\"proj:transform\"") != nullptr)
         {
@@ -148,7 +149,7 @@ static std::string SanitizeCRSValue(const std::string &v)
     bool lastWasAlphaNum = true;
     for (char ch : v)
     {
-        if (!isalnum(static_cast<int>(ch)))
+        if (!isalnum(static_cast<unsigned char>(ch)))
         {
             if (lastWasAlphaNum)
                 ret += '_';
@@ -161,7 +162,7 @@ static std::string SanitizeCRSValue(const std::string &v)
         }
     }
     if (!ret.empty() && ret.back() == '_')
-        ret.resize(ret.size() - 1);
+        ret.pop_back();
     return ret;
 }
 
@@ -218,15 +219,8 @@ static void ParseAsset(const CPLJSONObject &jAsset,
     };
 
     auto oProjEPSG = GetAssetOrFeatureProperty("proj:epsg");
-    if (!oProjEPSG.IsValid())
-    {
-        CPLDebug("STACIT",
-                 "Skipping asset %s that lacks the 'proj:epsg' member",
-                 osAssetName.c_str());
-        return;
-    }
     std::string osProjUserString;
-    if (oProjEPSG.GetType() != CPLJSONObject::Type::Null)
+    if (oProjEPSG.IsValid() && oProjEPSG.GetType() != CPLJSONObject::Type::Null)
     {
         osProjUserString = "EPSG:" + oProjEPSG.ToString();
     }
@@ -295,6 +289,10 @@ static void ParseAsset(const CPLJSONObject &jAsset,
         for (const auto &oItem : oProjTransform)
             transform.push_back(oItem.ToDouble());
         CPLAssert(transform.size() == 6 || transform.size() == 9);
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnull-dereference"
+#endif
         if (transform[0] <= 0 || transform[1] != 0 || transform[3] != 0 ||
             transform[4] >= 0 ||
             (transform.size() == 9 &&
@@ -307,6 +305,9 @@ static void ParseAsset(const CPLJSONObject &jAsset,
                 osAssetName.c_str());
             return;
         }
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
     }
 
     if (bIsBBOXValid && bIsShapeValid)
@@ -370,7 +371,7 @@ static void ParseAsset(const CPLJSONObject &jAsset,
     {
         Collection collection;
         collection.osName = osCollection;
-        oMapCollection[osCollection] = collection;
+        oMapCollection[osCollection] = std::move(collection);
     }
     auto &collection = oMapCollection[osCollection];
 
@@ -381,7 +382,7 @@ static void ParseAsset(const CPLJSONObject &jAsset,
         asset.osName = osAssetName;
         asset.eoBands = jAsset.GetArray("eo:bands");
 
-        collection.assets[osAssetName] = asset;
+        collection.assets[osAssetName] = std::move(asset);
     }
     auto &asset = collection.assets[osAssetName];
 
@@ -390,7 +391,7 @@ static void ParseAsset(const CPLJSONObject &jAsset,
     {
         AssetSetByProjection assetByProj;
         assetByProj.osProjUserString = osProjUserString;
-        asset.assets[osProjUserString] = assetByProj;
+        asset.assets[osProjUserString] = std::move(assetByProj);
     }
     auto &assets = asset.assets[osProjUserString];
 
@@ -519,6 +520,16 @@ bool STACITDataset::SetupDataset(
                 osRet += osFilename;
             }
         }
+        else if (STARTS_WITH(osFilename.c_str(), "file://"))
+        {
+            osRet = osFilename.substr(strlen("file://"));
+        }
+        else if (STARTS_WITH(osFilename.c_str(), "s3://"))
+        {
+            osRet = "/vsis3/";
+            osRet += osFilename.substr(strlen("s3://"));
+        }
+
         else
         {
             osRet = osFilename;
@@ -547,6 +558,7 @@ bool STACITDataset::SetupDataset(
               });
 
     // Create VRT bands and add sources
+    bool bAtLeastOneBandHasNoData = false;
     for (int i = 0; i < poItemDS->GetRasterCount(); i++)
     {
         auto poItemBand = poItemDS->GetRasterBand(i + 1);
@@ -556,7 +568,10 @@ bool STACITDataset::SetupDataset(
         int bHasNoData = FALSE;
         const double dfNoData = poItemBand->GetNoDataValue(&bHasNoData);
         if (bHasNoData)
+        {
+            bAtLeastOneBandHasNoData = true;
             poVRTBand->SetNoDataValue(dfNoData);
+        }
 
         const auto eInterp = poItemBand->GetColorInterpretation();
         if (eInterp != GCI_Undefined)
@@ -571,17 +586,13 @@ bool STACITDataset::SetupDataset(
             if (!osBandName.empty())
                 poVRTBand->SetDescription(osBandName.c_str());
 
-            if (eInterp != GCI_Undefined)
+            const auto osCommonName = eoBand["common_name"].ToString();
+            if (!osCommonName.empty())
             {
-                const auto osCommonName = eoBand["common_name"].ToString();
-                if (osCommonName == "red")
-                    poVRTBand->SetColorInterpretation(GCI_RedBand);
-                else if (osCommonName == "green")
-                    poVRTBand->SetColorInterpretation(GCI_GreenBand);
-                else if (osCommonName == "blue")
-                    poVRTBand->SetColorInterpretation(GCI_BlueBand);
-                else if (osCommonName == "alpha")
-                    poVRTBand->SetColorInterpretation(GCI_AlphaBand);
+                const auto eInterpFromCommonName =
+                    GDALGetColorInterpFromSTACCommonName(osCommonName.c_str());
+                if (eInterpFromCommonName != GCI_Undefined)
+                    poVRTBand->SetColorInterpretation(eInterpFromCommonName);
             }
 
             for (const auto &eoBandChild : eoBand.GetChildren())
@@ -624,9 +635,17 @@ bool STACITDataset::SetupDataset(
             }
         }
 
-        const char *apszOptions[] = {"EMIT_ERROR_IF_GEOS_NOT_AVAILABLE=NO",
-                                     nullptr};
-        poVRTBand->RemoveCoveredSources(apszOptions);
+        const char *pszOverlapStrategy =
+            CSLFetchNameValueDef(poOpenInfo->papszOpenOptions,
+                                 "OVERLAP_STRATEGY", "REMOVE_IF_NO_NODATA");
+        if ((EQUAL(pszOverlapStrategy, "REMOVE_IF_NO_NODATA") &&
+             !bAtLeastOneBandHasNoData) ||
+            EQUAL(pszOverlapStrategy, "USE_MOST_RECENT"))
+        {
+            const char *const apszOptions[] = {
+                "EMIT_ERROR_IF_GEOS_NOT_AVAILABLE=NO", nullptr};
+            poVRTBand->RemoveCoveredSources(apszOptions);
+        }
     }
     return true;
 }
@@ -635,7 +654,7 @@ bool STACITDataset::SetupDataset(
 /*                         SetSubdatasets()                             */
 /************************************************************************/
 
-bool STACITDataset::SetSubdatasets(
+void STACITDataset::SetSubdatasets(
     const std::string &osFilename,
     const std::map<std::string, Collection> &oMapCollection)
 {
@@ -685,7 +704,6 @@ bool STACITDataset::SetSubdatasets(
         }
     }
     GDALDataset::SetMetadata(aosSubdatasets.List(), "SUBDATASETS");
-    return true;
 }
 
 /************************************************************************/
@@ -726,7 +744,9 @@ bool STACITDataset::Open(GDALOpenInfo *poOpenInfo)
     GIntBig nMaxItems = CPLAtoGIntBig(CSLFetchNameValueDef(
         poOpenInfo->papszOpenOptions, "MAX_ITEMS", "1000"));
 
-    if (CSLFetchNameValue(poOpenInfo->papszOpenOptions, "MAX_ITEMS") == nullptr)
+    const bool bMaxItemsSpecified =
+        CSLFetchNameValue(poOpenInfo->papszOpenOptions, "MAX_ITEMS") != nullptr;
+    if (!bMaxItemsSpecified)
     {
         // If the URL includes a limit parameter, and it's larger than our
         // default MAX_ITEMS value, then increase the later to the former.
@@ -740,13 +760,70 @@ bool STACITDataset::Open(GDALOpenInfo *poOpenInfo)
     }
 
     auto osCurFilename = osFilename;
+    std::string osMethod = "GET";
+    CPLJSONObject oHeaders;
+    CPLJSONObject oBody;
+    bool bMerge = false;
+    int nLoops = 0;
     do
     {
+        ++nLoops;
+        if (nMaxItems > 0 && nLoops > nMaxItems)
+        {
+            break;
+        }
+
         CPLJSONDocument oDoc;
+
         if (STARTS_WITH(osCurFilename, "http://") ||
             STARTS_WITH(osCurFilename, "https://"))
         {
-            if (!oDoc.LoadUrl(osCurFilename, nullptr))
+            // Cf // Cf https://github.com/radiantearth/stac-api-spec/tree/release/v1.0.0/item-search#pagination
+            CPLStringList aosOptions;
+            if (oBody.IsValid() &&
+                oBody.GetType() == CPLJSONObject::Type::Object)
+            {
+                if (bMerge)
+                    CPLDebug("STACIT",
+                             "Ignoring 'merge' attribute from next link");
+                const std::string osPostContent =
+                    oBody.Format(CPLJSONObject::PrettyFormat::Pretty);
+                aosOptions.SetNameValue("POSTFIELDS", osPostContent.c_str());
+            }
+            aosOptions.SetNameValue("CUSTOMREQUEST", osMethod.c_str());
+            CPLString osHeaders;
+            if (!oHeaders.IsValid() ||
+                oHeaders.GetType() != CPLJSONObject::Type::Object ||
+                oHeaders["Content-Type"].ToString().empty())
+            {
+                osHeaders = "Content-Type: application/json";
+            }
+            if (oHeaders.IsValid() &&
+                oHeaders.GetType() == CPLJSONObject::Type::Object)
+            {
+                for (const auto &obj : oHeaders.GetChildren())
+                {
+                    osHeaders += "\r\n";
+                    osHeaders += obj.GetName();
+                    osHeaders += ": ";
+                    osHeaders += obj.ToString();
+                }
+            }
+            aosOptions.SetNameValue("HEADERS", osHeaders.c_str());
+            CPLHTTPResult *psResult =
+                CPLHTTPFetch(osCurFilename.c_str(), aosOptions.List());
+            if (!psResult)
+                return false;
+            if (!psResult->pabyData)
+            {
+                CPLHTTPDestroyResult(psResult);
+                return false;
+            }
+            const bool bOK = oDoc.LoadMemory(
+                reinterpret_cast<const char *>(psResult->pabyData));
+            // CPLDebug("STACIT", "Response: %s", reinterpret_cast<const char*>(psResult->pabyData));
+            CPLHTTPDestroyResult(psResult);
+            if (!bOK)
                 return false;
         }
         else
@@ -755,16 +832,24 @@ bool STACITDataset::Open(GDALOpenInfo *poOpenInfo)
                 return false;
         }
         const auto oRoot = oDoc.GetRoot();
-        const auto oFeatures = oRoot.GetArray("features");
+        auto oFeatures = oRoot.GetArray("features");
         if (!oFeatures.IsValid())
         {
-            CPLError(CE_Failure, CPLE_AppDefined, "Missing features");
-            return false;
+            if (oRoot.GetString("type") == "Feature")
+            {
+                oFeatures = CPLJSONArray();
+                oFeatures.Add(oRoot);
+            }
+            else
+            {
+                CPLError(CE_Failure, CPLE_AppDefined, "Missing features");
+                return false;
+            }
         }
         for (const auto &oFeature : oFeatures)
         {
             nItemIter++;
-            if (nItemIter > nMaxItems)
+            if (nMaxItems > 0 && nItemIter > nMaxItems)
             {
                 break;
             }
@@ -828,10 +913,9 @@ bool STACITDataset::Open(GDALOpenInfo *poOpenInfo)
                            oMapCollection);
             }
         }
-        if (nItemIter >= nMaxItems)
+        if (nMaxItems > 0 && nItemIter >= nMaxItems)
         {
-            if (CSLFetchNameValue(poOpenInfo->papszOpenOptions, "MAX_ITEMS") ==
-                nullptr)
+            if (!bMaxItemsSpecified)
             {
                 CPLError(CE_Warning, CPLE_AppDefined,
                          "Maximum number of items (" CPL_FRMT_GIB
@@ -849,20 +933,35 @@ bool STACITDataset::Open(GDALOpenInfo *poOpenInfo)
         }
 
         // Follow next link
+        // Cf https://github.com/radiantearth/stac-api-spec/tree/release/v1.0.0/item-search#pagination
         const auto oLinks = oRoot.GetArray("links");
         if (!oLinks.IsValid())
             break;
         std::string osNewFilename;
         for (const auto &oLink : oLinks)
         {
-            if (oLink["rel"].ToString() == "next")
+            const auto osType = oLink["type"].ToString();
+            if (oLink["rel"].ToString() == "next" &&
+                (osType.empty() || osType == "application/geo+json"))
             {
+                osMethod = oLink.GetString("method", "GET");
                 osNewFilename = oLink["href"].ToString();
-                break;
+                oHeaders = oLink["headers"];
+                oBody = oLink["body"];
+                bMerge = oLink.GetBool("merge", false);
+                if (osType == "application/geo+json")
+                {
+                    break;
+                }
             }
         }
-        if (!osNewFilename.empty() && osNewFilename != osCurFilename)
+        if (!osNewFilename.empty() &&
+            (osNewFilename != osCurFilename ||
+             (oBody.IsValid() &&
+              oBody.GetType() == CPLJSONObject::Type::Object)))
+        {
             osCurFilename = osNewFilename;
+        }
         else
             osCurFilename.clear();
     } while (!osCurFilename.empty());
@@ -879,7 +978,8 @@ bool STACITDataset::Open(GDALOpenInfo *poOpenInfo)
     {
         // If there's more than one asset type or more than one SRS, expose
         // subdatasets.
-        return SetSubdatasets(osFilename, oMapCollection);
+        SetSubdatasets(osFilename, oMapCollection);
+        return true;
     }
     else
     {
@@ -895,7 +995,7 @@ GDALDataset *STACITDataset::OpenStatic(GDALOpenInfo *poOpenInfo)
 {
     if (!Identify(poOpenInfo))
         return nullptr;
-    auto poDS = cpl::make_unique<STACITDataset>();
+    auto poDS = std::make_unique<STACITDataset>();
     if (!poDS->Open(poOpenInfo))
         return nullptr;
     return poDS.release();
@@ -936,6 +1036,14 @@ void GDALRegister_STACIT()
         "       <Value>AVERAGE</Value>"
         "       <Value>HIGHEST</Value>"
         "       <Value>LOWEST</Value>"
+        "   </Option>"
+        "   <Option name='OVERLAP_STRATEGY' type='string-select' "
+        "default='REMOVE_IF_NO_NODATA' "
+        "description='Strategy to use when some sources are fully "
+        "covered by others'>"
+        "       <Value>REMOVE_IF_NO_NODATA</Value>"
+        "       <Value>USE_ALL</Value>"
+        "       <Value>USE_MOST_RECENT</Value>"
         "   </Option>"
         "</OpenOptionList>");
 

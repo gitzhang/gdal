@@ -8,30 +8,16 @@
  * Copyright (c) 2010, Tamas Szekeres
  * Copyright (c) 2010-2012, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_conv.h"
 #include "ogr_mssqlspatial.h"
 #include "ogr_p.h"
 
+#include <cmath>
 #include <memory>
+#include <string_view>
 
 #define UNSUPPORTED_OP_READ_ONLY                                               \
     "%s : unsupported operation on a read-only datasource."
@@ -84,8 +70,8 @@ void OGRMSSQLAppendEscaped(CPLODBCStatement *poStatement,
 
 OGRMSSQLSpatialTableLayer::OGRMSSQLSpatialTableLayer(
     OGRMSSQLSpatialDataSource *poDSIn)
+    : OGRMSSQLSpatialLayer(poDSIn)
 {
-    poDS = poDSIn;
     bUseGeometryValidation = CPLTestBool(
         CPLGetConfigOption("MSSQLSPATIAL_USE_GEOMETRY_VALIDATION", "YES"));
 }
@@ -131,7 +117,7 @@ const char *OGRMSSQLSpatialTableLayer::GetName()
 /************************************************************************/
 OGRFeatureDefn *OGRMSSQLSpatialTableLayer::GetLayerDefn()
 {
-    if (poFeatureDefn)
+    if (poFeatureDefn && !bLayerDefnNeedsRefresh)
         return poFeatureDefn;
 
     CPLODBCSession *poSession = poDS->GetSession();
@@ -467,6 +453,26 @@ void OGRMSSQLSpatialTableLayer::DropSpatialIndex()
 }
 
 /************************************************************************/
+/*                     GetBracketEscapedIdentifier()                    */
+/************************************************************************/
+
+static std::string GetBracketEscapedIdentifier(const std::string_view &osStr)
+{
+    std::string osRet("[");
+    osRet.reserve(osStr.size());
+    for (char ch : osStr)
+    {
+        if (ch == ']')
+        {
+            osRet += ch;
+        }
+        osRet += ch;
+    }
+    osRet += ']';
+    return osRet;
+}
+
+/************************************************************************/
 /*                            BuildFields()                             */
 /*                                                                      */
 /*      Build list of fields to fetch, performing any required          */
@@ -484,9 +490,7 @@ CPLString OGRMSSQLSpatialTableLayer::BuildFields()
     if (pszFIDColumn && poFeatureDefn->GetFieldIndex(pszFIDColumn) == -1)
     {
         /* Always get the FID column */
-        osFieldList += "[";
-        osFieldList += pszFIDColumn;
-        osFieldList += "]";
+        osFieldList += GetBracketEscapedIdentifier(pszFIDColumn);
         ++nColumn;
     }
 
@@ -495,29 +499,27 @@ CPLString OGRMSSQLSpatialTableLayer::BuildFields()
         if (nColumn > 0)
             osFieldList += ", ";
 
-        osFieldList += "[";
-        osFieldList += pszGeomColumn;
+        osFieldList += GetBracketEscapedIdentifier(pszGeomColumn);
         if (nGeomColumnType == MSSQLCOLTYPE_GEOMETRY ||
             nGeomColumnType == MSSQLCOLTYPE_GEOGRAPHY)
         {
             if (poDS->GetGeometryFormat() == MSSQLGEOMETRY_WKB)
             {
-                osFieldList += "].STAsBinary() as [";
-                osFieldList += pszGeomColumn;
+                osFieldList += ".STAsBinary() as ";
+                osFieldList += GetBracketEscapedIdentifier(pszGeomColumn);
             }
             else if (poDS->GetGeometryFormat() == MSSQLGEOMETRY_WKT)
             {
-                osFieldList += "].AsTextZM() as [";
-                osFieldList += pszGeomColumn;
+                osFieldList += ".AsTextZM() as ";
+                osFieldList += GetBracketEscapedIdentifier(pszGeomColumn);
             }
             else if (poDS->GetGeometryFormat() == MSSQLGEOMETRY_WKBZM)
             {
                 /* SQL Server 2012 */
-                osFieldList += "].AsBinaryZM() as [";
-                osFieldList += pszGeomColumn;
+                osFieldList += ".AsBinaryZM() as ";
+                osFieldList += GetBracketEscapedIdentifier(pszGeomColumn);
             }
         }
-        osFieldList += "]";
 
         ++nColumn;
     }
@@ -539,9 +541,7 @@ CPLString OGRMSSQLSpatialTableLayer::BuildFields()
             if (nColumn > 0)
                 osFieldList += ", ";
 
-            osFieldList += "[";
-            osFieldList += pszName;
-            osFieldList += "]";
+            osFieldList += GetBracketEscapedIdentifier(pszName);
 
             panFieldOrdinals[i] = nColumn;
 
@@ -578,11 +578,10 @@ OGRMSSQLSpatialTableLayer::BuildStatement(const char *pszColumns)
     CPLODBCStatement *poStatement = new CPLODBCStatement(poDS->GetSession());
     poStatement->Append("select ");
     poStatement->Append(pszColumns);
-    poStatement->Append(" from [");
-    poStatement->Append(pszSchemaName);
-    poStatement->Append("].[");
-    poStatement->Append(pszTableName);
-    poStatement->Append("]");
+    poStatement->Append(" from ");
+    poStatement->Append(GetBracketEscapedIdentifier(pszSchemaName));
+    poStatement->Append(".");
+    poStatement->Append(GetBracketEscapedIdentifier(pszTableName));
 
     /* Append attribute query if we have it */
     if (pszQuery != nullptr)
@@ -594,17 +593,18 @@ OGRMSSQLSpatialTableLayer::BuildStatement(const char *pszColumns)
         if (nGeomColumnType == MSSQLCOLTYPE_GEOMETRY ||
             nGeomColumnType == MSSQLCOLTYPE_GEOGRAPHY)
         {
-            if (!CPLIsInf(m_sFilterEnvelope.MinX) &&
-                !CPLIsInf(m_sFilterEnvelope.MinY) &&
-                !CPLIsInf(m_sFilterEnvelope.MaxX) &&
-                !CPLIsInf(m_sFilterEnvelope.MaxY))
+            if (!std::isinf(m_sFilterEnvelope.MinX) &&
+                !std::isinf(m_sFilterEnvelope.MinY) &&
+                !std::isinf(m_sFilterEnvelope.MaxX) &&
+                !std::isinf(m_sFilterEnvelope.MaxY))
             {
                 if (pszQuery == nullptr)
-                    poStatement->Append(" where");
+                    poStatement->Append(" where ");
                 else
-                    poStatement->Append(" and");
+                    poStatement->Append(" and ");
 
-                poStatement->Appendf(" [%s].STIntersects(", pszGeomColumn);
+                poStatement->Append(GetBracketEscapedIdentifier(pszGeomColumn));
+                poStatement->Append(".STIntersects(");
 
                 if (nGeomColumnType == MSSQLCOLTYPE_GEOGRAPHY)
                     poStatement->Append("geography::");
@@ -711,7 +711,7 @@ OGRErr OGRMSSQLSpatialTableLayer::GetExtent(int iGeomField,
     {
         // Prepare statement
         auto poStatement =
-            cpl::make_unique<CPLODBCStatement>(poDS->GetSession());
+            std::make_unique<CPLODBCStatement>(poDS->GetSession());
 
         if (poDS->sMSSQLVersion.nMajor >= 11)
         {
@@ -933,7 +933,7 @@ OGRErr OGRMSSQLSpatialTableLayer::EndCopy()
 /*                            CreateField()                             */
 /************************************************************************/
 
-OGRErr OGRMSSQLSpatialTableLayer::CreateField(OGRFieldDefn *poFieldIn,
+OGRErr OGRMSSQLSpatialTableLayer::CreateField(const OGRFieldDefn *poFieldIn,
                                               int bApproxOK)
 
 {
@@ -1562,13 +1562,10 @@ OGRErr OGRMSSQLSpatialTableLayer::CreateFeatureBCP(OGRFeature *poFeature)
             poSession->CommitTransaction(); /* commit creating the table */
 
         /* Get the column definitions for this table. */
-        if (poFeatureDefn)
-        {
-            /* need to re-create layer defn */
-            poFeatureDefn->Release();
-            poFeatureDefn = nullptr;
-        }
+        bLayerDefnNeedsRefresh = true;
         GetLayerDefn();
+        bLayerDefnNeedsRefresh = false;
+
         if (!poFeatureDefn)
             return OGRERR_FAILURE;
 
@@ -1818,7 +1815,7 @@ OGRErr OGRMSSQLSpatialTableLayer::CreateFeatureBCP(OGRFeature *poFeature)
                 // Use the SRID specified by the provided feature's geometry, if
                 // its spatial-reference system is known; otherwise, use the
                 // SRID associated with the table
-                OGRSpatialReference *poFeatureSRS =
+                const OGRSpatialReference *poFeatureSRS =
                     poGeom->getSpatialReference();
                 if (poFeatureSRS)
                     nOutgoingSRSId = poDS->FetchSRSId(poFeatureSRS);
@@ -2220,8 +2217,9 @@ OGRErr OGRMSSQLSpatialTableLayer::CreateFeatureBCP(OGRFeature *poFeature)
                         {
                         }
                     }
-                    if (Failed2(bcp_moretext(hDBCBCP, 0, nullptr)))
+                    else
                     {
+                        Failed2(bcp_moretext(hDBCBCP, 0, nullptr));
                     }
                 }
                 else
@@ -2402,7 +2400,8 @@ OGRErr OGRMSSQLSpatialTableLayer::ICreateFeature(OGRFeature *poFeature)
             // Use the SRID specified by the provided feature's geometry, if
             // its spatial-reference system is known; otherwise, use the SRID
             // associated with the table
-            OGRSpatialReference *poFeatureSRS = poGeom->getSpatialReference();
+            const OGRSpatialReference *poFeatureSRS =
+                poGeom->getSpatialReference();
             if (poFeatureSRS)
                 nOutgoingSRSId = poDS->FetchSRSId(poFeatureSRS);
             if (nOutgoingSRSId <= 0)

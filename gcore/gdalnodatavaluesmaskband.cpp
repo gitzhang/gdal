@@ -10,23 +10,7 @@
  ******************************************************************************
  * Copyright (c) 2008-2009, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_port.h"
@@ -153,7 +137,14 @@ CPLErr GDALNoDataValuesMaskBand::IReadBlock(int nXBlockOff, int nYBlockOff,
             eWrkDT = GDT_Float64;
             break;
 
-        default:
+        case GDT_Int64:
+        case GDT_UInt64:
+            // Lossy mapping...
+            eWrkDT = GDT_Float64;
+            break;
+
+        case GDT_Unknown:
+        case GDT_TypeCount:
             CPLAssert(false);
             eWrkDT = GDT_Float64;
             break;
@@ -163,42 +154,37 @@ CPLErr GDALNoDataValuesMaskBand::IReadBlock(int nXBlockOff, int nYBlockOff,
     /*      Read the image data.                                            */
     /* -------------------------------------------------------------------- */
     const int nBands = poDS->GetRasterCount();
+    const int nWrkDTSize = GDALGetDataTypeSizeBytes(eWrkDT);
     GByte *pabySrc = static_cast<GByte *>(VSI_MALLOC3_VERBOSE(
-        nBands * GDALGetDataTypeSizeBytes(eWrkDT), nBlockXSize, nBlockYSize));
+        cpl::fits_on<int>(nBands * nWrkDTSize), nBlockXSize, nBlockYSize));
     if (pabySrc == nullptr)
     {
         return CE_Failure;
     }
 
-    int nXSizeRequest = nBlockXSize;
-    if (nXBlockOff * nBlockXSize + nBlockXSize > nRasterXSize)
-        nXSizeRequest = nRasterXSize - nXBlockOff * nBlockXSize;
-    int nYSizeRequest = nBlockYSize;
-    if (nYBlockOff * nBlockYSize + nBlockYSize > nRasterYSize)
-        nYSizeRequest = nRasterYSize - nYBlockOff * nBlockYSize;
+    int nXSizeRequest = 0;
+    int nYSizeRequest = 0;
+    GetActualBlockSize(nXBlockOff, nYBlockOff, &nXSizeRequest, &nYSizeRequest);
 
     if (nXSizeRequest != nBlockXSize || nYSizeRequest != nBlockYSize)
     {
         // memset the whole buffer to avoid Valgrind warnings in case we can't
         // fetch a full block.
         memset(pabySrc, 0,
-               nBands * GDALGetDataTypeSizeBytes(eWrkDT) * nBlockXSize *
+               static_cast<size_t>(nBands) * nWrkDTSize * nBlockXSize *
                    nBlockYSize);
     }
 
     const GPtrDiff_t nBlockOffsetPixels =
         static_cast<GPtrDiff_t>(nBlockXSize) * nBlockYSize;
-    const GPtrDiff_t nBandOffsetByte =
-        GDALGetDataTypeSizeBytes(eWrkDT) * nBlockOffsetPixels;
+    const GPtrDiff_t nBandOffsetByte = nWrkDTSize * nBlockOffsetPixels;
     for (int iBand = 0; iBand < nBands; ++iBand)
     {
         const CPLErr eErr = poDS->GetRasterBand(iBand + 1)->RasterIO(
             GF_Read, nXBlockOff * nBlockXSize, nYBlockOff * nBlockYSize,
             nXSizeRequest, nYSizeRequest, pabySrc + iBand * nBandOffsetByte,
             nXSizeRequest, nYSizeRequest, eWrkDT, 0,
-            static_cast<GSpacing>(nBlockXSize) *
-                GDALGetDataTypeSizeBytes(eWrkDT),
-            nullptr);
+            static_cast<GSpacing>(nBlockXSize) * nWrkDTSize, nullptr);
         if (eErr != CE_None)
             return eErr;
     }
@@ -252,4 +238,5 @@ CPLErr GDALNoDataValuesMaskBand::IReadBlock(int nXBlockOff, int nYBlockOff,
 
     return CE_None;
 }
+
 //! @endcond

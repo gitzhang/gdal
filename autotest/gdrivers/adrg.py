@@ -10,23 +10,7 @@
 # Copyright (c) 2004, Frank Warmerdam <warmerdam@pobox.com>
 # Copyright (c) 2007-2009, Even Rouault <even dot rouault at spatialys.com>
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-# OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 import os
@@ -46,7 +30,7 @@ pytestmark = pytest.mark.require_driver("ADRG")
 def test_adrg_read_gen():
 
     tst = gdaltest.GDALTest("ADRG", "adrg/SMALL_ADRG/ABCDEF01.GEN", 1, 62833)
-    return tst.testOpen()
+    tst.testOpen()
 
 
 ###############################################################################
@@ -56,7 +40,7 @@ def test_adrg_read_gen():
 def test_adrg_read_transh():
 
     tst = gdaltest.GDALTest("ADRG", "adrg/SMALL_ADRG/TRANSH01.THF", 1, 62833)
-    return tst.testOpen()
+    tst.testOpen()
 
 
 ###############################################################################
@@ -72,7 +56,7 @@ def test_adrg_read_subdataset_img():
         62833,
         filename_absolute=1,
     )
-    return tst.testOpen()
+    tst.testOpen()
 
 
 ###############################################################################
@@ -104,10 +88,9 @@ def test_adrg_2subdatasets():
     drv = gdal.GetDriverByName("ADRG")
     srcds = gdal.Open("data/adrg/SMALL_ADRG/ABCDEF01.GEN")
 
-    gdal.SetConfigOption("ADRG_SIMULATE_MULTI_IMG", "ON")
-    dstds = drv.CreateCopy("tmp/XXXXXX01.GEN", srcds)
-    del dstds
-    gdal.SetConfigOption("ADRG_SIMULATE_MULTI_IMG", "OFF")
+    with gdal.config_option("ADRG_SIMULATE_MULTI_IMG", "ON"):
+        dstds = drv.CreateCopy("tmp/XXXXXX01.GEN", srcds)
+        del dstds
 
     shutil.copy("tmp/XXXXXX01.IMG", "tmp/XXXXXX02.IMG")
 

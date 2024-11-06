@@ -10,23 +10,7 @@
  * Copyright (c) 2009, Frank Warmerdam <warmerdam@pobox.com>
  * Copyright (c) 2009-2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #ifndef PCIDSKDATASET2_H_INCLUDED
@@ -72,7 +56,6 @@ class PCIDSK2Dataset final : public GDALPamDataset
     PCIDSK2Dataset();
     virtual ~PCIDSK2Dataset();
 
-    static int Identify(GDALOpenInfo *);
     static GDALDataset *Open(GDALOpenInfo *);
     static GDALDataset *LLOpen(const char *pszFilename, PCIDSK::PCIDSKFile *,
                                GDALAccess eAccess,
@@ -104,12 +87,14 @@ class PCIDSK2Dataset final : public GDALPamDataset
     {
         return (int)apoLayers.size();
     }
+
     virtual OGRLayer *GetLayer(int) override;
 
     virtual int TestCapability(const char *) override;
 
-    virtual OGRLayer *ICreateLayer(const char *, OGRSpatialReference *,
-                                   OGRwkbGeometryType, char **) override;
+    OGRLayer *ICreateLayer(const char *pszName,
+                           const OGRGeomFieldDefn *poGeomFieldDefn,
+                           CSLConstList papszOptions) override;
 };
 
 /************************************************************************/
@@ -172,6 +157,7 @@ class PCIDSK2Band final : public GDALPamRasterBand
 class OGRPCIDSKLayer final : public OGRLayer,
                              public OGRGetNextFeatureThroughRaw<OGRPCIDSKLayer>
 {
+    GDALDataset *m_poDS = nullptr;
     PCIDSK::PCIDSKVectorSegment *poVecSeg;
     PCIDSK::PCIDSKSegment *poSeg;
 
@@ -190,8 +176,8 @@ class OGRPCIDSKLayer final : public OGRLayer,
     bool m_bEOF = false;
 
   public:
-    OGRPCIDSKLayer(PCIDSK::PCIDSKSegment *, PCIDSK::PCIDSKVectorSegment *,
-                   bool bUpdate);
+    OGRPCIDSKLayer(GDALDataset *poDS, PCIDSK::PCIDSKSegment *,
+                   PCIDSK::PCIDSKVectorSegment *, bool bUpdate);
     virtual ~OGRPCIDSKLayer();
 
     void ResetReading() override;
@@ -209,15 +195,21 @@ class OGRPCIDSKLayer final : public OGRLayer,
 
     OGRErr DeleteFeature(GIntBig nFID) override;
     virtual OGRErr ICreateFeature(OGRFeature *poFeature) override;
-    virtual OGRErr CreateField(OGRFieldDefn *poField,
+    virtual OGRErr CreateField(const OGRFieldDefn *poField,
                                int bApproxOK = TRUE) override;
 
     GIntBig GetFeatureCount(int) override;
     OGRErr GetExtent(OGREnvelope *psExtent, int bForce) override;
+
     virtual OGRErr GetExtent(int iGeomField, OGREnvelope *psExtent,
                              int bForce) override
     {
         return OGRLayer::GetExtent(iGeomField, psExtent, bForce);
+    }
+
+    GDALDataset *GetDataset() override
+    {
+        return m_poDS;
     }
 };
 

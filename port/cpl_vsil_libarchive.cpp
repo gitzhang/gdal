@@ -1,29 +1,13 @@
 /******************************************************************************
  *
  * Project:  CPL - Common Portability Library
- * Purpose:  Implement VSI large file api for /vsi7z/
+ * Purpose:  Implement VSI large file api for /vsi7z/ and /vsirar/
  * Author:   Even Rouault, even.rouault at spatialys.com
  *
  ******************************************************************************
  * Copyright (c) 2023, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_port.h"
@@ -45,6 +29,24 @@
  @since GDAL 3.7
  */
 void VSIInstall7zFileHandler(void)
+{
+    // dummy
+}
+
+/************************************************************************/
+/*                    VSIInstallRarFileHandler()                         */
+/************************************************************************/
+
+/*!
+ \brief Install /vsirar/ RAR file system handler (requires libarchive)
+
+ \verbatim embed:rst
+ See :ref:`/vsirar/ documentation <vsirar>`
+ \endverbatim
+
+ @since GDAL 3.7
+ */
+void VSIInstallRarFileHandler(void)
 {
     // dummy
 }
@@ -156,6 +158,29 @@ static int VSILibArchiveReadOpen(struct archive *pArchive,
 }
 
 /************************************************************************/
+/*                    VSICreateArchiveHandle()                          */
+/************************************************************************/
+
+static struct archive *VSICreateArchiveHandle(const std::string &osFSPrefix)
+{
+    auto pArchive = archive_read_new();
+
+    if (osFSPrefix == "/vsi7z")
+    {
+        archive_read_support_format_7zip(pArchive);
+    }
+    else
+    {
+        archive_read_support_format_rar(pArchive);
+#ifdef ARCHIVE_FORMAT_RAR_V5
+        archive_read_support_format_rar5(pArchive);
+#endif
+    }
+
+    return pArchive;
+}
+
+/************************************************************************/
 /* ==================================================================== */
 /*                      VSILibArchiveReader                             */
 /* ==================================================================== */
@@ -167,6 +192,7 @@ class VSILibArchiveReader final : public VSIArchiveReader
 
     std::string m_osArchiveFileName;
     struct archive *m_pArchive;
+    std::string m_osPrefix;
     bool m_bFirst = true;
     std::string m_osFilename{};
     GUIntBig m_nFilesize = 0;
@@ -174,10 +200,12 @@ class VSILibArchiveReader final : public VSIArchiveReader
 
   public:
     VSILibArchiveReader(const char *pszArchiveFileName,
-                        struct archive *pArchive)
-        : m_osArchiveFileName(pszArchiveFileName), m_pArchive(pArchive)
+                        struct archive *pArchive, const std::string &osPrefix)
+        : m_osArchiveFileName(pszArchiveFileName), m_pArchive(pArchive),
+          m_osPrefix(osPrefix)
     {
     }
+
     ~VSILibArchiveReader() override;
 
     struct archive *GetArchiveHandler()
@@ -190,18 +218,22 @@ class VSILibArchiveReader final : public VSIArchiveReader
     virtual int GotoFirstFile() override;
     virtual int GotoNextFile() override;
     virtual VSIArchiveEntryFileOffset *GetFileOffset() override;
+
     virtual GUIntBig GetFileSize() override
     {
         return m_nFilesize;
     }
+
     virtual CPLString GetFileName() override
     {
         return m_osFilename;
     }
+
     virtual GIntBig GetModifiedTime() override
     {
         return m_nMTime;
     }
+
     virtual int GotoFileOffset(VSIArchiveEntryFileOffset *pOffset) override;
 
     int GotoFileOffsetForced(VSIArchiveEntryFileOffset *pOffset);
@@ -226,8 +258,7 @@ int VSILibArchiveReader::GotoFirstFile()
     {
         archive_free(m_pArchive);
 
-        m_pArchive = archive_read_new();
-        archive_read_support_format_7zip(m_pArchive);
+        m_pArchive = VSICreateArchiveHandle(m_osPrefix);
 
         if (VSILibArchiveReadOpen(m_pArchive, m_osArchiveFileName.c_str()))
         {
@@ -268,6 +299,7 @@ int VSILibArchiveReader::GotoNextFile()
 struct VSILibArchiveEntryFileOffset : public VSIArchiveEntryFileOffset
 {
     const std::string m_osFilename;
+
     VSILibArchiveEntryFileOffset(const std::string &osFilename)
         : m_osFilename(osFilename)
     {
@@ -337,18 +369,33 @@ class VSILibArchiveHandler final : public VSIVirtualHandle
 
     virtual size_t Read(void *pBuffer, size_t nSize, size_t nCount) override;
     virtual int Seek(vsi_l_offset nOffset, int nWhence) override;
+
     virtual vsi_l_offset Tell() override
     {
         return m_nOffset;
     }
+
     virtual size_t Write(const void *, size_t, size_t) override
     {
         return 0;
     }
+
+    virtual void ClearErr() override
+    {
+        m_bEOF = false;
+        m_bError = false;
+    }
+
     virtual int Eof() override
     {
         return m_bEOF ? 1 : 0;
     }
+
+    virtual int Error() override
+    {
+        return m_bError ? 1 : 0;
+    }
+
     virtual int Close() override
     {
         return 0;
@@ -372,7 +419,12 @@ size_t VSILibArchiveHandler::Read(void *pBuffer, size_t nSize, size_t nCount)
     auto nRead = static_cast<size_t>(
         archive_read_data(m_poReader->GetArchiveHandler(), pBuffer, nToRead));
     if (nRead < nToRead)
-        m_bEOF = true;
+    {
+        if (m_nOffset + nRead == m_poReader->GetFileSize())
+            m_bEOF = true;
+        else
+            m_bError = true;
+    }
     m_nOffset += nRead;
     return nRead / nSize;
 }
@@ -435,14 +487,24 @@ class VSILibArchiveFilesystemHandler final : public VSIArchiveFilesystemHandler
     CPL_DISALLOW_COPY_ASSIGN(VSILibArchiveFilesystemHandler)
 
     const std::string m_osPrefix;
+
     virtual const char *GetPrefix() override
     {
         return m_osPrefix.c_str();
     }
+
     virtual std::vector<CPLString> GetExtensions() override
     {
-        return {".7z", ".lpk", ".lpkx", ".mpk", ".mpkx"};
+        if (m_osPrefix == "/vsi7z")
+        {
+            return {".7z", ".lpk", ".lpkx", ".mpk", ".mpkx", ".ppkx"};
+        }
+        else
+        {
+            return {".rar"};
+        }
     }
+
     virtual VSIArchiveReader *
     CreateReader(const char *pszArchiveFileName) override;
 
@@ -496,8 +558,8 @@ VSIVirtualHandle *VSILibArchiveFilesystemHandler::Open(const char *pszFilename,
 VSIArchiveReader *
 VSILibArchiveFilesystemHandler::CreateReader(const char *pszArchiveFileName)
 {
-    auto pArchive = archive_read_new();
-    archive_read_support_format_7zip(pArchive);
+    auto pArchive = VSICreateArchiveHandle(m_osPrefix);
+
     if (VSILibArchiveReadOpen(pArchive, pszArchiveFileName))
     {
         CPLDebug("VSIARCH", "%s: %s", pszArchiveFileName,
@@ -505,7 +567,7 @@ VSILibArchiveFilesystemHandler::CreateReader(const char *pszArchiveFileName)
         archive_read_free(pArchive);
         return nullptr;
     }
-    return new VSILibArchiveReader(pszArchiveFileName, pArchive);
+    return new VSILibArchiveReader(pszArchiveFileName, pArchive, m_osPrefix);
 }
 
 //! @endcond
@@ -527,6 +589,25 @@ void VSIInstall7zFileHandler(void)
 {
     VSIFileManager::InstallHandler(
         "/vsi7z/", new VSILibArchiveFilesystemHandler("/vsi7z"));
+}
+
+/************************************************************************/
+/*                    VSIInstallRarFileHandler()                         */
+/************************************************************************/
+
+/*!
+ \brief Install /vsirar/ rar file system handler (requires libarchive)
+
+ \verbatim embed:rst
+ See :ref:`/vsirar/ documentation <vsirar>`
+ \endverbatim
+
+ @since GDAL 3.7
+ */
+void VSIInstallRarFileHandler(void)
+{
+    VSIFileManager::InstallHandler(
+        "/vsirar/", new VSILibArchiveFilesystemHandler("/vsirar"));
 }
 
 #endif

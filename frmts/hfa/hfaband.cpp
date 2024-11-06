@@ -8,23 +8,7 @@
  * Copyright (c) 1999, Intergraph Corporation
  * Copyright (c) 2007-2012, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_port.h"
@@ -1056,11 +1040,11 @@ void HFABand::NullBlock(void *pData)
 #ifdef ESRI_BUILD
         // We want special defaulting for 1 bit data in ArcGIS.
         if (eDataType >= EPT_u2)
-            memset(pData, 0, nChunkSize * nWords);
+            memset(pData, 0, static_cast<size_t>(nChunkSize) * nWords);
         else
-            memset(pData, 255, nChunkSize * nWords);
+            memset(pData, 255, static_cast<size_t>(nChunkSize) * nWords);
 #else
-        memset(pData, 0, nChunkSize * nWords);
+        memset(pData, 0, static_cast<size_t>(nChunkSize) * nWords);
 #endif
     }
     else
@@ -1438,7 +1422,7 @@ CPLErr HFABand::SetRasterBlock(int nXBlock, int nYBlock, void *pData)
     {
         // Write compressed data.
         int nInBlockSize = static_cast<int>(
-            (nBlockXSize * nBlockYSize *
+            (static_cast<GIntBig>(nBlockXSize) * nBlockYSize *
                  static_cast<GIntBig>(HFAGetDataTypeBits(eDataType)) +
              7) /
             8);
@@ -1935,12 +1919,15 @@ CPLErr HFABand::GetPCT(int *pnColors, double **ppadfRed, double **ppadfGreen,
 /*      Set the PCT information for this band.                          */
 /************************************************************************/
 
-CPLErr HFABand::SetPCT(int nColors, double *padfRed, double *padfGreen,
-                       double *padfBlue, double *padfAlpha)
+CPLErr HFABand::SetPCT(int nColors, const double *padfRed,
+                       const double *padfGreen, const double *padfBlue,
+                       const double *padfAlpha)
 
 {
     static const char *const apszColNames[4] = {"Red", "Green", "Blue",
                                                 "Opacity"};
+    const double *const apadfValues[] = {padfRed, padfGreen, padfBlue,
+                                         padfAlpha};
     HFAEntry *poEdsc_Table;
 
     // Do we need to try and clear any existing color table?
@@ -1990,17 +1977,8 @@ CPLErr HFABand::SetPCT(int nColors, double *padfRed, double *padfGreen,
     // Process each color component.
     for (int iColumn = 0; iColumn < 4; iColumn++)
     {
-        double *padfValues = nullptr;
+        const double *padfValues = apadfValues[iColumn];
         const char *pszName = apszColNames[iColumn];
-
-        if (iColumn == 0)
-            padfValues = padfRed;
-        else if (iColumn == 1)
-            padfValues = padfGreen;
-        else if (iColumn == 2)
-            padfValues = padfBlue;
-        else if (iColumn == 3)
-            padfValues = padfAlpha;
 
         // Create the Edsc_Column.
         HFAEntry *poEdsc_Column = poEdsc_Table->GetNamedChild(pszName);

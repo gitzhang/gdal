@@ -6,7 +6,15 @@ add_gdal_driver(
           ogrcadlayer.cpp
           vsilfileio.cpp
           vsilfileio.h
-          PLUGIN_CAPABLE)
+  CORE_SOURCES
+          ogrcaddrivercore.cpp
+  PLUGIN_CAPABLE
+  NO_SHARED_SYMBOL_WITH_CORE)
+
+if(NOT TARGET ogr_CAD)
+    return()
+endif()
+
 gdal_standard_includes(ogr_CAD)
 target_compile_options(ogr_CAD PRIVATE ${GDAL_SOFTWARNFLAGS})
 

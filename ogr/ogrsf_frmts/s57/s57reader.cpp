@@ -8,23 +8,7 @@
  * Copyright (c) 1999, 2001, Frank Warmerdam
  * Copyright (c) 2009-2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_conv.h"
@@ -2476,9 +2460,8 @@ void S57Reader::AssembleAreaGeometry(DDFRecord *poFRecord,
     /* -------------------------------------------------------------------- */
     OGRErr eErr;
 
-    OGRGeometry *poPolygon =
-        reinterpret_cast<OGRGeometry *>(OGRBuildPolygonFromEdges(
-            reinterpret_cast<OGRGeometryH>(poLines), TRUE, FALSE, 0.0, &eErr));
+    OGRGeometry *poPolygon = OGRGeometry::FromHandle(OGRBuildPolygonFromEdges(
+        OGRGeometry::ToHandle(poLines), TRUE, FALSE, 0.0, &eErr));
     if (eErr != OGRERR_NONE)
     {
         CPLError(CE_Warning, CPLE_AppDefined,
@@ -3402,7 +3385,7 @@ bool S57Reader::FindAndApplyUpdates(const char *pszPath)
         CPLString extension;
         CPLString dirname;
 
-        if (1 <= iUpdate && iUpdate < 10)
+        if (iUpdate < 10)
         {
             char buf[2];
             CPLsnprintf(buf, sizeof(buf), "%i", iUpdate);
@@ -3410,7 +3393,7 @@ bool S57Reader::FindAndApplyUpdates(const char *pszPath)
             extension.append(buf);
             dirname.append(buf);
         }
-        else if (10 <= iUpdate && iUpdate < 100)
+        else if (iUpdate < 100)
         {
             char buf[3];
             CPLsnprintf(buf, sizeof(buf), "%i", iUpdate);
@@ -3418,7 +3401,7 @@ bool S57Reader::FindAndApplyUpdates(const char *pszPath)
             extension.append(buf);
             dirname.append(buf);
         }
-        else if (100 <= iUpdate && iUpdate < 1000)
+        else if (iUpdate < 1000)
         {
             char buf[4];
             CPLsnprintf(buf, sizeof(buf), "%i", iUpdate);

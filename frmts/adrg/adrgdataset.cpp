@@ -6,23 +6,7 @@
  ******************************************************************************
  * Copyright (c) 2007-2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_string.h"
@@ -328,14 +312,15 @@ static unsigned int WriteSubFieldStr(VSILFILE *fd, const char *pszStr,
 {
     char *str = (char *)CPLMalloc(size + 1);
     memset(str, ' ', size);
-    if (strlen(pszStr) > size)
+    str[size] = 0;
+    const size_t nStrLen = strlen(pszStr);
+    if (nStrLen > size)
     {
         CPLError(CE_Failure, CPLE_AppDefined, "strlen(pszStr) > size");
         CPLFree(str);
         return size;
     }
-    strcpy(str, pszStr);
-    str[strlen(pszStr)] = ' ';
+    memcpy(str, pszStr, nStrLen);
     VSIFWriteL(str, 1, size, fd);
     CPLFree(str);
     return size;
@@ -1488,7 +1473,7 @@ char **ADRGDataset::GetIMGListFromGEN(const char *pszFileName,
             /* Build full IMG file name from BAD value */
             CPLString osGENDir(CPLGetDirname(pszFileName));
 
-            CPLString osFileName =
+            const CPLString osFileName =
                 CPLFormFilename(osGENDir.c_str(), osBAD.c_str(), nullptr);
             VSIStatBufL sStatBuf;
             if (VSIStatL(osFileName, &sStatBuf) == 0)
@@ -1778,7 +1763,7 @@ GDALDataset *ADRGDataset::Create(const char *pszFilename, int nXSize,
     poDS->fdIMG = fdIMG;
     poDS->fdTHF = fdTHF;
 
-    poDS->osBaseFileName = osBaseFileName;
+    poDS->osBaseFileName = std::move(osBaseFileName);
     poDS->bCreation = TRUE;
     poDS->nNextAvailableBlock = 1;
     poDS->NFC = (nXSize + 127) / 128;

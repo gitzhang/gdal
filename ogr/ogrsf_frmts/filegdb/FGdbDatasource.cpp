@@ -10,23 +10,7 @@
  * Copyright (c) 2011, Paul Ramsey <pramsey at cleverelephant.ca>
  * Copyright (c) 2011-2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "ogr_fgdb.h"
@@ -115,12 +99,15 @@ OGRLayer *OGRFileGDBGroup::OpenVectorLayer(const std::string &osName,
 /************************************************************************/
 
 FGdbDataSource::FGdbDataSource(bool bUseDriverMutex,
-                               FGdbDatabaseConnection *pConnection)
-    : OGRDataSource(), m_bUseDriverMutex(bUseDriverMutex),
-      m_pConnection(pConnection), m_pGeodatabase(nullptr), m_bUpdate(false),
-      m_poOpenFileGDBDrv(nullptr)
+                               FGdbDatabaseConnection *pConnection,
+                               bool bUseOpenFileGDB)
+    : m_bUseDriverMutex(bUseDriverMutex), m_pConnection(pConnection),
+      m_pGeodatabase(nullptr), m_bUpdate(false), m_poOpenFileGDBDrv(nullptr),
+      m_bUseOpenFileGDB(bUseOpenFileGDB)
 {
     bPerLayerCopyingForTransaction = -1;
+    SetDescription(pConnection->m_osName.c_str());
+    poDriver = GDALDriver::FromHandle(GDALGetDriverByName("FileGDB"));
 }
 
 /************************************************************************/
@@ -285,7 +272,8 @@ int FGdbDataSource::ReOpen()
         return FALSE;
     }
 
-    FGdbDataSource *pDS = new FGdbDataSource(m_bUseDriverMutex, m_pConnection);
+    FGdbDataSource *pDS =
+        new FGdbDataSource(m_bUseDriverMutex, m_pConnection, m_bUseOpenFileGDB);
     if (EQUAL(CPLGetConfigOption("FGDB_SIMUL_FAIL_REOPEN", ""), "CASE2") ||
         !pDS->Open(m_osPublicName, TRUE, m_osFSName))
     {
@@ -513,8 +501,11 @@ bool FGdbDataSource::LoadLayers(const std::wstring &root)
     const char *const apszDrivers[2] = {"OpenFileGDB", nullptr};
     const char *pszSystemCatalog =
         CPLFormFilename(m_osFSName, "a00000001", "gdbtable");
-    m_poOpenFileGDBDS.reset(GDALDataset::Open(pszSystemCatalog, GDAL_OF_VECTOR,
-                                              apszDrivers, nullptr, nullptr));
+    if (m_bUseOpenFileGDB)
+    {
+        m_poOpenFileGDBDS.reset(GDALDataset::Open(
+            pszSystemCatalog, GDAL_OF_VECTOR, apszDrivers, nullptr, nullptr));
+    }
     if (m_poOpenFileGDBDS != nullptr &&
         m_poOpenFileGDBDS->GetLayer(0) != nullptr)
     {
@@ -587,8 +578,8 @@ bool FGdbDataSource::LoadLayers(const std::wstring &root)
                             poFeature->GetFieldAsString(iDefinition));
                         if (poRelationship)
                         {
-                            const auto relationshipName =
-                                poRelationship->GetName();
+                            const std::string relationshipName(
+                                poRelationship->GetName());
                             m_osMapRelationships[relationshipName] =
                                 std::move(poRelationship);
                         }
@@ -690,16 +681,16 @@ OGRLayer *FGdbDataSource::GetLayer(int iLayer)
 /* See FGdbLayer::Create for creation options                           */
 /************************************************************************/
 
-OGRLayer *FGdbDataSource::ICreateLayer(const char *pszLayerName,
-                                       OGRSpatialReference *poSRS,
-                                       OGRwkbGeometryType eType,
-                                       char **papszOptions)
+OGRLayer *
+FGdbDataSource::ICreateLayer(const char *pszLayerName,
+                             const OGRGeomFieldDefn *poSrcGeomFieldDefn,
+                             CSLConstList papszOptions)
 {
     if (!m_bUpdate || m_pGeodatabase == nullptr)
         return nullptr;
 
     FGdbLayer *pLayer = new FGdbLayer();
-    if (!pLayer->Create(this, pszLayerName, poSRS, eType, papszOptions))
+    if (!pLayer->Create(this, pszLayerName, poSrcGeomFieldDefn, papszOptions))
     {
         delete pLayer;
         return nullptr;
@@ -729,11 +720,14 @@ class OGRFGdbSingleFeatureLayer final : public OGRLayer
     {
         iNextShapeId = 0;
     }
+
     virtual OGRFeature *GetNextFeature() override;
+
     virtual OGRFeatureDefn *GetLayerDefn() override
     {
         return poFeatureDefn;
     }
+
     virtual int TestCapability(const char *) override
     {
         return FALSE;
@@ -812,8 +806,8 @@ OGRLayer *FGdbDataSource::ExecuteSQL(const char *pszSQLCommand,
     /*      Use generic implementation for recognized dialects              */
     /* -------------------------------------------------------------------- */
     if (IsGenericSQLDialect(pszDialect))
-        return OGRDataSource::ExecuteSQL(pszSQLCommand, poSpatialFilter,
-                                         pszDialect);
+        return GDALDataset::ExecuteSQL(pszSQLCommand, poSpatialFilter,
+                                       pszDialect);
 
     /* -------------------------------------------------------------------- */
     /*      Special case GetLayerDefinition                                 */
@@ -878,8 +872,8 @@ OGRLayer *FGdbDataSource::ExecuteSQL(const char *pszSQLCommand,
                          "So for now, we use default OGR SQL engine. "
                          "Explicitly specify -dialect FileGDB\n"
                          "to use the SQL engine from the FileGDB SDK API");
-        OGRLayer *poLayer = OGRDataSource::ExecuteSQL(
-            pszSQLCommand, poSpatialFilter, pszDialect);
+        OGRLayer *poLayer =
+            GDALDataset::ExecuteSQL(pszSQLCommand, poSpatialFilter, pszDialect);
         if (poLayer)
             m_oSetSelectLayers.insert(poLayer);
         return poLayer;
@@ -944,7 +938,7 @@ int FGdbDataSource::HasPerLayerCopyingForTransaction()
 {
     if (bPerLayerCopyingForTransaction >= 0)
         return bPerLayerCopyingForTransaction;
-#ifdef WIN32
+#ifdef _WIN32
     bPerLayerCopyingForTransaction = FALSE;
 #else
     bPerLayerCopyingForTransaction =
@@ -992,7 +986,7 @@ FGdbDataSource::GetFieldDomain(const std::string &name) const
     auto poDomain = ParseXMLFieldDomainDef(domainDef);
     if (!poDomain)
         return nullptr;
-    const auto domainName = poDomain->GetName();
+    const std::string domainName(poDomain->GetName());
     m_oMapFieldDomains[domainName] = std::move(poDomain);
     return GDALDataset::GetFieldDomain(name);
 }
@@ -1027,7 +1021,7 @@ std::vector<std::string> FGdbDataSource::GetFieldDomainNames(CSLConstList) const
 bool FGdbDataSource::AddFieldDomain(std::unique_ptr<OGRFieldDomain> &&domain,
                                     std::string &failureReason)
 {
-    const auto domainName = domain->GetName();
+    const std::string domainName(domain->GetName());
     if (!m_bUpdate)
     {
         CPLError(CE_Failure, CPLE_NotSupported,
@@ -1094,7 +1088,7 @@ bool FGdbDataSource::DeleteFieldDomain(const std::string &name,
 bool FGdbDataSource::UpdateFieldDomain(std::unique_ptr<OGRFieldDomain> &&domain,
                                        std::string &failureReason)
 {
-    const auto domainName = domain->GetName();
+    const std::string domainName(domain->GetName());
     if (!m_bUpdate)
     {
         CPLError(CE_Failure, CPLE_NotSupported,

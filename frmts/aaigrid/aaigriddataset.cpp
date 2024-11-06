@@ -9,23 +9,7 @@
  * Copyright (c) 2007-2012, Even Rouault <even dot rouault at spatialys.com>
  * Copyright (c) 2014, Kyle Shannon <kyle at pobox dot com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 // We need cpl_port as first include to avoid VSIStatBufL being not
@@ -80,7 +64,7 @@ float DoubleToFloatClamp(double dfValue)
 // to be needed for other formats.
 double MapNoDataToFloat(double dfNoDataValue)
 {
-    if (CPLIsInf(dfNoDataValue) || CPLIsNan(dfNoDataValue))
+    if (std::isinf(dfNoDataValue) || std::isnan(dfNoDataValue))
         return dfNoDataValue;
 
     if (dfNoDataValue >= std::numeric_limits<float>::max())
@@ -416,15 +400,34 @@ int ISGDataset::Identify(GDALOpenInfo *poOpenInfo)
 {
     // Does this look like a ISG grid file?
     if (poOpenInfo->nHeaderBytes < 40 ||
-        !(strstr((const char *)poOpenInfo->pabyHeader, "model name") !=
-              nullptr &&
-          strstr((const char *)poOpenInfo->pabyHeader, "lat min") != nullptr &&
-          strstr((const char *)poOpenInfo->pabyHeader, "lat max") != nullptr &&
-          strstr((const char *)poOpenInfo->pabyHeader, "lon min") != nullptr &&
-          strstr((const char *)poOpenInfo->pabyHeader, "lon max") != nullptr &&
-          strstr((const char *)poOpenInfo->pabyHeader, "nrows") != nullptr &&
-          strstr((const char *)poOpenInfo->pabyHeader, "ncols") != nullptr))
+        !strstr((const char *)poOpenInfo->pabyHeader, "model name"))
+    {
         return FALSE;
+    }
+    for (int i = 0; i < 2; ++i)
+    {
+        if (strstr((const char *)poOpenInfo->pabyHeader, "lat min") !=
+                nullptr &&
+            strstr((const char *)poOpenInfo->pabyHeader, "lat max") !=
+                nullptr &&
+            strstr((const char *)poOpenInfo->pabyHeader, "lon min") !=
+                nullptr &&
+            strstr((const char *)poOpenInfo->pabyHeader, "lon max") !=
+                nullptr &&
+            strstr((const char *)poOpenInfo->pabyHeader, "nrows") != nullptr &&
+            strstr((const char *)poOpenInfo->pabyHeader, "ncols") != nullptr)
+        {
+            return TRUE;
+        }
+        // Some files like https://isgeoid.polimi.it/Geoid/Europe/Slovenia/public/Slovenia_2016_SLO_VRP2016_Koper_hybrQ_20221122.isg
+        // have initial comment lines, so we may need to ingest more bytes
+        if (i == 0)
+        {
+            if (poOpenInfo->nHeaderBytes >= 8192)
+                break;
+            poOpenInfo->TryToIngest(8192);
+        }
+    }
 
     return TRUE;
 }
@@ -587,11 +590,12 @@ int AAIGDataset::ParseHeader(const char *pszHeader, const char *pszDataType)
             if (pszDataType == nullptr &&
                 (strchr(pszNoData, '.') != nullptr ||
                  strchr(pszNoData, ',') != nullptr ||
+                 std::isnan(dfNoDataValue) ||
                  std::numeric_limits<int>::min() > dfNoDataValue ||
                  dfNoDataValue > std::numeric_limits<int>::max()))
             {
                 eDataType = GDT_Float32;
-                if (!CPLIsInf(dfNoDataValue) &&
+                if (!std::isinf(dfNoDataValue) &&
                     (fabs(dfNoDataValue) < std::numeric_limits<float>::min() ||
                      fabs(dfNoDataValue) > std::numeric_limits<float>::max()))
                 {
@@ -699,7 +703,7 @@ int GRASSASCIIDataset::ParseHeader(const char *pszHeader,
         dfNoDataValue = CPLAtofM(pszNoData);
         if (pszDataType == nullptr &&
             (strchr(pszNoData, '.') != nullptr ||
-             strchr(pszNoData, ',') != nullptr ||
+             strchr(pszNoData, ',') != nullptr || std::isnan(dfNoDataValue) ||
              std::numeric_limits<int>::min() > dfNoDataValue ||
              dfNoDataValue > std::numeric_limits<int>::max()))
         {
@@ -753,7 +757,9 @@ GDALDataset *ISGDataset::Open(GDALOpenInfo *poOpenInfo)
 
 int ISGDataset::ParseHeader(const char *pszHeader, const char *)
 {
-    // See http://www.isgeoid.polimi.it/Geoid/ISG_format_20160121.pdf
+    // See https://www.isgeoid.polimi.it/Geoid/ISG_format_v10_20160121.pdf
+    //     https://www.isgeoid.polimi.it/Geoid/ISG_format_v101_20180915.pdf
+    //     https://www.isgeoid.polimi.it/Geoid/ISG_format_v20_20200625.pdf
 
     CPLStringList aosLines(CSLTokenizeString2(pszHeader, "\n\r", 0));
     CPLString osLatMin;
@@ -765,6 +771,11 @@ int ISGDataset::ParseHeader(const char *pszHeader, const char *)
     CPLString osRows;
     CPLString osCols;
     CPLString osNodata;
+    std::string osISGFormat;
+    std::string osDataFormat;    // ISG 2.0
+    std::string osDataOrdering;  // ISG 2.0
+    std::string osCoordType;     // ISG 2.0
+    std::string osCoordUnits;    // ISG 2.0
     for (int iLine = 0; iLine < aosLines.size(); iLine++)
     {
         CPLStringList aosTokens(CSLTokenizeString2(aosLines[iLine], ":=", 0));
@@ -772,8 +783,7 @@ int ISGDataset::ParseHeader(const char *pszHeader, const char *)
         {
             CPLString osLeft(aosTokens[0]);
             osLeft.Trim();
-            CPLString osRight(aosTokens[1]);
-            osRight.Trim();
+            const CPLString osRight(CPLString(aosTokens[1]).Trim());
             if (osLeft == "lat min")
                 osLatMin = osRight;
             else if (osLeft == "lat max")
@@ -796,22 +806,85 @@ int ISGDataset::ParseHeader(const char *pszHeader, const char *)
                 SetMetadataItem("MODEL_NAME", osRight);
             else if (osLeft == "model type")
                 SetMetadataItem("MODEL_TYPE", osRight);
-            else if (osLeft == "units")
+            else if (osLeft == "units" || osLeft == "data units")
                 osUnits = osRight;
+            else if (osLeft == "ISG format")
+                osISGFormat = osRight;
+            else if (osLeft == "data format")
+                osDataFormat = osRight;
+            else if (osLeft == "data ordering")
+                osDataOrdering = osRight;
+            else if (osLeft == "coord type")
+                osCoordType = osRight;
+            else if (osLeft == "coord units")
+                osCoordUnits = osRight;
         }
     }
+    const double dfVersion =
+        osISGFormat.empty() ? 0.0 : CPLAtof(osISGFormat.c_str());
     if (osLatMin.empty() || osLatMax.empty() || osLonMin.empty() ||
         osLonMax.empty() || osDeltaLat.empty() || osDeltaLon.empty() ||
         osRows.empty() || osCols.empty())
     {
         return FALSE;
     }
-    double dfLatMin = CPLAtof(osLatMin);
-    double dfLatMax = CPLAtof(osLatMax);
-    double dfLonMin = CPLAtof(osLonMin);
-    double dfLonMax = CPLAtof(osLonMax);
-    double dfDeltaLon = CPLAtof(osDeltaLon);
-    double dfDeltaLat = CPLAtof(osDeltaLat);
+    if (!osDataFormat.empty() && osDataFormat != "grid")
+    {
+        CPLError(CE_Failure, CPLE_NotSupported,
+                 "ISG: data format = %s not supported", osDataFormat.c_str());
+        return FALSE;
+    }
+    if (!osDataOrdering.empty() && osDataOrdering != "N-to-S, W-to-E")
+    {
+        CPLError(CE_Failure, CPLE_NotSupported,
+                 "ISG: data ordering = %s not supported",
+                 osDataOrdering.c_str());
+        return FALSE;
+    }
+    if (!osCoordType.empty() && osCoordType != "geodetic")
+    {
+        CPLError(CE_Failure, CPLE_NotSupported,
+                 "ISG: coord type = %s not supported", osCoordType.c_str());
+        return FALSE;
+    }
+
+    const auto parseDMS = [](CPLString &str)
+    {
+        const std::string degreeSymbol{"\xc2\xb0"};
+        str.replaceAll(degreeSymbol, "D");
+        return CPLDMSToDec(str);
+    };
+
+    bool useDMS = false;
+    if (!osCoordUnits.empty())
+    {
+        if (osCoordUnits == "dms")
+        {
+            // CPLDMSToDec does not support the non ascii char for degree used in ISG.
+            // just replace it with "D" to make it compatible.
+            useDMS = true;
+        }
+        else if (osCoordUnits != "deg")
+        {
+            CPLError(CE_Failure, CPLE_NotSupported,
+                     "ISG: coord units = %s not supported",
+                     osCoordUnits.c_str());
+            return FALSE;
+        }
+    }
+    double dfLatMin = useDMS ? parseDMS(osLatMin) : CPLAtof(osLatMin);
+    double dfLatMax = useDMS ? parseDMS(osLatMax) : CPLAtof(osLatMax);
+    double dfLonMin = useDMS ? parseDMS(osLonMin) : CPLAtof(osLonMin);
+    double dfLonMax = useDMS ? parseDMS(osLonMax) : CPLAtof(osLonMax);
+    double dfDeltaLon = useDMS ? parseDMS(osDeltaLon) : CPLAtof(osDeltaLon);
+    double dfDeltaLat = useDMS ? parseDMS(osDeltaLat) : CPLAtof(osDeltaLat);
+    if (dfVersion >= 2.0)
+    {
+        dfLatMin -= dfDeltaLat / 2.0;
+        dfLatMax += dfDeltaLat / 2.0;
+        dfLonMin -= dfDeltaLon / 2.0;
+        dfLonMax += dfDeltaLon / 2.0;
+    }
     const int nRows = atoi(osRows);
     const int nCols = atoi(osCols);
     if (nRows <= 0 || nCols <= 0 ||
@@ -823,52 +896,70 @@ int ISGDataset::ParseHeader(const char *pszHeader, const char *)
 
     // Correct rounding errors.
 
+    const auto TryRoundTo = [](double &dfDelta, double dfRoundedDelta,
+                               double &dfMin, double &dfMax, int nVals,
+                               double dfRelTol)
+    {
+        double dfMinTry = dfMin;
+        double dfMaxTry = dfMax;
+        double dfDeltaTry = dfDelta;
+        if (dfRoundedDelta != dfDelta &&
+            fabs(fabs(dfMin / dfRoundedDelta) -
+                 (floor(fabs(dfMin / dfRoundedDelta)) + 0.5)) < dfRelTol &&
+            fabs(fabs(dfMax / dfRoundedDelta) -
+                 (floor(fabs(dfMax / dfRoundedDelta)) + 0.5)) < dfRelTol)
+        {
+            {
+                double dfVal = (floor(fabs(dfMin / dfRoundedDelta)) + 0.5) *
+                               dfRoundedDelta;
+                dfMinTry = (dfMin < 0) ? -dfVal : dfVal;
+            }
+            {
+                double dfVal = (floor(fabs(dfMax / dfRoundedDelta)) + 0.5) *
+                               dfRoundedDelta;
+                dfMaxTry = (dfMax < 0) ? -dfVal : dfVal;
+            }
+            dfDeltaTry = dfRoundedDelta;
+        }
+        else if (dfRoundedDelta != dfDelta &&
+                 fabs(fabs(dfMin / dfRoundedDelta) -
+                      (floor(fabs(dfMin / dfRoundedDelta) + 0.5) + 0.)) <
+                     dfRelTol &&
+                 fabs(fabs(dfMax / dfRoundedDelta) -
+                      (floor(fabs(dfMax / dfRoundedDelta) + 0.5) + 0.)) <
+                     dfRelTol)
+        {
+            {
+                double dfVal =
+                    (floor(fabs(dfMin / dfRoundedDelta) + 0.5) + 0.) *
+                    dfRoundedDelta;
+                dfMinTry = (dfMin < 0) ? -dfVal : dfVal;
+            }
+            {
+                double dfVal =
+                    (floor(fabs(dfMax / dfRoundedDelta) + 0.5) + 0.) *
+                    dfRoundedDelta;
+                dfMaxTry = (dfMax < 0) ? -dfVal : dfVal;
+            }
+            dfDeltaTry = dfRoundedDelta;
+        }
+        if (fabs(dfMinTry + dfDeltaTry * nVals - dfMaxTry) <
+            dfRelTol * dfDeltaTry)
+        {
+            dfMin = dfMinTry;
+            dfMax = dfMaxTry;
+            dfDelta = dfDeltaTry;
+            return true;
+        }
+        return false;
+    };
+
     const double dfRoundedDeltaLon =
         (osDeltaLon == "0.0167" ||
          (dfDeltaLon < 1 &&
           fabs(1. / dfDeltaLon - floor(1. / dfDeltaLon + 0.5)) < 0.06))
             ? 1. / floor(1. / dfDeltaLon + 0.5)
             : dfDeltaLon;
-    if (dfRoundedDeltaLon != dfDeltaLon &&
-        fabs(fabs(dfLonMin / dfRoundedDeltaLon) -
-             (floor(fabs(dfLonMin / dfRoundedDeltaLon)) + 0.5)) < 0.02 &&
-        fabs(fabs(dfLonMax / dfRoundedDeltaLon) -
-             (floor(fabs(dfLonMax / dfRoundedDeltaLon)) + 0.5)) < 0.02)
-    {
-        {
-            double dfVal = (floor(fabs(dfLonMin / dfRoundedDeltaLon)) + 0.5) *
-                           dfRoundedDeltaLon;
-            dfLonMin = (dfLonMin < 0) ? -dfVal : dfVal;
-        }
-        {
-            double dfVal = (floor(fabs(dfLonMax / dfRoundedDeltaLon)) + 0.5) *
-                           dfRoundedDeltaLon;
-            dfLonMax = (dfLonMax < 0) ? -dfVal : dfVal;
-        }
-        dfDeltaLon = dfRoundedDeltaLon;
-    }
-    else if (dfRoundedDeltaLon != dfDeltaLon &&
-             fabs(fabs(dfLonMin / dfRoundedDeltaLon) -
-                  (floor(fabs(dfLonMin / dfRoundedDeltaLon) + 0.5) + 0.)) <
-                 0.02 &&
-             fabs(fabs(dfLonMax / dfRoundedDeltaLon) -
-                  (floor(fabs(dfLonMax / dfRoundedDeltaLon) + 0.5) + 0.)) <
-                 0.02)
-    {
-        {
-            double dfVal =
-                (floor(fabs(dfLonMin / dfRoundedDeltaLon) + 0.5) + 0.) *
-                dfRoundedDeltaLon;
-            dfLonMin = (dfLonMin < 0) ? -dfVal : dfVal;
-        }
-        {
-            double dfVal =
-                (floor(fabs(dfLonMax / dfRoundedDeltaLon) + 0.5) + 0.) *
-                dfRoundedDeltaLon;
-            dfLonMax = (dfLonMax < 0) ? -dfVal : dfVal;
-        }
-        dfDeltaLon = dfRoundedDeltaLon;
-    }
 
     const double dfRoundedDeltaLat =
         (osDeltaLat == "0.0167" ||
@@ -876,52 +967,45 @@ int ISGDataset::ParseHeader(const char *pszHeader, const char *)
           fabs(1. / dfDeltaLat - floor(1. / dfDeltaLat + 0.5)) < 0.06))
             ? 1. / floor(1. / dfDeltaLat + 0.5)
             : dfDeltaLat;
-    if (dfRoundedDeltaLat != dfDeltaLat &&
-        fabs(fabs(dfLatMin / dfRoundedDeltaLat) -
-             (floor(fabs(dfLatMin / dfRoundedDeltaLat)) + 0.5)) < 0.02 &&
-        fabs(fabs(dfLatMax / dfRoundedDeltaLat) -
-             (floor(fabs(dfLatMax / dfRoundedDeltaLat)) + 0.5)) < 0.02)
-    {
-        {
-            double dfVal = (floor(fabs(dfLatMin / dfRoundedDeltaLat)) + 0.5) *
-                           dfRoundedDeltaLat;
-            dfLatMin = (dfLatMin < 0) ? -dfVal : dfVal;
-        }
-        {
-            double dfVal = (floor(fabs(dfLatMax / dfRoundedDeltaLat)) + 0.5) *
-                           dfRoundedDeltaLat;
-            dfLatMax = (dfLatMax < 0) ? -dfVal : dfVal;
-        }
-        dfDeltaLat = dfRoundedDeltaLat;
-    }
-    else if (dfRoundedDeltaLat != dfDeltaLat &&
-             fabs(fabs(dfLatMin / dfRoundedDeltaLat) -
-                  (floor(fabs(dfLatMin / dfRoundedDeltaLat) + 0.5) + 0.)) <
-                 0.02 &&
-             fabs(fabs(dfLatMax / dfRoundedDeltaLat) -
-                  (floor(fabs(dfLatMax / dfRoundedDeltaLat) + 0.5) + 0.)) <
-                 0.02)
-    {
-        {
-            double dfVal =
-                (floor(fabs(dfLatMin / dfRoundedDeltaLat) + 0.5) + 0.) *
-                dfRoundedDeltaLat;
-            dfLatMin = (dfLatMin < 0) ? -dfVal : dfVal;
-        }
-        {
-            double dfVal =
-                (floor(fabs(dfLatMax / dfRoundedDeltaLat) + 0.5) + 0.) *
-                dfRoundedDeltaLat;
-            dfLatMax = (dfLatMax < 0) ? -dfVal : dfVal;
-        }
-        dfDeltaLat = dfRoundedDeltaLat;
-    }
 
-    if (!(fabs(dfLatMin + dfDeltaLat * nRows - dfLatMax) < 1e-8 &&
-          fabs(dfLonMin + dfDeltaLon * nCols - dfLonMax) < 1e-8))
+    bool bOK = TryRoundTo(dfDeltaLon, dfRoundedDeltaLon, dfLonMin, dfLonMax,
+                          nCols, 1e-2) &&
+               TryRoundTo(dfDeltaLat, dfRoundedDeltaLat, dfLatMin, dfLatMax,
+                          nRows, 1e-2);
+    if (!bOK && osDeltaLon == "0.0167" && osDeltaLat == "0.0167")
     {
-        CPLDebug("ISG", "Inconsistent extent/resolution/raster dimension");
-        return FALSE;
+        // For https://www.isgeoid.polimi.it/Geoid/America/Argentina/public/GEOIDEAR16_20160419.isg
+        bOK =
+            TryRoundTo(dfDeltaLon, 0.016667, dfLonMin, dfLonMax, nCols, 1e-1) &&
+            TryRoundTo(dfDeltaLat, 0.016667, dfLatMin, dfLatMax, nRows, 1e-1);
+    }
+    if (!bOK)
+    {
+        // 0.005 is what would be needed for the above GEOIDEAR16_20160419.isg
+        // file without the specific fine tuning done.
+        if ((fabs((dfLonMax - dfLonMin) / nCols - dfDeltaLon) <
+                 0.005 * dfDeltaLon &&
+             fabs((dfLatMax - dfLatMin) / nRows - dfDeltaLat) <
+                 0.005 * dfDeltaLat) ||
+            CPLTestBool(
+                CPLGetConfigOption("ISG_SKIP_GEOREF_CONSISTENCY_CHECK", "NO")))
+        {
+            CPLError(CE_Warning, CPLE_AppDefined,
+                     "Georeference might be slightly approximate due to "
+                     "rounding of coordinates and resolution in file header.");
+            dfDeltaLon = (dfLonMax - dfLonMin) / nCols;
+            dfDeltaLat = (dfLatMax - dfLatMin) / nRows;
+        }
+        else
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "Inconsistent extent/resolution/raster dimension, or "
+                     "rounding of coordinates and resolution in file header "
+                     "higher than accepted. You may skip this consistency "
+                     "check by setting the ISG_SKIP_GEOREF_CONSISTENCY_CHECK "
+                     "configuration option to YES.");
+            return false;
+        }
     }
     nRasterXSize = nCols;
     nRasterYSize = nRows;
@@ -1054,11 +1138,16 @@ GDALDataset *AAIGDataset::CommonOpen(GDALOpenInfo *poOpenInfo,
                 poOpenInfo->pabyHeader[i - 1] == '\r' ||
                 poOpenInfo->pabyHeader[i - 2] == '\r')
             {
-                if ((!isalpha(poOpenInfo->pabyHeader[i]) ||
+                if ((!isalpha(static_cast<unsigned char>(
+                         poOpenInfo->pabyHeader[i])) ||
                      // null seems to be specific of D12 software
                      // See https://github.com/OSGeo/gdal/issues/5095
                      (i + 5 < poOpenInfo->nHeaderBytes &&
-                      memcmp(poOpenInfo->pabyHeader + i, "null ", 5) == 0)) &&
+                      memcmp(poOpenInfo->pabyHeader + i, "null ", 5) == 0) ||
+                     (i + 4 < poOpenInfo->nHeaderBytes &&
+                      EQUALN(reinterpret_cast<const char *>(
+                                 poOpenInfo->pabyHeader + i),
+                             "nan ", 4))) &&
                     poOpenInfo->pabyHeader[i] != '\n' &&
                     poOpenInfo->pabyHeader[i] != '\r')
                 {
@@ -1170,7 +1259,7 @@ GDALDataset *AAIGDataset::CommonOpen(GDALOpenInfo *poOpenInfo,
                 poDS->adfGeoTransform[5] /= 3600.0;
             }
 
-            poDS->m_oSRS = oSRS;
+            poDS->m_oSRS = std::move(oSRS);
         }
     }
 
@@ -1292,7 +1381,7 @@ GDALDataset *AAIGDataset::CreateCopy(const char *pszFilename,
 
     // Builds the format string used for printing float values.
     char szFormatFloat[32] = {'\0'};
-    strcpy(szFormatFloat, " %.20g");
+    strcpy(szFormatFloat, "%.20g");
     const char *pszDecimalPrecision =
         CSLFetchNameValue(papszOptions, "DECIMAL_PRECISION");
     const char *pszSignificantDigits =
@@ -1309,7 +1398,7 @@ GDALDataset *AAIGDataset::CreateCopy(const char *pszFilename,
     {
         nPrecision = atoi(pszSignificantDigits);
         if (nPrecision >= 0)
-            snprintf(szFormatFloat, sizeof(szFormatFloat), " %%.%dg",
+            snprintf(szFormatFloat, sizeof(szFormatFloat), "%%.%dg",
                      nPrecision);
         CPLDebug("AAIGrid", "Setting precision format: %s", szFormatFloat);
     }
@@ -1317,7 +1406,7 @@ GDALDataset *AAIGDataset::CreateCopy(const char *pszFilename,
     {
         nPrecision = atoi(pszDecimalPrecision);
         if (nPrecision >= 0)
-            snprintf(szFormatFloat, sizeof(szFormatFloat), " %%.%df",
+            snprintf(szFormatFloat, sizeof(szFormatFloat), "%%.%df",
                      nPrecision);
         CPLDebug("AAIGrid", "Setting precision format: %s", szFormatFloat);
     }
@@ -1358,14 +1447,12 @@ GDALDataset *AAIGDataset::CreateCopy(const char *pszFilename,
 
     // Write scanlines to output file
     int *panScanline = bReadAsInt
-                           ? static_cast<int *>(CPLMalloc(
-                                 nXSize * GDALGetDataTypeSizeBytes(GDT_Int32)))
+                           ? static_cast<int *>(CPLMalloc(sizeof(int) * nXSize))
                            : nullptr;
 
     double *padfScanline =
         bReadAsInt ? nullptr
-                   : static_cast<double *>(CPLMalloc(
-                         nXSize * GDALGetDataTypeSizeBytes(GDT_Float64)));
+                   : static_cast<double *>(CPLMalloc(sizeof(double) * nXSize));
 
     CPLErr eErr = CE_None;
 
@@ -1385,10 +1472,11 @@ GDALDataset *AAIGDataset::CreateCopy(const char *pszFilename,
         {
             for (int iPixel = 0; iPixel < nXSize; iPixel++)
             {
-                snprintf(szHeader, sizeof(szHeader), " %d",
-                         panScanline[iPixel]);
+                snprintf(szHeader, sizeof(szHeader), "%d", panScanline[iPixel]);
                 osBuf += szHeader;
-                if ((iPixel & 1023) == 0 || iPixel == nXSize - 1)
+                osBuf += ' ';
+                if ((iPixel > 0 && (iPixel % 1024) == 0) ||
+                    iPixel == nXSize - 1)
                 {
                     if (VSIFWriteL(osBuf, static_cast<int>(osBuf.size()), 1,
                                    fpImage) != 1)
@@ -1419,8 +1507,8 @@ GDALDataset *AAIGDataset::CreateCopy(const char *pszFilename,
                     {
                         bHasOutputDecimalDot = true;
                     }
-                    else if (!CPLIsInf(padfScanline[iPixel]) &&
-                             !CPLIsNan(padfScanline[iPixel]))
+                    else if (!std::isinf(padfScanline[iPixel]) &&
+                             !std::isnan(padfScanline[iPixel]))
                     {
                         strcat(szHeader, ".0");
                         bHasOutputDecimalDot = true;
@@ -1428,7 +1516,9 @@ GDALDataset *AAIGDataset::CreateCopy(const char *pszFilename,
                 }
 
                 osBuf += szHeader;
-                if ((iPixel & 1023) == 0 || iPixel == nXSize - 1)
+                osBuf += ' ';
+                if ((iPixel > 0 && (iPixel % 1024) == 0) ||
+                    iPixel == nXSize - 1)
                 {
                     if (VSIFWriteL(osBuf, static_cast<int>(osBuf.size()), 1,
                                    fpImage) != 1)

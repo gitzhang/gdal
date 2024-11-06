@@ -8,23 +8,7 @@
  * Copyright (c) 2003, Frank Warmerdam <warmerdam@pobox.com>
  * Copyright (c) 2009-2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "vrtdataset.h"
@@ -33,6 +17,8 @@
 #include "cpl_string.h"
 #include "gdal_alg_priv.h"
 #include "gdal_frmts.h"
+
+#include <mutex>
 
 /*! @cond Doxygen_Suppress */
 
@@ -135,9 +121,9 @@ void VRTDriver::AddSourceParser(const char *pszElementName,
 /*                            ParseSource()                             */
 /************************************************************************/
 
-VRTSource *
-VRTDriver::ParseSource(CPLXMLNode *psSrc, const char *pszVRTPath,
-                       std::map<CPLString, GDALDataset *> &oMapSharedSources)
+VRTSource *VRTDriver::ParseSource(const CPLXMLNode *psSrc,
+                                  const char *pszVRTPath,
+                                  VRTMapSharedResources &oMapSharedSources)
 
 {
 
@@ -193,8 +179,7 @@ static GDALDataset *VRTCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
     /*      it to disk as a special case to avoid extra layers of           */
     /*      indirection.                                                    */
     /* -------------------------------------------------------------------- */
-    if (poSrcDS->GetDriver() != nullptr &&
-        EQUAL(poSrcDS->GetDriver()->GetDescription(), "VRT"))
+    if (auto poSrcVRTDS = dynamic_cast<VRTDataset *>(poSrcDS))
     {
 
         /* --------------------------------------------------------------------
@@ -203,9 +188,8 @@ static GDALDataset *VRTCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
         /* --------------------------------------------------------------------
          */
         char *pszVRTPath = CPLStrdup(CPLGetPath(pszFilename));
-        static_cast<VRTDataset *>(poSrcDS)->UnsetPreservedRelativeFilenames();
-        CPLXMLNode *psDSTree =
-            static_cast<VRTDataset *>(poSrcDS)->SerializeToXML(pszVRTPath);
+        poSrcVRTDS->UnsetPreservedRelativeFilenames();
+        CPLXMLNode *psDSTree = poSrcVRTDS->SerializeToXML(pszVRTPath);
 
         char *pszXML = CPLSerializeXMLTree(psDSTree);
 
@@ -300,22 +284,78 @@ static GDALDataset *VRTCreateCopy(const char *pszFilename, GDALDataset *poSrcDS,
     /* -------------------------------------------------------------------- */
     /*      Emit dataset level metadata.                                    */
     /* -------------------------------------------------------------------- */
-    poVRTDS->SetMetadata(poSrcDS->GetMetadata());
+    const char *pszCopySrcMDD =
+        CSLFetchNameValueDef(papszOptions, "COPY_SRC_MDD", "AUTO");
+    char **papszSrcMDD = CSLFetchNameValueMultiple(papszOptions, "SRC_MDD");
+    if (EQUAL(pszCopySrcMDD, "AUTO") || CPLTestBool(pszCopySrcMDD) ||
+        papszSrcMDD)
+    {
+        if (!papszSrcMDD || CSLFindString(papszSrcMDD, "") >= 0 ||
+            CSLFindString(papszSrcMDD, "_DEFAULT_") >= 0)
+        {
+            poVRTDS->SetMetadata(poSrcDS->GetMetadata());
+        }
 
-    /* -------------------------------------------------------------------- */
-    /*      Copy any special domains that should be transportable.          */
-    /* -------------------------------------------------------------------- */
-    char **papszMD = poSrcDS->GetMetadata("RPC");
-    if (papszMD)
-        poVRTDS->SetMetadata(papszMD, "RPC");
+        /* -------------------------------------------------------------------- */
+        /*      Copy any special domains that should be transportable.          */
+        /* -------------------------------------------------------------------- */
+        constexpr const char *apszDefaultDomains[] = {"RPC", "IMD",
+                                                      "GEOLOCATION"};
+        for (const char *pszDomain : apszDefaultDomains)
+        {
+            if (!papszSrcMDD || CSLFindString(papszSrcMDD, pszDomain) >= 0)
+            {
+                char **papszMD = poSrcDS->GetMetadata(pszDomain);
+                if (papszMD)
+                    poVRTDS->SetMetadata(papszMD, pszDomain);
+            }
+        }
 
-    papszMD = poSrcDS->GetMetadata("IMD");
-    if (papszMD)
-        poVRTDS->SetMetadata(papszMD, "IMD");
-
-    papszMD = poSrcDS->GetMetadata("GEOLOCATION");
-    if (papszMD)
-        poVRTDS->SetMetadata(papszMD, "GEOLOCATION");
+        if ((!EQUAL(pszCopySrcMDD, "AUTO") && CPLTestBool(pszCopySrcMDD)) ||
+            papszSrcMDD)
+        {
+            char **papszDomainList = poSrcDS->GetMetadataDomainList();
+            constexpr const char *apszReservedDomains[] = {
+                "IMAGE_STRUCTURE", "DERIVED_SUBDATASETS"};
+            for (char **papszIter = papszDomainList; papszIter && *papszIter;
+                 ++papszIter)
+            {
+                const char *pszDomain = *papszIter;
+                if (pszDomain[0] != 0 &&
+                    (!papszSrcMDD ||
+                     CSLFindString(papszSrcMDD, pszDomain) >= 0))
+                {
+                    bool bCanCopy = true;
+                    for (const char *pszOtherDomain : apszDefaultDomains)
+                    {
+                        if (EQUAL(pszDomain, pszOtherDomain))
+                        {
+                            bCanCopy = false;
+                            break;
+                        }
+                    }
+                    if (!papszSrcMDD)
+                    {
+                        for (const char *pszOtherDomain : apszReservedDomains)
+                        {
+                            if (EQUAL(pszDomain, pszOtherDomain))
+                            {
+                                bCanCopy = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (bCanCopy)
+                    {
+                        poVRTDS->SetMetadata(poSrcDS->GetMetadata(pszDomain),
+                                             pszDomain);
+                    }
+                }
+            }
+            CSLDestroy(papszDomainList);
+        }
+    }
+    CSLDestroy(papszSrcMDD);
 
     {
         const char *pszInterleave =
@@ -450,8 +490,16 @@ void GDALRegister_VRT()
     if (GDALGetDriverByName("VRT") != nullptr)
         return;
 
-    // First register the pixel functions
-    GDALRegisterDefaultPixelFunc();
+    static std::once_flag flag;
+    std::call_once(flag,
+                   []()
+                   {
+                       // First register the pixel functions
+                       GDALRegisterDefaultPixelFunc();
+
+                       // Register functions for VRTProcessedDataset
+                       GDALVRTRegisterDefaultProcessedDatasetFuncs();
+                   });
 
     VRTDriver *poDriver = new VRTDriver();
 
@@ -478,10 +526,12 @@ void GDALRegister_VRT()
         "   <Option name='BLOCKYSIZE' type='int' description='Block height'/>\n"
         "</CreationOptionList>\n");
 
-    poDriver->pfnOpen = VRTDataset::Open;
     poDriver->pfnCreateCopy = VRTCreateCopy;
     poDriver->pfnCreate = VRTDataset::Create;
     poDriver->pfnCreateMultiDimensional = VRTDataset::CreateMultiDimensional;
+
+#ifndef NO_OPEN
+    poDriver->pfnOpen = VRTDataset::Open;
     poDriver->pfnIdentify = VRTDataset::Identify;
     poDriver->pfnDelete = VRTDataset::Delete;
 
@@ -493,7 +543,11 @@ void GDALRegister_VRT()
         "relative paths inside the VRT. Mainly useful for inlined VRT, or "
         "in-memory "
         "VRT, where their own directory does not make sense'/>"
+        "<Option name='NUM_THREADS' type='string' description="
+        "'Number of worker threads for reading. Can be set to ALL_CPUS' "
+        "default='ALL_CPUS'/>"
         "</OpenOptionList>");
+#endif
 
     poDriver->SetMetadataItem(GDAL_DCAP_VIRTUALIO, "YES");
     poDriver->SetMetadataItem(GDAL_DCAP_COORDINATE_EPOCH, "YES");
@@ -501,7 +555,9 @@ void GDALRegister_VRT()
     poDriver->AddSourceParser("SimpleSource", VRTParseCoreSources);
     poDriver->AddSourceParser("ComplexSource", VRTParseCoreSources);
     poDriver->AddSourceParser("AveragedSource", VRTParseCoreSources);
+    poDriver->AddSourceParser("NoDataFromMaskSource", VRTParseCoreSources);
     poDriver->AddSourceParser("KernelFilteredSource", VRTParseFilterSources);
+    poDriver->AddSourceParser("ArraySource", VRTParseArraySource);
 
     GetGDALDriverManager()->RegisterDriver(poDriver);
 }

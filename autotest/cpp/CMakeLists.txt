@@ -78,29 +78,32 @@ add_executable(
   test_gdal_dted.cpp
   test_gdal_gtiff.cpp
   test_gdal_pixelfn.cpp
+  test_gdal_typetraits.cpp
   test_ogr.cpp
+  test_ogr_organize_polygons.cpp
   test_ogr_geometry_stealing.cpp
   test_ogr_lgpl.cpp
   test_ogr_geos.cpp
   test_ogr_shape.cpp
+  test_ogr_swq.cpp
+  test_ogr_wkb.cpp
   test_osr.cpp
   test_osr_pci.cpp
   test_osr_ct.cpp
   test_osr_proj4.cpp
   test_triangulation.cpp
+  test_utilities.cpp
   test_marching_squares_contour.cpp
   test_marching_squares_polygon.cpp
   test_marching_squares_square.cpp
-  test_marching_squares_tile.cpp)
-if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.16)
-  set_property(TARGET gdal_unit_test PROPERTY UNITY_BUILD OFF)
-endif ()
+  test_marching_squares_tile.cpp
+  test_viewshed.cpp)
+
 target_link_libraries(gdal_unit_test PRIVATE gtest_for_gdal)
 target_link_libraries(gdal_unit_test PRIVATE $<TARGET_NAME:${GDAL_LIB_TARGET_NAME}>)
 if(NOT MSVC AND CMAKE_THREAD_LIBS_INIT)
     target_link_libraries(gdal_unit_test PRIVATE ${CMAKE_THREAD_LIBS_INIT})
 endif()
-add_dependencies(gdal_unit_test ${GDAL_LIB_TARGET_NAME} gdal_plugins)
 gdal_standard_includes(gdal_unit_test)
 target_compile_options(gdal_unit_test PRIVATE ${GDAL_CXX_WARNING_FLAGS})
 target_compile_definitions(gdal_unit_test PRIVATE -DGDAL_TEST_ROOT_DIR="${GDAL_ROOT_TEST_DIR}")
@@ -168,12 +171,18 @@ macro (register_test _test_name _binary_name)
 endmacro ()
 
 register_test(test-unit gdal_unit_test)
+if (NOT CMAKE_CROSSCOMPILING OR CMAKE_CROSSCOMPILING_EMULATOR)
+    add_dependencies(test-unit ${GDAL_LIB_TARGET_NAME} gdal_plugins)
+endif()
 
 include(GdalTestTarget)
 
+add_library(main_gtest STATIC main_gtest.cpp)
+target_link_libraries(main_gtest PRIVATE gtest_for_gdal $<TARGET_NAME:${GDAL_LIB_TARGET_NAME}>)
+gdal_standard_includes(main_gtest)
+
 gdal_test_target(testblockcache testblockcache.cpp)
-target_sources(testblockcache PRIVATE main_gtest.cpp)
-target_link_libraries(testblockcache PRIVATE gtest_for_gdal)
+target_link_libraries(testblockcache PRIVATE gtest_for_gdal main_gtest)
 
 register_test(
   test-block-cache-1
@@ -270,8 +279,7 @@ endmacro ()
 
 function (gdal_gtest_target _target testlabel _source)
   gdal_autotest_target(${_target} ${testlabel} ${_source} ${ARGN})
-  target_sources(${_target} PRIVATE main_gtest.cpp)
-  target_link_libraries(${_target} PRIVATE gtest_for_gdal)
+  target_link_libraries(${_target} PRIVATE gtest_for_gdal main_gtest)
 endfunction ()
 
 set(QUICKTEST_LIST
@@ -291,7 +299,9 @@ set(QUICKTEST_LIST
     test-multi-threaded-writing
     test-destroy
     test-bug1488
-    test-log)
+    test-log
+    test-deferred-plugin
+)
 
 gdal_gtest_target(testcopywords test-copy-words testcopywords.cpp)
 gdal_gtest_target(testclosedondestroydm test-closed-on-destroy-DM testclosedondestroydm.cpp)
@@ -305,11 +315,15 @@ gdal_autotest_target(test_include_from_c_file test-include-from-C-file test_incl
 gdal_autotest_target(test_c_include_from_cpp_file test-C-include-from-CPP-file test_c_include_from_cpp_file.cpp "")
 gdal_gtest_target(bug1488 test-bug1488 bug1488.cpp)
 gdal_gtest_target(testlog test-log testlog.cpp)
+gdal_gtest_target(test_deferred_plugin test-deferred-plugin test_deferred_plugin.cpp)
+
+if (GDAL_ENABLE_DRIVER_JPEG_PLUGIN)
+    target_compile_definitions(test_deferred_plugin PRIVATE -DJPEG_PLUGIN)
+endif()
 
 if (UNIX)
   list(APPEND QUICKTEST_LIST test-osr-set-proj-search-paths)
   gdal_gtest_target(test_osr_set_proj_search_paths test-osr-set-proj-search-paths test_osr_set_proj_search_paths.cpp)
-  target_link_libraries(test_osr_set_proj_search_paths PRIVATE PROJ::proj)
 endif()
 
 if (UNIX)

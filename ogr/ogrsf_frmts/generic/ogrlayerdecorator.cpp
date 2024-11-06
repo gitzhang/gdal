@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2012-2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #ifndef DOXYGEN_SKIP
@@ -158,6 +142,20 @@ OGRErr OGRLayerDecorator::IUpsertFeature(OGRFeature *poFeature)
     return m_poDecoratedLayer->UpsertFeature(poFeature);
 }
 
+OGRErr OGRLayerDecorator::IUpdateFeature(OGRFeature *poFeature,
+                                         int nUpdatedFieldsCount,
+                                         const int *panUpdatedFieldsIdx,
+                                         int nUpdatedGeomFieldsCount,
+                                         const int *panUpdatedGeomFieldsIdx,
+                                         bool bUpdateStyleString)
+{
+    if (!m_poDecoratedLayer)
+        return OGRERR_FAILURE;
+    return m_poDecoratedLayer->UpdateFeature(
+        poFeature, nUpdatedFieldsCount, panUpdatedFieldsIdx,
+        nUpdatedGeomFieldsCount, panUpdatedGeomFieldsIdx, bUpdateStyleString);
+}
+
 OGRErr OGRLayerDecorator::DeleteFeature(GIntBig nFID)
 {
     if (!m_poDecoratedLayer)
@@ -222,7 +220,8 @@ int OGRLayerDecorator::TestCapability(const char *pszCapability)
     return m_poDecoratedLayer->TestCapability(pszCapability);
 }
 
-OGRErr OGRLayerDecorator::CreateField(OGRFieldDefn *poField, int bApproxOK)
+OGRErr OGRLayerDecorator::CreateField(const OGRFieldDefn *poField,
+                                      int bApproxOK)
 {
     if (!m_poDecoratedLayer)
         return OGRERR_FAILURE;
@@ -261,7 +260,7 @@ OGRErr OGRLayerDecorator::AlterGeomFieldDefn(
                                                   poNewGeomFieldDefn, nFlagsIn);
 }
 
-OGRErr OGRLayerDecorator::CreateGeomField(OGRGeomFieldDefn *poField,
+OGRErr OGRLayerDecorator::CreateGeomField(const OGRGeomFieldDefn *poField,
                                           int bApproxOK)
 {
     if (!m_poDecoratedLayer)
@@ -332,7 +331,7 @@ const char *OGRLayerDecorator::GetGeometryColumn()
     return m_poDecoratedLayer->GetGeometryColumn();
 }
 
-OGRErr OGRLayerDecorator::SetIgnoredFields(const char **papszFields)
+OGRErr OGRLayerDecorator::SetIgnoredFields(CSLConstList papszFields)
 {
     if (!m_poDecoratedLayer)
         return OGRERR_FAILURE;

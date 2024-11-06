@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2021, Laixer B.V. <info at laixer dot com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_conv.h"
@@ -58,8 +42,6 @@ OGRLVBAGLayer::OGRLVBAGLayer(const char *pszFilename, OGRLayerPool *poPoolIn,
     SetDescription(CPLGetBasename(pszFilename));
 
     poFeatureDefn->Reference();
-
-    memset(aBuf, '\0', sizeof(aBuf));
 }
 
 /************************************************************************/
@@ -655,10 +637,7 @@ void OGRLVBAGLayer::EndElementCbk(const char *pszName)
                 if (poGeom->Is3D())
                     poGeom->flattenTo2D();
 
-// GEOS >= 3.8.0 for MakeValid.
 #ifdef HAVE_GEOS
-#if GEOS_VERSION_MAJOR > 3 ||                                                  \
-    (GEOS_VERSION_MAJOR == 3 && GEOS_VERSION_MINOR >= 8)
                 if (!poGeom->IsValid() && bFixInvalidData)
                 {
                     std::unique_ptr<OGRGeometry> poSubGeom =
@@ -666,7 +645,6 @@ void OGRLVBAGLayer::EndElementCbk(const char *pszName)
                     if (poSubGeom && poSubGeom->IsValid())
                         poGeom.reset(poSubGeom.release());
                 }
-#endif
 #endif
 
                 OGRGeomFieldDefn *poGeomField =
@@ -683,7 +661,7 @@ void OGRLVBAGLayer::EndElementCbk(const char *pszName)
                         case wkbPolygon:
                         case wkbMultiPolygon:
                         {
-                            auto poPoint = cpl::make_unique<OGRPoint>();
+                            auto poPoint = std::make_unique<OGRPoint>();
 #ifdef HAVE_GEOS
                             if (poGeom->Centroid(poPoint.get()) == OGRERR_NONE)
                                 poGeom.reset(poPoint.release());
@@ -703,7 +681,7 @@ void OGRLVBAGLayer::EndElementCbk(const char *pszName)
                 else if (poGeomField->GetType() == wkbMultiPolygon &&
                          poGeom->getGeometryType() == wkbPolygon)
                 {
-                    auto poMultiPolygon = cpl::make_unique<OGRMultiPolygon>();
+                    auto poMultiPolygon = std::make_unique<OGRMultiPolygon>();
                     poMultiPolygon->addGeometry(poGeom.get());
                     poGeom.reset(poMultiPolygon.release());
                 }
@@ -715,7 +693,7 @@ void OGRLVBAGLayer::EndElementCbk(const char *pszName)
                                  ->getGeometryRef(0)
                                  ->getGeometryType() == wkbPolygon)
                 {
-                    auto poMultiPolygon = cpl::make_unique<OGRMultiPolygon>();
+                    auto poMultiPolygon = std::make_unique<OGRMultiPolygon>();
                     for (const auto &poChildGeom :
                          poGeom->toGeometryCollection())
                         poMultiPolygon->addGeometry(poChildGeom);
@@ -862,12 +840,11 @@ void OGRLVBAGLayer::ParseDocument()
             case XML_INITIALIZED:
             case XML_PARSING:
             {
-                memset(aBuf, '\0', sizeof(aBuf));
                 const unsigned int nLen = static_cast<unsigned int>(
-                    VSIFReadL(aBuf, 1, sizeof(aBuf), fp));
+                    VSIFReadL(aBuf.data(), 1, aBuf.size(), fp));
 
-                if (IsParserFinished(
-                        XML_Parse(oParser.get(), aBuf, nLen, VSIFEofL(fp))))
+                if (IsParserFinished(XML_Parse(oParser.get(), aBuf.data(), nLen,
+                                               nLen < aBuf.size())))
                     return;
 
                 break;

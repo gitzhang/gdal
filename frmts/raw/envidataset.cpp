@@ -9,23 +9,7 @@
  * Copyright (c) 2002, Frank Warmerdam
  * Copyright (c) 2007-2013, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_port.h"
@@ -59,31 +43,7 @@
 constexpr double kdfDegToRad = M_PI / 180.0;
 constexpr double kdfRadToDeg = 180.0 / M_PI;
 
-constexpr int anUsgsEsriZones[] = {
-    101,  3101, 102,  3126, 201,  3151, 202,  3176, 203,  3201, 301,  3226,
-    302,  3251, 401,  3276, 402,  3301, 403,  3326, 404,  3351, 405,  3376,
-    406,  3401, 407,  3426, 501,  3451, 502,  3476, 503,  3501, 600,  3526,
-    700,  3551, 901,  3601, 902,  3626, 903,  3576, 1001, 3651, 1002, 3676,
-    1101, 3701, 1102, 3726, 1103, 3751, 1201, 3776, 1202, 3801, 1301, 3826,
-    1302, 3851, 1401, 3876, 1402, 3901, 1501, 3926, 1502, 3951, 1601, 3976,
-    1602, 4001, 1701, 4026, 1702, 4051, 1703, 6426, 1801, 4076, 1802, 4101,
-    1900, 4126, 2001, 4151, 2002, 4176, 2101, 4201, 2102, 4226, 2103, 4251,
-    2111, 6351, 2112, 6376, 2113, 6401, 2201, 4276, 2202, 4301, 2203, 4326,
-    2301, 4351, 2302, 4376, 2401, 4401, 2402, 4426, 2403, 4451, 2500, 0,
-    2501, 4476, 2502, 4501, 2503, 4526, 2600, 0,    2601, 4551, 2602, 4576,
-    2701, 4601, 2702, 4626, 2703, 4651, 2800, 4676, 2900, 4701, 3001, 4726,
-    3002, 4751, 3003, 4776, 3101, 4801, 3102, 4826, 3103, 4851, 3104, 4876,
-    3200, 4901, 3301, 4926, 3302, 4951, 3401, 4976, 3402, 5001, 3501, 5026,
-    3502, 5051, 3601, 5076, 3602, 5101, 3701, 5126, 3702, 5151, 3800, 5176,
-    3900, 0,    3901, 5201, 3902, 5226, 4001, 5251, 4002, 5276, 4100, 5301,
-    4201, 5326, 4202, 5351, 4203, 5376, 4204, 5401, 4205, 5426, 4301, 5451,
-    4302, 5476, 4303, 5501, 4400, 5526, 4501, 5551, 4502, 5576, 4601, 5601,
-    4602, 5626, 4701, 5651, 4702, 5676, 4801, 5701, 4802, 5726, 4803, 5751,
-    4901, 5776, 4902, 5801, 4903, 5826, 4904, 5851, 5001, 6101, 5002, 6126,
-    5003, 6151, 5004, 6176, 5005, 6201, 5006, 6226, 5007, 6251, 5008, 6276,
-    5009, 6301, 5010, 6326, 5101, 5876, 5102, 5901, 5103, 5926, 5104, 5951,
-    5105, 5976, 5201, 6001, 5200, 6026, 5200, 6076, 5201, 6051, 5202, 6051,
-    5300, 0,    5400, 0};
+#include "usgs_esri_zones.h"
 
 /************************************************************************/
 /*                           ITTVISToUSGSZone()                         */
@@ -161,7 +121,7 @@ CPLErr ENVIDataset::Close()
         if (fpImage)
         {
             // Make sure the binary file has the expected size
-            if (!bSuppressOnClose && bFillFile && nBands > 0)
+            if (!IsMarkedSuppressOnClose() && bFillFile && nBands > 0)
             {
                 const int nDataSize = GDALGetDataTypeSizeBytes(
                     GetRasterBand(1)->GetRasterDataType());
@@ -226,7 +186,7 @@ CPLErr ENVIDataset::FlushCache(bool bAtClosing)
 
     GDALRasterBand *band = GetRasterCount() > 0 ? GetRasterBand(1) : nullptr;
 
-    if (!band || !bHeaderDirty || (bAtClosing && bSuppressOnClose))
+    if (!band || !bHeaderDirty || (bAtClosing && IsMarkedSuppressOnClose()))
         return eErr;
 
     // If opening an existing file in Update mode (i.e. "r+") we need to make
@@ -365,7 +325,7 @@ CPLErr ENVIDataset::FlushCache(bool bAtClosing)
     if (bHasNoData)
     {
         bOK &=
-            VSIFPrintfL(fp, "data ignore value = %.18g\n", dfNoDataValue) >= 0;
+            VSIFPrintfL(fp, "data ignore value = %.17g\n", dfNoDataValue) >= 0;
     }
 
     // Write "data offset values", if needed
@@ -387,7 +347,7 @@ CPLErr ENVIDataset::FlushCache(bool bAtClosing)
                 double dfValue = GetRasterBand(i)->GetOffset(&bHasValue);
                 if (!bHasValue)
                     dfValue = 0;
-                bOK &= VSIFPrintfL(fp, "%.18g", dfValue) >= 0;
+                bOK &= VSIFPrintfL(fp, "%.17g", dfValue) >= 0;
                 if (i != nBands)
                     bOK &= VSIFPrintfL(fp, ", ") >= 0;
             }
@@ -414,7 +374,7 @@ CPLErr ENVIDataset::FlushCache(bool bAtClosing)
                 double dfValue = GetRasterBand(i)->GetScale(&bHasValue);
                 if (!bHasValue)
                     dfValue = 1;
-                bOK &= VSIFPrintfL(fp, "%.18g", dfValue) >= 0;
+                bOK &= VSIFPrintfL(fp, "%.17g", dfValue) >= 0;
                 if (i != nBands)
                     bOK &= VSIFPrintfL(fp, ", ") >= 0;
             }
@@ -1622,7 +1582,7 @@ bool ENVIDataset::ProcessMapinfo(const char *pszMapinfo)
     }
     else
     {
-        m_oSRS = oSRS;
+        m_oSRS = std::move(oSRS);
     }
     m_oSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
 
@@ -1937,7 +1897,12 @@ bool ENVIDataset::ReadHeader(VSILFILE *fpHdr)
         if (pszNewLine == nullptr)
             break;
 
-        if (strstr(pszNewLine, "=") == nullptr)
+        // Skip leading spaces. This may happen for example with
+        // AVIRIS datasets (https://aviris.jpl.nasa.gov/dataportal/) whose
+        // wavelength metadata starts with a leading space.
+        while (*pszNewLine == ' ')
+            ++pszNewLine;
+        if (strchr(pszNewLine, '=') == nullptr)
             continue;
 
         CPLString osWorkingLine(pszNewLine);
@@ -1956,7 +1921,7 @@ bool ENVIDataset::ReadHeader(VSILFILE *fpHdr)
                 if (osWorkingLine.size() > 10 * 1024 * 1024)
                     return false;
             } while (pszNewLine != nullptr &&
-                     strstr(pszNewLine, "}") == nullptr);
+                     strchr(pszNewLine, '}') == nullptr);
         }
 
         // Try to break input into name and value portions.  Trim whitespace.
@@ -2108,21 +2073,19 @@ ENVIDataset *ENVIDataset::Open(GDALOpenInfo *poOpenInfo, bool bFileSizeCheck)
     }
 
     // Create a corresponding GDALDataset.
-    ENVIDataset *poDS = new ENVIDataset();
+    auto poDS = std::make_unique<ENVIDataset>();
     poDS->pszHDRFilename = CPLStrdup(osHdrFilename);
     poDS->fp = fpHeader;
 
     // Read the header.
     if (!poDS->ReadHeader(fpHeader))
     {
-        delete poDS;
         return nullptr;
     }
 
     // Has the user selected the .hdr file to open?
     if (EQUAL(CPLGetExtension(poOpenInfo->pszFilename), "hdr"))
     {
-        delete poDS;
         CPLError(CE_Failure, CPLE_AppDefined,
                  "The selected file is an ENVI header file, but to "
                  "open ENVI datasets, the data file should be selected "
@@ -2136,7 +2099,6 @@ ENVIDataset *ENVIDataset::Open(GDALOpenInfo *poOpenInfo, bool bFileSizeCheck)
     // Has the user selected the .sta (stats) file to open?
     if (EQUAL(CPLGetExtension(poOpenInfo->pszFilename), "sta"))
     {
-        delete poDS;
         CPLError(CE_Failure, CPLE_AppDefined,
                  "The selected file is an ENVI statistics file. "
                  "To open ENVI datasets, the data file should be selected "
@@ -2171,7 +2133,6 @@ ENVIDataset *ENVIDataset::Open(GDALOpenInfo *poOpenInfo, bool bFileSizeCheck)
     if (!GDALCheckDatasetDimensions(nSamples, nLines) ||
         !GDALCheckBandCount(nBands, FALSE))
     {
-        delete poDS;
         CPLError(CE_Failure, CPLE_AppDefined,
                  "The file appears to have an associated ENVI header, but "
                  "one or more of the samples, lines and bands "
@@ -2226,10 +2187,15 @@ ENVIDataset *ENVIDataset::Open(GDALOpenInfo *poOpenInfo, bool bFileSizeCheck)
                 eType = GDT_UInt32;
                 break;
 
-                // 14=Int64, 15=UInt64
+            case 14:
+                eType = GDT_Int64;
+                break;
+
+            case 15:
+                eType = GDT_UInt64;
+                break;
 
             default:
-                delete poDS;
                 CPLError(CE_Failure, CPLE_AppDefined,
                          "The file does not have a value for the data_type "
                          "that is recognised by the GDAL ENVI driver.");
@@ -2238,16 +2204,14 @@ ENVIDataset *ENVIDataset::Open(GDALOpenInfo *poOpenInfo, bool bFileSizeCheck)
     }
 
     // Translate the byte order.
-    bool bNativeOrder = true;
+    RawRasterBand::ByteOrder eByteOrder = RawRasterBand::NATIVE_BYTE_ORDER;
 
     const char *pszByteOrder = poDS->m_aosHeader["byte_order"];
     if (pszByteOrder != nullptr)
     {
-#ifdef CPL_LSB
-        bNativeOrder = atoi(pszByteOrder) == 0;
-#else
-        bNativeOrder = atoi(pszByteOrder) != 0;
-#endif
+        eByteOrder = atoi(pszByteOrder) == 0
+                         ? RawRasterBand::ByteOrder::ORDER_LITTLE_ENDIAN
+                         : RawRasterBand::ByteOrder::ORDER_BIG_ENDIAN;
     }
 
     // Warn about unsupported file types virtual mosaic and meta file.
@@ -2277,7 +2241,6 @@ ENVIDataset *ENVIDataset::Open(GDALOpenInfo *poOpenInfo, bool bFileSizeCheck)
                      "File %s contains an invalid file type in the ENVI .hdr "
                      "GDAL does not support '%s' type files.",
                      poOpenInfo->pszFilename, pszEnviFileType);
-            delete poDS;
             return nullptr;
         }
     }
@@ -2299,7 +2262,6 @@ ENVIDataset *ENVIDataset::Open(GDALOpenInfo *poOpenInfo, bool bFileSizeCheck)
     {
         if (bIsCompressed)
         {
-            delete poDS;
             CPLError(CE_Failure, CPLE_OpenFailed,
                      "Cannot open compressed file in update mode.");
             return nullptr;
@@ -2313,7 +2275,6 @@ ENVIDataset *ENVIDataset::Open(GDALOpenInfo *poOpenInfo, bool bFileSizeCheck)
 
     if (poDS->fpImage == nullptr)
     {
-        delete poDS;
         CPLError(CE_Failure, CPLE_OpenFailed,
                  "Failed to re-open %s within ENVI driver.",
                  poOpenInfo->pszFilename);
@@ -2334,7 +2295,6 @@ ENVIDataset *ENVIDataset::Open(GDALOpenInfo *poOpenInfo, bool bFileSizeCheck)
         poDS->SetMetadataItem("INTERLEAVE", "LINE", "IMAGE_STRUCTURE");
         if (nSamples > std::numeric_limits<int>::max() / (nDataSize * nBands))
         {
-            delete poDS;
             CPLError(CE_Failure, CPLE_AppDefined, "Int overflow occurred.");
             return nullptr;
         }
@@ -2348,7 +2308,6 @@ ENVIDataset *ENVIDataset::Open(GDALOpenInfo *poOpenInfo, bool bFileSizeCheck)
         poDS->SetMetadataItem("INTERLEAVE", "PIXEL", "IMAGE_STRUCTURE");
         if (nSamples > std::numeric_limits<int>::max() / (nDataSize * nBands))
         {
-            delete poDS;
             CPLError(CE_Failure, CPLE_AppDefined, "Int overflow occurred.");
             return nullptr;
         }
@@ -2362,7 +2321,6 @@ ENVIDataset *ENVIDataset::Open(GDALOpenInfo *poOpenInfo, bool bFileSizeCheck)
         poDS->SetMetadataItem("INTERLEAVE", "BAND", "IMAGE_STRUCTURE");
         if (nSamples > std::numeric_limits<int>::max() / nDataSize)
         {
-            delete poDS;
             CPLError(CE_Failure, CPLE_AppDefined, "Int overflow occurred.");
             return nullptr;
         }
@@ -2405,23 +2363,18 @@ ENVIDataset *ENVIDataset::Open(GDALOpenInfo *poOpenInfo, bool bFileSizeCheck)
             poDS->nRasterXSize, poDS->nRasterYSize, nBands, nDataSize,
             nPixelOffset, nLineOffset, nHeaderSize, nBandOffset, poDS->fpImage))
     {
-        delete poDS;
         return nullptr;
     }
 
     // Create band information objects.
-    CPLErrorReset();
     for (int i = 0; i < nBands; i++)
     {
-        poDS->SetBand(i + 1, new ENVIRasterBand(poDS, i + 1, poDS->fpImage,
-                                                nHeaderSize + nBandOffset * i,
-                                                nPixelOffset, nLineOffset,
-                                                eType, bNativeOrder));
-        if (CPLGetLastErrorType() != CE_None)
-        {
-            delete poDS;
+        auto poBand = std::make_unique<ENVIRasterBand>(
+            poDS.get(), i + 1, poDS->fpImage, nHeaderSize + nBandOffset * i,
+            nPixelOffset, nLineOffset, eType, eByteOrder);
+        if (!poBand->IsValid())
             return nullptr;
-        }
+        poDS->SetBand(i + 1, std::move(poBand));
     }
 
     // Apply band names if we have them.
@@ -2432,9 +2385,12 @@ ENVIDataset *ENVIDataset::Open(GDALOpenInfo *poOpenInfo, bool bFileSizeCheck)
     {
         char **papszBandNames = poDS->SplitList(pszBandNames);
         char **papszWL = poDS->SplitList(pszWaveLength);
+        const char *pszFWHM = poDS->m_aosHeader["fwhm"];
+        char **papszFWHM = pszFWHM ? poDS->SplitList(pszFWHM) : nullptr;
 
         const char *pszWLUnits = nullptr;
         const int nWLCount = CSLCount(papszWL);
+        const int nFWHMCount = CSLCount(papszFWHM);
         if (papszWL)
         {
             // If WL information is present, process wavelength units.
@@ -2455,7 +2411,7 @@ ENVIDataset *ENVIDataset::Open(GDALOpenInfo *poOpenInfo, bool bFileSizeCheck)
         for (int i = 0; i < nBands; i++)
         {
             // First set up the wavelength names and units if available.
-            CPLString osWavelength;
+            std::string osWavelength;
             if (papszWL && nWLCount > i)
             {
                 osWavelength = papszWL[i];
@@ -2467,7 +2423,7 @@ ENVIDataset *ENVIDataset::Open(GDALOpenInfo *poOpenInfo, bool bFileSizeCheck)
             }
 
             // Build the final name for this band.
-            CPLString osBandName;
+            std::string osBandName;
             if (papszBandNames && CSLCount(papszBandNames) > i)
             {
                 osBandName = papszBandNames[i];
@@ -2481,15 +2437,38 @@ ENVIDataset *ENVIDataset::Open(GDALOpenInfo *poOpenInfo, bool bFileSizeCheck)
             else
             {
                 // WL but no band names.
-                osBandName = osWavelength;
+                osBandName = std::move(osWavelength);
             }
 
             // Description is for internal GDAL usage.
-            poDS->GetRasterBand(i + 1)->SetDescription(osBandName);
+            poDS->GetRasterBand(i + 1)->SetDescription(osBandName.c_str());
 
             // Metadata field named Band_1, etc. Needed for ArcGIS integration.
             CPLString osBandId = CPLSPrintf("Band_%i", i + 1);
-            poDS->SetMetadataItem(osBandId, osBandName);
+            poDS->SetMetadataItem(osBandId, osBandName.c_str());
+
+            const auto ConvertWaveLength =
+                [pszWLUnits](double dfVal) -> const char *
+            {
+                if (EQUAL(pszWLUnits, "Micrometers") || EQUAL(pszWLUnits, "um"))
+                {
+                    return CPLSPrintf("%.3f", dfVal);
+                }
+                else if (EQUAL(pszWLUnits, "Nanometers") ||
+                         EQUAL(pszWLUnits, "nm"))
+                {
+                    return CPLSPrintf("%.3f", dfVal / 1000);
+                }
+                else if (EQUAL(pszWLUnits, "Millimeters") ||
+                         EQUAL(pszWLUnits, "mm"))
+                {
+                    return CPLSPrintf("%.3f", dfVal * 1000);
+                }
+                else
+                {
+                    return nullptr;
+                }
+            };
 
             // Set wavelength metadata to band.
             if (papszWL && nWLCount > i)
@@ -2501,11 +2480,29 @@ ENVIDataset *ENVIDataset::Open(GDALOpenInfo *poOpenInfo, bool bFileSizeCheck)
                 {
                     poDS->GetRasterBand(i + 1)->SetMetadataItem(
                         "wavelength_units", pszWLUnits);
+
+                    if (const char *pszVal =
+                            ConvertWaveLength(CPLAtof(papszWL[i])))
+                    {
+                        poDS->GetRasterBand(i + 1)->SetMetadataItem(
+                            "CENTRAL_WAVELENGTH_UM", pszVal, "IMAGERY");
+                    }
+                }
+            }
+
+            if (papszFWHM && nFWHMCount > i && pszWLUnits)
+            {
+                if (const char *pszVal =
+                        ConvertWaveLength(CPLAtof(papszFWHM[i])))
+                {
+                    poDS->GetRasterBand(i + 1)->SetMetadataItem(
+                        "FWHM_UM", pszVal, "IMAGERY");
                 }
             }
         }
         CSLDestroy(papszWL);
         CSLDestroy(papszBandNames);
+        CSLDestroy(papszFWHM);
     }
 
     // Apply "default bands" if we have it to set RGB color interpretation.
@@ -2658,13 +2655,13 @@ ENVIDataset *ENVIDataset::Open(GDALOpenInfo *poOpenInfo, bool bFileSizeCheck)
     poDS->TryLoadXML();
 
     // Check for overviews.
-    poDS->oOvManager.Initialize(poDS, poOpenInfo->pszFilename);
+    poDS->oOvManager.Initialize(poDS.get(), poOpenInfo->pszFilename);
 
     // SetMetadata() calls in Open() makes the header dirty.
     // Don't re-write the header if nothing external has changed the metadata.
     poDS->bHeaderDirty = false;
 
-    return poDS;
+    return poDS.release();
 }
 
 int ENVIDataset::GetEnviType(GDALDataType eType)
@@ -2699,9 +2696,12 @@ int ENVIDataset::GetEnviType(GDALDataType eType)
         case GDT_UInt32:
             iENVIType = 13;
             break;
-
-            // 14=Int64, 15=UInt64
-
+        case GDT_Int64:
+            iENVIType = 14;
+            break;
+        case GDT_UInt64:
+            iENVIType = 15;
+            break;
         default:
             CPLError(CE_Failure, CPLE_AppDefined,
                      "Attempt to create ENVI .hdr labelled dataset with an "
@@ -2819,9 +2819,10 @@ GDALDataset *ENVIDataset::Create(const char *pszFilename, int nXSize,
 ENVIRasterBand::ENVIRasterBand(GDALDataset *poDSIn, int nBandIn,
                                VSILFILE *fpRawIn, vsi_l_offset nImgOffsetIn,
                                int nPixelOffsetIn, int nLineOffsetIn,
-                               GDALDataType eDataTypeIn, int bNativeOrderIn)
+                               GDALDataType eDataTypeIn,
+                               RawRasterBand::ByteOrder eByteOrderIn)
     : RawRasterBand(poDSIn, nBandIn, fpRawIn, nImgOffsetIn, nPixelOffsetIn,
-                    nLineOffsetIn, eDataTypeIn, bNativeOrderIn,
+                    nLineOffsetIn, eDataTypeIn, eByteOrderIn,
                     RawRasterBand::OwnFP::NO)
 {
 }
@@ -2853,6 +2854,25 @@ CPLErr ENVIRasterBand::SetCategoryNames(char **papszCategoryNamesIn)
 CPLErr ENVIRasterBand::SetNoDataValue(double dfNoDataValue)
 {
     cpl::down_cast<ENVIDataset *>(poDS)->bHeaderDirty = true;
+
+    if (poDS->GetRasterCount() > 1)
+    {
+        int bOtherBandHasNoData = false;
+        const int nOtherBand = nBand > 1 ? 1 : 2;
+        double dfOtherBandNoData = poDS->GetRasterBand(nOtherBand)
+                                       ->GetNoDataValue(&bOtherBandHasNoData);
+        if (bOtherBandHasNoData &&
+            !(std::isnan(dfOtherBandNoData) && std::isnan(dfNoDataValue)) &&
+            dfOtherBandNoData != dfNoDataValue)
+        {
+            CPLError(CE_Warning, CPLE_AppDefined,
+                     "Nodata value of band %d (%.17g) is different from nodata "
+                     "value from band %d (%.17g). Only the later will be "
+                     "written in the ENVI header as the \"data ignore value\"",
+                     nBand, dfNoDataValue, nOtherBand, dfOtherBandNoData);
+        }
+    }
+
     return RawRasterBand::SetNoDataValue(dfNoDataValue);
 }
 
@@ -2903,7 +2923,7 @@ void GDALRegister_ENVI()
     poDriver->SetMetadataItem(GDAL_DMD_HELPTOPIC, "drivers/raster/envi.html");
     poDriver->SetMetadataItem(GDAL_DMD_EXTENSION, "");
     poDriver->SetMetadataItem(GDAL_DMD_CREATIONDATATYPES,
-                              "Byte Int16 UInt16 Int32 UInt32 "
+                              "Byte Int16 UInt16 Int32 UInt32 Int64 UInt64 "
                               "Float32 Float64 CFloat32 CFloat64");
     poDriver->SetMetadataItem(
         GDAL_DMD_CREATIONOPTIONLIST,

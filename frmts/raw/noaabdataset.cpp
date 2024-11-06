@@ -7,23 +7,7 @@
  ******************************************************************************
  * Copyright (c) 2022, Even Rouault <even dot rouault at spatialys.com>
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * SPDX-License-Identifier: MIT
  ****************************************************************************/
 
 #include "cpl_conv.h"
@@ -85,39 +69,6 @@ class NOAA_B_Dataset final : public RawDataset
     static GDALDataset *Open(GDALOpenInfo *);
     static int Identify(GDALOpenInfo *);
 };
-
-/************************************************************************/
-/* ==================================================================== */
-/*                        NOAA_B_RasterBand                             */
-/* ==================================================================== */
-/************************************************************************/
-
-class NOAA_B_RasterBand final : public RawRasterBand
-{
-    CPL_DISALLOW_COPY_ASSIGN(NOAA_B_RasterBand)
-
-  public:
-    NOAA_B_RasterBand(GDALDataset *poDS, int nBand, VSILFILE *fpRaw,
-                      vsi_l_offset nImgOffset, int nPixelOffset,
-                      int nLineOffset, GDALDataType eDataType,
-                      int bNativeOrder);
-};
-
-/************************************************************************/
-/*                         NOAA_B_RasterBand()                          */
-/************************************************************************/
-
-NOAA_B_RasterBand::NOAA_B_RasterBand(GDALDataset *poDSIn, int nBandIn,
-                                     VSILFILE *fpRawIn,
-                                     vsi_l_offset nImgOffsetIn,
-                                     int nPixelOffsetIn, int nLineOffsetIn,
-                                     GDALDataType eDataTypeIn,
-                                     int bNativeOrderIn)
-    : RawRasterBand(poDSIn, nBandIn, fpRawIn, nImgOffsetIn, nPixelOffsetIn,
-                    nLineOffsetIn, eDataTypeIn, bNativeOrderIn,
-                    RawRasterBand::OwnFP::YES)
-{
-}
 
 /************************************************************************/
 /* ==================================================================== */
@@ -302,7 +253,7 @@ GDALDataset *NOAA_B_Dataset::Open(GDALOpenInfo *poOpenInfo)
     /* -------------------------------------------------------------------- */
     /*      Create a corresponding GDALDataset.                             */
     /* -------------------------------------------------------------------- */
-    auto poDS = cpl::make_unique<NOAA_B_Dataset>();
+    auto poDS = std::make_unique<NOAA_B_Dataset>();
 
     poDS->nRasterXSize = nCols;
     poDS->nRasterYSize = nRows;
@@ -330,19 +281,25 @@ GDALDataset *NOAA_B_Dataset::Open(GDALOpenInfo *poOpenInfo)
     poOpenInfo->fpL = nullptr;
 
     // Records are presented from the southern-most to the northern-most
-    NOAA_B_RasterBand *poBand = new NOAA_B_RasterBand(
+    auto poBand = RawRasterBand::Create(
         poDS.get(), 1, fpImage,
         // skip to beginning of northern-most line
         HEADER_SIZE +
             static_cast<vsi_l_offset>(poDS->nRasterYSize - 1) * nLineSize +
             FORTRAN_HEADER_SIZE,
-        nDTSize, -nLineSize, eDT, bBigEndian ? !CPL_IS_LSB : CPL_IS_LSB);
-    poDS->SetBand(1, poBand);
+        nDTSize, -nLineSize, eDT,
+        bBigEndian ? RawRasterBand::ByteOrder::ORDER_BIG_ENDIAN
+                   : RawRasterBand::ByteOrder::ORDER_LITTLE_ENDIAN,
+        RawRasterBand::OwnFP::YES);
+    if (!poBand)
+        return nullptr;
+    poDS->SetBand(1, std::move(poBand));
 
     /* -------------------------------------------------------------------- */
     /*      Guess CRS from filename.                                        */
     /* -------------------------------------------------------------------- */
     const std::string osFilename(CPLGetFilename(poOpenInfo->pszFilename));
+
     static const struct
     {
         const char *pszPrefix;
@@ -371,6 +328,7 @@ GDALDataset *NOAA_B_Dataset::Open(GDALOpenInfo *poOpenInfo)
          8860},  // NAD83(2002) for Alaska, PRVI and Guam is NAD83(FBN) in EPSG
         {"nadcon5.nad83_2007.", 4759},  // NAD83(NSRS2007)
     };
+
     for (const auto &sPair : asFilenameToCRS)
     {
         if (STARTS_WITH_CI(osFilename.c_str(), sPair.pszPrefix))
